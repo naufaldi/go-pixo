@@ -14,25 +14,26 @@ This document contains all tasks needed to complete the go-pixo project, organiz
 
 Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet.
 
-### 1.1 PNG Infrastructure
+### 1.1 PNG Infrastructure ✅ COMPLETED
 
-- **[Task 1.1.1]** Create `src/png/constants.go` with PNG constants
+- **[Task 1.1.1]** ✅ Create `src/png/constants.go` with PNG constants
   - Define `PNG_SIGNATURE` (8 bytes)
   - Define `ChunkType` type and constants (IHDR, IDAT, IEND)
   - Define `ColorType` constants (Grayscale=0, RGB=2, RGBA=6)
   - Define `FilterType` constants (None=0, Sub=1, Up=2, Average=3, Paeth=4)
   - Output: `src/png/constants.go`
 
-- **[Task 1.1.2]** Create `src/png/errors.go` with error types
+- **[Task 1.1.2]** ✅ Create `src/png/errors.go` with error types
   - Define `Error` type implementing `error` interface
   - Add errors for: invalid signature, unknown chunk type, invalid dimensions
   - Output: `src/png/errors.go`
 
-- **[Task 1.1.3]** Create `src/png/signature.go` with signature validation
+- **[Task 1.1.3]** ✅ Create `src/png/signature.go` with signature validation
   - Add `IsValidSignature(data []byte) bool` function
   - Add `Signature() []byte` returning PNG magic bytes
   - Test: validate real PNG files
   - Output: `src/png/signature.go`, `src/png/signature_test.go`
+  - Additional: Created `docs/learning/png.md` explaining signature and constants
 
 ### 1.2 CRC32 Implementation
 
