@@ -244,7 +244,9 @@ Goal: Reduce output size without changing PNG semantics.
 
   - Add `CountFrequencies(data []byte) []int` - count literal/length frequencies (0-255 + end-of-block 256)
   - Add `CountDistanceFrequencies(matches []Match) []int` - count distance frequencies (0-29)
-  - Output: `src/compress/frequency.go`
+  - Add `distanceCode(distance uint16) int` - maps distance to DEFLATE code (0-29)
+  - Fix: `distanceCode` now correctly returns -1 for invalid distance 0 (per RFC1951, distance 0 is invalid, code 0 represents only distance 1)
+  - Output: `src/compress/frequency.go`, `src/compress/frequency_test.go`
 
 - **[Task 2.2.3]** ✅ Create `src/compress/huffman_tree.go`
 
