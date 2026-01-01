@@ -47,12 +47,12 @@ func TestIHDRBytes(t *testing.T) {
 		t.Errorf("ihdr.Bytes() length = %d, want 13", len(bytes))
 	}
 
-	width := binary.LittleEndian.Uint32(bytes[0:4])
+	width := binary.BigEndian.Uint32(bytes[0:4])
 	if width != 1 {
 		t.Errorf("width field = %d, want 1", width)
 	}
 
-	height := binary.LittleEndian.Uint32(bytes[4:8])
+	height := binary.BigEndian.Uint32(bytes[4:8])
 	if height != 1 {
 		t.Errorf("height field = %d, want 1", height)
 	}
@@ -167,12 +167,12 @@ func TestIHDRBytesLargeDimensions(t *testing.T) {
 
 	bytes := ihdr.Bytes()
 
-	width := binary.LittleEndian.Uint32(bytes[0:4])
+	width := binary.BigEndian.Uint32(bytes[0:4])
 	if width != 1000 {
 		t.Errorf("width field = %d, want 1000", width)
 	}
 
-	height := binary.LittleEndian.Uint32(bytes[4:8])
+	height := binary.BigEndian.Uint32(bytes[4:8])
 	if height != 2000 {
 		t.Errorf("height field = %d, want 2000", height)
 	}

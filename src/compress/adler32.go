@@ -57,6 +57,6 @@ func (a *adler32Writer) Reset() {
 	a.s2 = 0
 }
 
-func (a *adler32Writer) Size() int     { return 4 }
+func (a *adler32Writer) Size() int      { return 4 }
 func (a *adler32Writer) BlockSize() int { return 1 }
-func (a *adler32Writer) Sum32() uint32 { return a.s2<<16 | a.s1 }
+func (a *adler32Writer) Sum32() uint32  { return a.s2<<16 | a.s1 }

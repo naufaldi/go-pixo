@@ -50,11 +50,11 @@ func TestCRC32(t *testing.T) {
 
 func TestCRC32Streaming(t *testing.T) {
 	data := []byte("test")
-	
+
 	hasher := NewCRC32()
 	hasher.Write(data)
 	result := hasher.Sum32()
-	
+
 	expected := CRC32(data)
 	if result != expected {
 		t.Errorf("Streaming CRC32 = 0x%08x, want 0x%08x", result, expected)
@@ -64,16 +64,16 @@ func TestCRC32Streaming(t *testing.T) {
 func TestCRC32ChunkTypeAndData(t *testing.T) {
 	chunkType := []byte("IHDR")
 	chunkData := []byte{0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00}
-	
+
 	combined := append(chunkType, chunkData...)
 	result := CRC32(combined)
-	
+
 	table := crc32.MakeTable(crc32.IEEE)
 	hasher := crc32.New(table)
 	hasher.Write(chunkType)
 	hasher.Write(chunkData)
 	expected := hasher.Sum32()
-	
+
 	if result != expected {
 		t.Errorf("CRC32(chunkType + chunkData) = 0x%08x, want 0x%08x", result, expected)
 	}

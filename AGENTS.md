@@ -1,33 +1,22 @@
-go-pixo is a **standard Go + WASM** rewrite project (PNG-only MVP) inspired by the Rust project `pixo`.
-The goal is a **client-only** web tool: users compress images locally and download results (no upload/API).
+go-pixo: Go → WASM PNG compression, client-side only (no upload/API).
 
-## Commands (planned)
-
+## Commands
 ```bash
-go test ./...                       # Run all tests
+go test ./...                       # All tests
+go test -run TestFunc ./src/pkg     # Single test
 go fmt ./...                        # Format
-go vet ./...                        # Basic lint
+go vet ./...                        # Lint
+./scripts/build-wasm.sh             # Build WASM
+cd web && bun run dev               # Web UI dev
 ```
 
-### Building WASM (planned)
+## Code Style
+**Imports**: std lib first, then local (full module path: `github.com/mac/go-pixo/src/...`)
+**Naming**: Exported PascalCase, private camelCase. Constants: Exported PascalCase, private camelCase
+**Error handling**: Return `error` as second value, never suppress
+**Testing**: Table-driven with `t.Run`, descriptive names
+**WASM code**: Use `//go:build js && wasm` build tag
+**Comments**: Godoc on exported functions
 
-Standard Go can compile to WASM:
-
-```bash
-GOOS=js GOARCH=wasm go build -o web/main.wasm ./cmd/wasm
-```
-
-You’ll also need to copy Go’s `wasm_exec.js` into `web/` (pin a Go version and document it).
-
-## Architecture (target)
-
-- **`png/`** - PNG encoder (filters, chunks, bit depth later)
-- **`compress/`** - DEFLATE + zlib wrapper + CRC32/Adler32
-- **`wasm/`** - Go WASM bridge (`syscall/js` exports)
-- **`cmd/wasm/`** - WASM entrypoint
-- **`web/`** - Demo web UI
-
-## Reference docs
-
-The `docs/` folder currently includes Rust-oriented reference material copied from upstream `pixo`.
-The Go rewrite timeline is in `docs/brain/go-pixo-standard-go-wasm-rewrite-plan.md`.
+## Architecture
+`png/` → PNG encoder, `compress/` → DEFLATE/zlib/CRC32, `wasm/` → syscall/js bridge, `cmd/wasm/` → WASM entrypoint, `web/` → Vite+TS+Tailwind UI

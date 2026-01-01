@@ -1,64 +1,122 @@
 package compress
 
 import (
+	"hash/adler32"
 	"testing"
 )
 
-func TestAdler32(t *testing.T) {
-	if got := Adler32(nil); got != 1 {
-		t.Errorf("Adler32(nil) = %d, want 1", got)
-	}
-	if got := Adler32([]byte{}); got != 1 {
-		t.Errorf("Adler32([]) = %d, want 1", got)
+func TestAdler32_RFC1950Vectors(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want uint32
+	}{
+		{
+			name: "nil",
+			data: nil,
+			want: 1,
+		},
+		{
+			name: "empty",
+			data: []byte{},
+			want: 1,
+		},
+		{
+			name: "single byte A",
+			data: []byte{0x41},
+			want: 0x00420042,
+		},
+		{
+			name: "ABC",
+			data: []byte("ABC"),
+			want: 0x018D00C7,
+		},
 	}
 
-	if got := Adler32([]byte{0x41}); got != 0x00420042 {
-		t.Errorf("Adler32([0x41]) = 0x%08X, want 0x00420042", got)
-	}
-
-	expected := uint32(0x018D00C7)
-	if got := Adler32([]byte("ABC")); got != expected {
-		t.Errorf("Adler32('ABC') = 0x%08X, want 0x%08X", got, expected)
-	}
-
-	data := []byte("Hello, World! This is a longer test string for validation.")
-	result := Adler32(data)
-	if result == 0 {
-		t.Error("Adler32 should not return 0 for valid data")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Adler32(tt.data); got != tt.want {
+				t.Fatalf("Adler32(%q) = 0x%08X, want 0x%08X", tt.data, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestNewAdler32(t *testing.T) {
+func TestAdler32_MatchesStdlib(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "short",
+			data: []byte("hello"),
+		},
+		{
+			name: "long",
+			data: []byte("Hello, World! This is a longer test string for validation."),
+		},
+		{
+			name: "binary",
+			data: []byte{0x00, 0xFF, 0x10, 0x20, 0x00, 0x01},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := adler32.Checksum(tt.data)
+			if got := Adler32(tt.data); got != want {
+				t.Fatalf("Adler32(%q) = 0x%08X, want 0x%08X", tt.data, got, want)
+			}
+		})
+	}
+}
+
+func TestNewAdler32_Hash32Interface(t *testing.T) {
 	h := NewAdler32()
 	if h == nil {
 		t.Fatal("NewAdler32 returned nil")
 	}
 
-	h.Write([]byte("test"))
-	sum := h.Sum(nil)
-	if len(sum) != 4 {
-		t.Errorf("Sum() returned %d bytes, want 4", len(sum))
+	if got, want := h.Size(), 4; got != want {
+		t.Fatalf("Size() = %d, want %d", got, want)
+	}
+	if got, want := h.BlockSize(), 1; got != want {
+		t.Fatalf("BlockSize() = %d, want %d", got, want)
+	}
+
+	prefix := []byte{0xAA}
+	sum := h.Sum(append([]byte{}, prefix...))
+	if len(sum) != len(prefix)+4 {
+		t.Fatalf("Sum(prefix) len = %d, want %d", len(sum), len(prefix)+4)
+	}
+	if sum[0] != 0xAA {
+		t.Fatalf("Sum(prefix) did not preserve prefix")
+	}
+	if got := h.Sum32(); got != 1 {
+		t.Fatalf("Sum32() at initial state = 0x%08X, want 0x00000001", got)
+	}
+
+	_, _ = h.Write([]byte("test"))
+	if got, want := h.Sum32(), Adler32([]byte("test")); got != want {
+		t.Fatalf("Sum32() after Write = 0x%08X, want 0x%08X", got, want)
 	}
 
 	h.Reset()
-	sum2 := h.Sum(nil)
-	if sum2[0] != 0 || sum2[1] != 0 || sum2[2] != 0 || sum2[3] != 1 {
-		t.Errorf("After reset, Sum() = %v, want [0 0 0 1]", sum2)
+	if got := h.Sum32(); got != 1 {
+		t.Fatalf("Sum32() after Reset = 0x%08X, want 0x00000001", got)
 	}
 }
 
-func TestAdler32Streaming(t *testing.T) {
+func TestAdler32_StreamingConsistency(t *testing.T) {
 	data := []byte("Lorem ipsum dolor sit amet, consectetur adipiscing elit.")
-
 	oneShot := Adler32(data)
 
 	h := NewAdler32()
-	h.Write(data[:10])
-	h.Write(data[10:20])
-	h.Write(data[20:])
-	streaming := h.Sum32()
+	_, _ = h.Write(data[:10])
+	_, _ = h.Write(data[10:20])
+	_, _ = h.Write(data[20:])
 
-	if oneShot != streaming {
-		t.Errorf("Streaming Adler32 (0x%08X) != one-shot (0x%08X)", streaming, oneShot)
+	if got := h.Sum32(); got != oneShot {
+		t.Fatalf("streaming Sum32() = 0x%08X, want 0x%08X", got, oneShot)
 	}
 }

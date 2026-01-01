@@ -16,6 +16,8 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 
 **Documentation Created:**
 - `docs/learning/png/png-infra.md` - Comprehensive explanation of PNG chunks and CRC32
+- `docs/learning/png/png.md` - PNG signature and constants
+- `docs/learning/png/zlib.md` - IEND chunk, Adler32, and zlib format
 - `brief.md` - Code reading guide with links to serialization implementation
 
 ### 1.1 PNG Infrastructure ✅ COMPLETED
@@ -86,33 +88,33 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
   - Output: `src/png/ihdr.go` (updated), `src/png/ihdr_test.go` (updated)
   - Note: Combined into single `ihdr.go` file for better code organization
 
-### 1.5 IEND Chunk
+### 1.5 IEND Chunk ✅ COMPLETED
 
-- **[Task 1.5.1]** Create `src/png/iend_writer.go`
+- **[Task 1.5.1]** ✅ Create `src/png/iend_writer.go`
   - Add `WriteIEND(w io.Writer) error` function
   - Creates IEND chunk (type "IEND", length 0, no data, CRC of "IEND")
   - Test: verify IEND chunk format
   - Output: `src/png/iend_writer.go`, `src/png/iend_writer_test.go`
 
-### 1.6 Adler32 for Zlib
+### 1.6 Adler32 for Zlib ✅ COMPLETED
 
-- **[Task 1.6.1]** Create `src/compress/adler32.go`
+- **[Task 1.6.1]** ✅ Create `src/compress/adler32.go`
   - Implement Adler32 checksum algorithm
   - Add `Adler32(data []byte) uint32` function
   - Add `NewAdler32() hash.Hash32` for streaming
   - Test: verify against RFC 1950 test vectors
   - Output: `src/compress/adler32.go`, `src/compress/adler32_test.go`
 
-### 1.7 Zlib Header/Footer
+### 1.7 Zlib Header/Footer ✅ COMPLETED
 
-- **[Task 1.7.1]** Create `src/compress/zlib_header.go`
+- **[Task 1.7.1]** ✅ Create `src/compress/zlib_header.go`
   - Add `WriteCMF(w io.Writer, windowSize int) error` - compression method/flags
   - Add `WriteFLG(w io.Writer, checksum uint8) error` - flags byte
   - Calculate check bits for FLG
   - Test: verify CMF/FLG format
   - Output: `src/compress/zlib_header.go`, `src/compress/zlib_header_test.go`
 
-- **[Task 1.7.2]** Create `src/compress/zlib_footer.go`
+- **[Task 1.7.2]** ✅ Create `src/compress/zlib_footer.go`
   - Add `WriteAdler32Footer(w io.Writer, checksum uint32) error`
   - Write Adler32 checksum in big-endian
   - Test: verify footer format

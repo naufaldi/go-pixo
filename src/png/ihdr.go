@@ -36,8 +36,8 @@ func NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error
 
 func (i *IHDRData) Bytes() []byte {
 	result := make([]byte, 13)
-	binary.LittleEndian.PutUint32(result[0:4], i.Width)
-	binary.LittleEndian.PutUint32(result[4:8], i.Height)
+	binary.BigEndian.PutUint32(result[0:4], i.Width)
+	binary.BigEndian.PutUint32(result[4:8], i.Height)
 	result[8] = i.BitDepth
 	result[9] = uint8(i.ColorType)
 	result[10] = i.Compression
