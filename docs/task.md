@@ -201,7 +201,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 
 Goal: Reduce output size without changing PNG semantics.
 
-### Phase 2 Progress: ✅ 2 of 8 Tasks Complete
+### Phase 2 Progress: ✅ 6 of 8 Tasks Complete
 
 ### 2.1 LZ77 Core ✅ COMPLETED
 

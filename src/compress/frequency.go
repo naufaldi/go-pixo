@@ -32,9 +32,10 @@ func CountDistanceFrequencies(matches []Match) []int {
 
 // distanceCode maps a distance value to its DEFLATE distance code (0-29).
 // This is a simplified version; full implementation would use extra bits.
+// Distance 0 is invalid in DEFLATE and returns -1.
 func distanceCode(distance uint16) int {
 	if distance == 0 {
-		return 0
+		return -1
 	}
 	if distance <= 4 {
 		return int(distance) - 1
