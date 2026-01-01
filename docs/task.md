@@ -14,6 +14,10 @@ This document contains all tasks needed to complete the go-pixo project, organiz
 
 Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet.
 
+**Documentation Created:**
+- `docs/learning/png/png-infra.md` - Comprehensive explanation of PNG chunks and CRC32
+- `brief.md` - Code reading guide with links to serialization implementation
+
 ### 1.1 PNG Infrastructure ✅ COMPLETED
 
 - **[Task 1.1.1]** ✅ Create `src/png/constants.go` with PNG constants
@@ -35,50 +39,52 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
   - Output: `src/png/signature.go`, `src/png/signature_test.go`
   - Additional: Created `docs/learning/png.md` explaining signature and constants
 
-### 1.2 CRC32 Implementation
+### 1.2 CRC32 Implementation ✅ COMPLETED
 
-- **[Task 1.2.1]** Create `src/png/crc32.go` with CRC32 calculation
+- **[Task 1.2.1]** ✅ Create `src/compress/crc32.go` with CRC32 calculation
   - Use standard library `hash/crc32`
   - Add `CRC32(data []byte) uint32` function
   - Add `NewCRC32() hash.Hash32` for streaming
   - Test: verify against known CRC32 values
-  - Output: `src/png/crc32.go`, `src/png/crc32_test.go`
+  - Output: `src/compress/crc32.go`, `src/compress/crc32_test.go`
+  - Note: Placed in `compress/` package as CRC32 is shared between PNG chunks and DEFLATE
 
-### 1.3 Chunk Writing
+### 1.3 Chunk Writing ✅ COMPLETED
 
-- **[Task 1.3.1]** Create `src/png/chunk.go` with basic chunk structure
-  - Define `Chunk` struct (Type string, Data []byte)
+- **[Task 1.3.1]** ✅ Create `src/png/chunk.go` with basic chunk structure
+  - Define `Chunk` struct (chunkType ChunkType, Data []byte)
   - Add `Len() int` method
   - Add `Type() string` method
-  - Output: `src/png/chunk.go`
+  - Add `CRC() uint32` method (computes CRC32 over Type + Data)
+  - Output: `src/png/chunk.go`, `src/png/chunk_test.go`
 
-- **[Task 1.3.2]** Add `WriteTo` method to Chunk
+- **[Task 1.3.2]** ✅ Add serialization methods to Chunk
+  - Add `Bytes() []byte` method - returns full chunk bytes: length + type + data + CRC
   - Add `WriteTo(w io.Writer) (int64, error)` method
   - Write: 4-byte length (big-endian), 4-byte type, data, 4-byte CRC
   - CRC computed over type + data
   - Test: write chunk and verify format
-  - Output: `src/png/chunk.go` (updated), `src/png/chunk_test.go`
+  - Output: `src/png/chunk.go` (updated), `src/png/chunk_test.go` (updated)
 
-### 1.4 IHDR Chunk
+### 1.4 IHDR Chunk ✅ COMPLETED
 
-- **[Task 1.4.1]** Create `src/png/ihdr_data.go` with IHDR data structure
-  - Define `IHDRData` struct (Width, Height uint32, BitDepth uint8, ColorType uint8, Compression uint8, Filter uint8, Interlace uint8)
-  - Add `Width()`, `Height()`, etc. accessor methods
-  - Add validation (max dimensions, valid bit depth for color type)
-  - Output: `src/png/ihdr_data.go`
-
-- **[Task 1.4.2]** Add `Bytes()` method to IHDRData
-  - Returns 13 bytes in standard IHDR format
+- **[Task 1.4.1]** ✅ Create `src/png/ihdr.go` with IHDR data structure
+  - Define `IHDRData` struct (Width, Height uint32, BitDepth uint8, ColorType ColorType, Compression uint8, Filter uint8, Interlace uint8)
+  - Add `NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error)` constructor
+  - Add `Bytes() []byte` method - returns 13 bytes in standard IHDR format
+  - Add `Validate() error` method - validates dimensions and bit depth/color type compatibility
   - Little-endian for Width, Height
   - Other fields as single bytes
-  - Test: verify 13-byte output for known values
-  - Output: `src/png/ihdr_data.go` (updated)
+  - Test: verify 13-byte output for known values and validation
+  - Output: `src/png/ihdr.go`, `src/png/ihdr_test.go`
 
-- **[Task 1.4.3]** Create `src/png/ihdr_writer.go` for IHDR chunk writing
-  - Add `WriteIHDR(w io.Writer, data IHDRData) error` function
+- **[Task 1.4.2]** ✅ Add `WriteIHDR` function for IHDR chunk writing
+  - Add `WriteIHDR(w io.Writer, data *IHDRData) error` function
   - Creates chunk with type "IHDR" and IHDR data bytes
-  - Test: write IHDR, verify chunk format
-  - Output: `src/png/ihdr_writer.go`, `src/png/ihdr_writer_test.go`
+  - Uses `Chunk.WriteTo()` internally to write chunk
+  - Test: write IHDR, verify chunk format (length=13, type=IHDR, CRC correct)
+  - Output: `src/png/ihdr.go` (updated), `src/png/ihdr_test.go` (updated)
+  - Note: Combined into single `ihdr.go` file for better code organization
 
 ### 1.5 IEND Chunk
 
