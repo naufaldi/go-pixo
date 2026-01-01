@@ -77,6 +77,10 @@ func WriteZlibHeader(w io.Writer, windowSize int, level uint8) error {
 }
 
 func ZlibHeaderBytes(windowSize int, level uint8) ([]byte, error) {
+	if level > 3 {
+		return nil, ErrInvalidCompressionLevel
+	}
+
 	var buf [2]byte
 	cmf, err := cmfByte(windowSize)
 	if err != nil {

@@ -154,3 +154,16 @@ func TestZlibHeaderCMFAndFLGDivisibleBy31ForAllValidWindows(t *testing.T) {
 		})
 	}
 }
+
+func TestZlibHeaderBytesInvalidLevel(t *testing.T) {
+	invalidLevels := []uint8{4, 7, 255}
+	for _, level := range invalidLevels {
+		level := level
+		t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
+			_, err := ZlibHeaderBytes(32768, level)
+			if err != ErrInvalidCompressionLevel {
+				t.Fatalf("ZlibHeaderBytes(%d) error = %v, want %v", level, err, ErrInvalidCompressionLevel)
+			}
+		})
+	}
+}

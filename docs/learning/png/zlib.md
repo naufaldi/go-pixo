@@ -402,12 +402,112 @@ where fcheck = 31 - ((CMF*256 + base) % 31)
 
 ---
 
+## Inside DEFLATE: LZ77 Tokens and Huffman Coding
+
+DEFLATE compression (RFC 1951) is the algorithm used inside zlib-wrapped data. It combines two techniques:
+
+1. **LZ77**: Finds repeated sequences and replaces them with back-references
+2. **Huffman Coding**: Compresses the token stream using variable-length codes
+
+### LZ77 Tokenization
+
+LZ77 scans the input data and emits either:
+
+- **Literal tokens**: Raw byte values (0-255)
+- **Match tokens**: Back-references with (distance, length) pairs
+
+#### DEFLATE Constraints
+
+Our LZ77 implementation enforces DEFLATE limits:
+
+- **Minimum match length**: 3 bytes (shorter matches don't save space)
+- **Maximum match length**: 258 bytes
+- **Maximum distance**: 32,768 bytes (32KB sliding window)
+
+#### How LZ77 Works
+
+```mermaid
+flowchart LR
+    A[Input Data] --> B[Sliding Window<br/>32KB buffer]
+    B --> C[Find Longest Match<br/>min 3 bytes]
+    C --> D{Match Found?}
+    D -->|Yes| E[Emit Match Token<br/>distance, length]
+    D -->|No| F[Emit Literal Token<br/>byte value]
+    E --> G[Update Window]
+    F --> G
+    G --> H{More Data?}
+    H -->|Yes| C
+    H -->|No| I[Token Stream]
+```
+
+**Example**: Input `"ABCABCABC"` produces:
+
+- Literals: `'A', 'B', 'C'`
+- Match: `(distance=3, length=6)` - references the first "ABC" and copies 6 bytes
+
+### Huffman Coding
+
+Huffman coding assigns shorter bit sequences to more frequent symbols, reducing overall size.
+
+#### Canonical Codes
+
+DEFLATE uses **canonical Huffman codes** (RFC 1951):
+
+- Codes are assigned deterministically based on code lengths
+- Same length codes are assigned sequentially
+- Codes are stored **LSB-first** (bit-reversed) for DEFLATE compatibility
+
+#### Code Generation Process
+
+1. **Count frequencies**: How often does each symbol appear?
+2. **Build Huffman tree**: Connect symbols based on frequency
+3. **Extract code lengths**: Traverse tree to get length for each symbol
+4. **Canonicalize**: Assign codes in order (by length, then symbol value)
+
+**Example**: Symbols with frequencies `[5, 3, 2, 1]`:
+
+- Most frequent gets shortest code (length 1)
+- Least frequent gets longest code (length 3)
+- Codes are assigned: `0`, `10`, `110`, `111`
+
+#### Why LSB-First Storage?
+
+DEFLATE writes bits LSB-first (least significant bit first). For example, the code `"100"` (MSB-first) is stored as `"001"` (LSB-first). Our `ReverseBits()` function converts between these representations.
+
+### Integration: IDAT → Zlib → DEFLATE
+
+```mermaid
+flowchart TD
+    A[PNG IDAT Chunk] --> B[Zlib Header<br/>CMF + FLG]
+    B --> C[DEFLATE Blocks]
+    C --> D[LZ77 Tokens]
+    D --> E[Huffman Codes]
+    E --> F[Bit Stream]
+    F --> G[Zlib Footer<br/>Adler32]
+    G --> H[IDAT Data]
+```
+
+The complete flow:
+
+1. **PNG scanlines** → Filter bytes + pixel data
+2. **LZ77 encoding** → Token stream (literals + matches)
+3. **Huffman coding** → Variable-length bit codes
+4. **DEFLATE blocks** → Wrapped with block headers
+5. **Zlib wrapper** → CMF/FLG header + Adler32 footer
+
+---
+
 ## Next Steps
 
-The following topics will be covered as implementation progresses:
+The following topics are now implemented:
 
 - **Task 1.8**: Stored Blocks (`docs/learning/png/stored-blocks.md`) - Uncompressed DEFLATE blocks (LEN/NLEN)
 - **Task 1.9**: PNG Scanlines (`docs/learning/png/scanlines.md`) - Filter bytes and IDAT image data
-- **Phase 2**: DEFLATE Compression (`docs/learning/png/deflate.md`) - LZ77 + Huffman coding
+- **Phase 2.1**: LZ77 Tokenization - Back-reference compression with DEFLATE constraints
+- **Phase 2.2**: Huffman Coding - Variable-length codes with canonical assignment
 
-These files will be created when their respective tasks are implemented.
+Future phases will add:
+
+- **Phase 2.3+**: Fixed and dynamic Huffman tables
+- **Phase 2.4+**: Bit writer for DEFLATE output
+- **Phase 3**: PNG filter selection for better compression

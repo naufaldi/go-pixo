@@ -59,6 +59,7 @@ func IsValidSignature(data []byte) bool {
 ## PNG Constants: Preventing Magic Number Bugs
 
 Instead of scattering "magic numbers" throughout the code, we define constants. This makes the code:
+
 - **Readable**: `ColorRGBA` is clearer than `6`
 - **Maintainable**: Change the value in one place, not 50
 - **Type-safe**: Go's type system catches mistakes at compile time
@@ -94,10 +95,12 @@ const (
 ```
 
 **Why constants?**: Instead of writing `if colorType == 6` everywhere, we write `if colorType == ColorRGBA`. This prevents bugs:
+
 - **Bug-prone**: `if colorType == 5` (typo: 5 doesn't exist!)
 - **Safe**: `if colorType == ColorRGBA` (Go compiler catches typos)
 
 **Why these numbers?**: PNG spec defines:
+
 - `0` = Grayscale
 - `2` = RGB (no palette)
 - `6` = RGBA (RGB + alpha channel)
@@ -121,6 +124,7 @@ const (
 ```
 
 **Why constants?**: When we write filter selection logic, we use `FilterPaeth` instead of `4`. This makes the code self-documenting:
+
 - **Unclear**: `if filter == 4 { ... }`
 - **Clear**: `if filter == FilterPaeth { ... }`
 
@@ -129,6 +133,7 @@ const (
 ### Example 1: Magic Number Bug
 
 **Without constants** (bug-prone):
+
 ```go
 func encodeColorType(ct uint8) error {
 	if ct == 6 {  // What does 6 mean? Is this RGBA or something else?
@@ -139,6 +144,7 @@ func encodeColorType(ct uint8) error {
 ```
 
 **With constants** (safe):
+
 ```go
 func encodeColorType(ct ColorType) error {
 	if ct == ColorRGBA {  // Clear: we're handling RGBA
@@ -151,6 +157,7 @@ func encodeColorType(ct ColorType) error {
 ### Example 2: Typo Detection
 
 **Without constants**:
+
 ```go
 if chunkType == "IHRD" {  // Typo! Should be "IHDR"
 	// This compiles but is wrong!
@@ -158,15 +165,38 @@ if chunkType == "IHRD" {  // Typo! Should be "IHDR"
 ```
 
 **With constants**:
+
 ```go
 	if chunkType == ChunkIHDR {  // Go compiler catches typos
 		// Safe!
 	}
 ```
 
+## IDAT Compression Pipeline
+
+PNG image data flows through multiple compression layers:
+
+```
+PNG Pixels → Scanlines → Filters → DEFLATE → Zlib → IDAT Chunk
+```
+
+### The Complete Flow
+
+1. **Raw Pixels**: Image data as RGB/RGBA bytes
+2. **Scanlines**: Each row gets a filter byte (Phase 1 uses filter 0 = None)
+3. **DEFLATE Compression** (Phase 2):
+   - **LZ77**: Finds repeated patterns, emits tokens (literals + matches)
+   - **Huffman Coding**: Assigns variable-length codes to tokens
+   - **Bit Stream**: Codes written LSB-first
+4. **Zlib Wrapper**: Adds CMF/FLG header and Adler32 footer
+5. **IDAT Chunk**: Wraps compressed data with chunk structure (length + "IDAT" + data + CRC32)
+
+See `docs/learning/png/zlib.md` for details on LZ77 and Huffman coding internals.
+
 ## Summary: Signature, Constants, and Validation
 
 1. **PNG Signature**: 8 bytes that identify the file format and detect corruption.
+
    - `0x89`: High bit prevents text file confusion
    - `"PNG"`: Human-readable identifier
    - `0x0D 0x0A`: Detects transfer corruption
@@ -174,11 +204,14 @@ if chunkType == "IHRD" {  // Typo! Should be "IHDR"
    - `0x0A`: Completes line ending pattern
 
 2. **Constants**: Type-safe, readable identifiers for chunk types, color types, and filter types.
+
    - Prevents magic number bugs
    - Makes code self-documenting
    - Catches typos at compile time
 
 3. **Validation**: Always check the signature first. If it's wrong, reject the file immediately.
+
+4. **Compression**: IDAT chunks use DEFLATE (LZ77 + Huffman) wrapped in zlib format for efficient storage.
 
 ## The IEND Chunk: End of File Marker
 
@@ -216,13 +249,13 @@ PNG uses **zlib** format (RFC 1950) to wrap compressed image data. Unlike PNG ch
 
 ### Why Adler32 Instead of CRC32?
 
-| Feature | CRC32 | Adler32 |
-|---------|-------|---------|
-| Speed | Slower | Faster |
-| Error Detection | Excellent | Very Good |
-| Streaming | Good | Better for streaming |
-| RFC 1950 (zlib) | Not used | Required |
-| PNG chunks | Required | Not used |
+| Feature         | CRC32     | Adler32              |
+| --------------- | --------- | -------------------- |
+| Speed           | Slower    | Faster               |
+| Error Detection | Excellent | Very Good            |
+| Streaming       | Good      | Better for streaming |
+| RFC 1950 (zlib) | Not used  | Required             |
+| PNG chunks      | Required  | Not used             |
 
 Adler32 is faster to compute and works better for streaming scenarios, which is why zlib (and thus PNG) uses it.
 
@@ -251,6 +284,7 @@ func Adler32(data []byte) uint32 {
 ```
 
 **How it works**:
+
 - `s1`: Sum of all bytes + 1 (mod 65521)
 - `s2`: Sum of all s1 values (mod 65521)
 - Final value: `(s2 << 16) | s1`
@@ -284,11 +318,11 @@ This allows streaming computation without loading all data into memory.
 
 ### Test Vectors (RFC 1950)
 
-| Input | Adler32 |
-|-------|---------|
+| Input      | Adler32    |
+| ---------- | ---------- |
 | "" (empty) | 0x00000001 |
-| "A" | 0x00420042 |
-| "ABC" | 0x02280121 |
+| "A"        | 0x00420042 |
+| "ABC"      | 0x02280121 |
 
 ## Zlib Header and Footer
 
@@ -338,6 +372,7 @@ func WriteCMF(w io.Writer, windowSize int) error {
 ```
 
 **Common values**:
+
 - `0x78`: Window=32, DEFLATE (most common)
 - `0x1B`: Window=8, DEFLATE
 
@@ -394,10 +429,12 @@ Last 4:   [Adler32 checksum of original data]
 ## Summary
 
 1. **IEND Chunk**: 12-byte end marker (length=0, type="IEND", CRC)
+
    - Required by PNG spec to mark end of file
    - No data, just type and CRC
 
 2. **Adler32 Checksum**: Used by zlib for data integrity
+
    - Two 16-bit sums (s1, s2) modulo 65521
    - Faster than CRC32, better for streaming
    - Final value: `(s2 << 16) | s1`
@@ -411,12 +448,12 @@ Last 4:   [Adler32 checksum of original data]
 
 This document covers three essential components for PNG and zlib:
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| IEND Chunk | `src/png/iend_writer.go` | Writes 12-byte end marker (length=0, "IEND", CRC) |
-| Adler32 | `src/compress/adler32.go` | Computes checksum per RFC 1950 |
-| Zlib Header | `src/compress/zlib_header.go` | Writes CMF (method+window) and FLG (flags) |
-| Zlib Footer | `src/compress/zlib_footer.go` | Writes 4-byte Adler32 checksum |
+| Component   | File                          | Purpose                                           |
+| ----------- | ----------------------------- | ------------------------------------------------- |
+| IEND Chunk  | `src/png/iend_writer.go`      | Writes 12-byte end marker (length=0, "IEND", CRC) |
+| Adler32     | `src/compress/adler32.go`     | Computes checksum per RFC 1950                    |
+| Zlib Header | `src/compress/zlib_header.go` | Writes CMF (method+window) and FLG (flags)        |
+| Zlib Footer | `src/compress/zlib_footer.go` | Writes 4-byte Adler32 checksum                    |
 
 ### Test Coverage
 
@@ -428,6 +465,7 @@ This document covers three essential components for PNG and zlib:
 ### Key Formulas
 
 **Adler32**:
+
 ```
 s1 = (s1 + byte) % 65521
 s2 = (s2 + s1) % 65521
@@ -435,12 +473,14 @@ checksum = (s2 << 16) | s1
 ```
 
 **CMF byte**:
+
 ```
 CMF = compression_method | (window_log << 4)
      = 8 | (log2(window_size) << 4)
 ```
 
 **FLG byte**:
+
 ```
 FLG = check_bits | (dict_flag << 5) | (level << 6)
 ```

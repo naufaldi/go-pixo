@@ -3,6 +3,7 @@
 This document contains all tasks needed to complete the go-pixo project, organized by implementation phase. Tasks are designed to be converted into GitHub issues.
 
 **Design Principles:**
+
 - Each task = 1 feature = 1 PR
 - Engineer can complete one task in 2-4 hours
 - Task has clear start and end state
@@ -15,14 +16,21 @@ This document contains all tasks needed to complete the go-pixo project, organiz
 Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet.
 
 **Documentation Created:**
+
 - `docs/learning/png/png-infra.md` - Comprehensive explanation of PNG chunks and CRC32
 - `docs/learning/png/png.md` - PNG signature and constants
 - `docs/learning/png/zlib.md` - IEND chunk, Adler32, and zlib format
+- `docs/learning/png/stored-blocks.md` - DEFLATE stored block format (LEN/NLEN)
+- `docs/learning/png/scanlines.md` - PNG scanlines and filter bytes
+- `docs/learning/png/encoder.md` - PNG encoder architecture and API
 - `brief.md` - Code reading guide with links to serialization implementation
+
+### Phase 1 Progress: ✅ 11 of 11 Tasks Complete
 
 ### 1.1 PNG Infrastructure ✅ COMPLETED
 
 - **[Task 1.1.1]** ✅ Create `src/png/constants.go` with PNG constants
+
   - Define `PNG_SIGNATURE` (8 bytes)
   - Define `ChunkType` type and constants (IHDR, IDAT, IEND)
   - Define `ColorType` constants (Grayscale=0, RGB=2, RGBA=6)
@@ -30,6 +38,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
   - Output: `src/png/constants.go`
 
 - **[Task 1.1.2]** ✅ Create `src/png/errors.go` with error types
+
   - Define `Error` type implementing `error` interface
   - Add errors for: invalid signature, unknown chunk type, invalid dimensions
   - Output: `src/png/errors.go`
@@ -54,6 +63,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 ### 1.3 Chunk Writing ✅ COMPLETED
 
 - **[Task 1.3.1]** ✅ Create `src/png/chunk.go` with basic chunk structure
+
   - Define `Chunk` struct (chunkType ChunkType, Data []byte)
   - Add `Len() int` method
   - Add `Type() string` method
@@ -71,6 +81,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 ### 1.4 IHDR Chunk ✅ COMPLETED
 
 - **[Task 1.4.1]** ✅ Create `src/png/ihdr.go` with IHDR data structure
+
   - Define `IHDRData` struct (Width, Height uint32, BitDepth uint8, ColorType ColorType, Compression uint8, Filter uint8, Interlace uint8)
   - Add `NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error)` constructor
   - Add `Bytes() []byte` method - returns 13 bytes in standard IHDR format
@@ -108,6 +119,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 ### 1.7 Zlib Header/Footer ✅ COMPLETED
 
 - **[Task 1.7.1]** ✅ Create `src/compress/zlib_header.go`
+
   - Add `WriteCMF(w io.Writer, windowSize int) error` - compression method/flags
   - Add `WriteFLG(w io.Writer, checksum uint8) error` - flags byte
   - Calculate check bits for FLG
@@ -119,52 +131,69 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
   - Write Adler32 checksum in big-endian
   - Test: verify footer format
   - Output: `src/compress/zlib_footer.go`
+  - Note: Fixed `ZlibHeaderBytes()` validation in Phase 2 to match `WriteFLG()` behavior
 
-### 1.8 Stored Blocks (Uncompressed DEFLATE)
+### 1.8 Stored Blocks (Uncompressed DEFLATE) ✅ COMPLETED
 
-- **[Task 1.8.1]** Create `src/compress/stored_block.go`
+- **[Task 1.8.1]** ✅ Create `src/compress/stored_block.go`
   - Add `WriteStoredBlockHeader(w io.Writer, final bool) error`
   - Add `WriteBlockData(w io.Writer, data []byte) error`
   - Add `WriteBlockFooter(w io.Writer, n uint32) error` - LEN and NLEN
   - Output: `src/compress/stored_block.go`, `src/compress/stored_block_test.go`
+  - Documentation: `docs/learning/png/stored-blocks.md`
 
-### 1.9 IDAT Writer
+### 1.9 IDAT Writer ✅ COMPLETED
 
-- **[Task 1.9.1]** Create `src/png/scanline.go`
+- **[Task 1.9.1]** ✅ Create `src/png/scanline.go`
+
   - Add `WriteScanline(w io.Writer, filter FilterType, pixels []byte) error`
   - Prepend filter byte before pixel row
+  - Add `ScanlineLength(width int, colorType ColorType) int` helper
+  - Add `ValidateScanlineData(pixels []byte, width int, colorType ColorType) error`
   - Test: verify scanline format (filter + pixels)
   - Output: `src/png/scanline.go`, `src/png/scanline_test.go`
+  - Documentation: `docs/learning/png/scanlines.md`
 
-- **[Task 1.9.2]** Create `src/png/idat_writer.go`
-  - Define `IDATWriter` struct (wraps io.Writer)
-  - Add `WriteScanlines(w io.Writer, pixels []byte, width, height int, colorType int) error`
-  - Call WriteScanline for each row with filter type 0
+- **[Task 1.9.2]** ✅ Create `src/png/idat_writer.go`
+  - Add `WriteIDAT(w io.Writer, pixels []byte, width, height int, colorType ColorType) error`
+  - Add filter byte 0 (None) to each scanline internally
+  - Build zlib-wrapped DEFLATE data with stored blocks
+  - Add `IDATDataBytes()` for raw zlib data access
+  - Add `ExpectedIDATSize()` for size calculations
+  - Test: verify IDAT chunk format, zlib header/footer
   - Output: `src/png/idat_writer.go`, `src/png/idat_writer_test.go`
 
-### 1.10 PNG Encoder Entry Point
+### 1.10 PNG Encoder Entry Point ✅ COMPLETED
 
-- **[Task 1.10.1]** Create `src/png/encoder.go`
-  - Define `Encoder` struct (options IHDRData)
+- **[Task 1.10.1]** ✅ Create `src/png/encoder.go`
+
+  - Define `Encoder` struct (width, height, colorType)
+  - Add `NewEncoder(width, height int, colorType ColorType) (*Encoder, error)` constructor
   - Add `Encode(pixels []byte) ([]byte, error)` method
   - Sequence: WriteSignature → WriteIHDR → WriteIDAT → WriteIEND
+  - Uses custom `WriteIDAT` (not stdlib zlib) for Phase 1
   - Output: `src/png/encoder.go`
 
-- **[Task 1.10.2]** Add error handling to Encoder
+- **[Task 1.10.2]** ✅ Add error handling to Encoder
   - Validate input pixel count matches width × height × bytesPerPixel
+  - Validate dimensions are positive
   - Handle write errors at each step
+  - Return descriptive errors for validation failures
   - Output: `src/png/encoder.go` (updated)
+  - Documentation: `docs/learning/png/encoder.md`
 
-### 1.11 Phase 1 Testing
+### 1.11 Phase 1 Testing ✅ COMPLETED
 
-- **[Task 1.11.1]** Create comprehensive PNG encoder tests
+- **[Task 1.11.1]** ✅ Create comprehensive PNG encoder tests
   - Test 1×1 RGB image
   - Test 1×1 RGBA image
   - Test 2×2 RGB image
   - Test 2×2 RGBA image
   - Verify output opens in image viewers
   - Cross-check with Go's `image/png` decoder
-  - Output: `src/png/encode_test.go`
+  - Validate chunk structure (IHDR, IDAT, IEND order)
+  - Validate zlib header/footer format
+  - Output: `src/png/encode_test.go`, `src/png/idat_writer_test.go`
 
 ---
 
@@ -172,52 +201,66 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 
 Goal: Reduce output size without changing PNG semantics.
 
-### 2.1 LZ77 Core
+### Phase 2 Progress: ✅ 2 of 8 Tasks Complete
 
-- **[Task 2.1.1]** Create `src/compress/lz77_types.go`
+### 2.1 LZ77 Core ✅ COMPLETED
+
+- **[Task 2.1.1]** ✅ Create `src/compress/lz77_types.go`
+
   - Define `Match` struct (Distance uint16, Length uint16)
-  - Define `Token` type (literal or match)
+  - Define `Token` type (literal or match) with helper constructors
   - Output: `src/compress/lz77_types.go`
 
-- **[Task 2.1.2]** Create `src/compress/lz77_sliding_window.go`
-  - Define `SlidingWindow` struct (buffer []byte, size int)
-  - Add `Write(b byte)` method
-  - Add `Read(pos int) byte` method
+- **[Task 2.1.2]** ✅ Create `src/compress/lz77_sliding_window.go`
+
+  - Define `SlidingWindow` struct with 32KB circular buffer
+  - Add `Write(b byte)` method to advance window
+  - Add `Bytes() []byte` method to get chronological view
+  - Add `Len() int` method
   - Output: `src/compress/lz77_sliding_window.go`
 
-- **[Task 2.1.3]** Create `src/compress/lz77_matcher.go`
-  - Add `FindMatch(window SlidingWindow, pos int) (Match, bool)` method
-  - Simple greedy search for longest match
+- **[Task 2.1.3]** ✅ Create `src/compress/lz77_matcher.go`
+
+  - Add `FindMatch(window *SlidingWindow, lookahead []byte, lookaheadPos int) (Match, bool)` function
+  - Greedy search for longest match with DEFLATE constraints (min 3, max 258, max distance 32K)
   - Output: `src/compress/lz77_matcher.go`, `src/compress/lz77_matcher_test.go`
 
-- **[Task 2.1.4]** Create `src/compress/lz77_encoder.go`
-  - Add `Encode(data []byte) []Token` method
-  - Scan through data, emit literals or matches
-  - Test: encode known data, verify output
+- **[Task 2.1.4]** ✅ Create `src/compress/lz77_encoder.go`
+  - Add `LZ77Encoder` struct with `Encode(data []byte) []Token` method
+  - Sequential scan through data, emits literals or matches
+  - Updates sliding window as it processes
+  - Test: encode known data, verify output, boundary conditions
   - Output: `src/compress/lz77_encoder.go`, `src/compress/lz77_encoder_test.go`
 
-### 2.2 Huffman Basics
+### 2.2 Huffman Basics ✅ COMPLETED
 
-- **[Task 2.2.1]** Create `src/compress/huffman_types.go`
-  - Define `Code` struct (Bits uint16, Length int)
+- **[Task 2.2.1]** ✅ Create `src/compress/huffman_types.go`
+
+  - Define `Code` struct (Bits uint16, Length int) - Bits stored LSB-first for DEFLATE
   - Define `Table` struct (Codes []Code, MaxLength int)
   - Output: `src/compress/huffman_types.go`
 
-- **[Task 2.2.2]** Create `src/compress/frequency.go`
-  - Add `CountFrequencies(data []byte) []int` - count literal/length frequencies
-  - Add `CountDistanceFrequencies(matches []Match) []int` - count distance frequencies
+- **[Task 2.2.2]** ✅ Create `src/compress/frequency.go`
+
+  - Add `CountFrequencies(data []byte) []int` - count literal/length frequencies (0-255 + end-of-block 256)
+  - Add `CountDistanceFrequencies(matches []Match) []int` - count distance frequencies (0-29)
   - Output: `src/compress/frequency.go`
 
-- **[Task 2.2.3]** Create `src/compress/huffman_tree.go`
-  - Add `BuildTree(frequencies []int) *Node` - Huffman tree from frequencies
-  - Define `Node` struct (Left, Right *Node, Symbol int, Weight int)
+- **[Task 2.2.3]** ✅ Create `src/compress/huffman_tree.go`
+
+  - Add `BuildTree(frequencies []int) *Node` - Huffman tree from frequencies using priority queue
+  - Define `Node` struct (Left, Right \*Node, Symbol int, Weight int)
   - Output: `src/compress/huffman_tree.go`
 
-- **[Task 2.2.4]** Create `src/compress/huffman_codes.go`
-  - Add `GenerateCodes(node *Node) map[int]Code` - canonical codes
-  - Add `Canonicalize(codes map[int]Code) ([]Code, []int)` - canonical form
-  - Test: generate codes, verify prefix-free
+- **[Task 2.2.4]** ✅ Create `src/compress/huffman_codes.go`
+  - Add `GenerateCodes(node *Node) map[int]Code` - extract code lengths from tree
+  - Add `Canonicalize(codes map[int]Code) ([]Code, []int)` - canonical form per RFC 1951
+  - Add `ReverseBits(value uint16, n int) uint16` - convert MSB-first to LSB-first for DEFLATE
+  - Codes stored LSB-first (bit-reversed) for DEFLATE compatibility
+  - Test: generate codes, verify prefix-free, canonical assignment determinism
   - Output: `src/compress/huffman_codes.go`, `src/compress/huffman_codes_test.go`
+  - Documentation: Updated `docs/learning/png/zlib.md` with LZ77 and Huffman explanations
+  - Documentation: Updated `docs/learning/png/png.md` with IDAT compression pipeline section
 
 ### 2.3 Fixed Huffman Tables
 
@@ -240,6 +283,7 @@ Goal: Reduce output size without changing PNG semantics.
 ### 2.5 Dynamic Huffman Tables
 
 - **[Task 2.5.1]** Create `src/compress/huffman_header.go`
+
   - Add `WriteHLIT(w io.Writer, n int) error` - number of literal codes
   - Add `WriteHDIST(w io.Writer, n int) error` - number of distance codes
   - Add `WriteHCLEN(w io.Writer, lengths []int) error` - code length order
@@ -253,11 +297,13 @@ Goal: Reduce output size without changing PNG semantics.
 ### 2.6 DEFLATE Block Writer
 
 - **[Task 2.6.1]** Create `src/compress/deflate_constants.go`
+
   - Define block type constants (00=stored, 01=fixed, 10=dynamic, 11=invalid)
   - Define length/distance extra bit counts (RFC 1951 Table 1, 2)
   - Output: `src/compress/deflate_constants.go`
 
 - **[Task 2.6.2]** Create `src/compress/deflate_literal_encoder.go`
+
   - Add `EncodeLiteral(w *BitWriter, symbol int, table Table) error`
   - Add `EncodeLength(w *BitWriter, length int, table Table) error`
   - Add `EncodeDistance(w *BitWriter, distance int, table Table) error`
@@ -296,19 +342,23 @@ Goal: Improve size with filter byte per row optimization.
 ### 3.1 Filter Implementations
 
 - **[Task 3.1.1]** Create `src/png/filter_types.go`
+
   - Define filter type constants
   - Add documentation for each filter type
   - Output: `src/png/filter_types.go`
 
 - **[Task 3.1.2]** Create `src/png/filter_none.go`
+
   - Add `FilterNone(b []byte, prev []byte) []byte` - identity
   - Output: `src/png/filter_none.go`
 
 - **[Task 3.1.3]** Create `src/png/filter_sub.go`
+
   - Add `FilterSub(b []byte) []byte` - b[x] - b[x-bpp]
   - Output: `src/png/filter_sub.go`
 
 - **[Task 3.1.4]** Create `src/png/filter_up.go`
+
   - Add `FilterUp(b []byte, prev []byte) []byte` - b[x] - prev[x]
   - Output: `src/png/filter_up.go`
 
@@ -319,6 +369,7 @@ Goal: Improve size with filter byte per row optimization.
 ### 3.2 Paeth Predictor
 
 - **[Task 3.2.1]** Create `src/png/paeth.go`
+
   - Add `PaethPredictor(a, b, c int) int` function
   - Implement algorithm per PNG spec
   - Test: verify against PNG spec examples
@@ -343,11 +394,13 @@ Goal: Improve size with filter byte per row optimization.
 ### 3.4 Filter Selection
 
 - **[Task 3.4.1]** Create `src/png/filter_score.go`
+
   - Add `SumAbsoluteValues(b []byte) int` function
   - Test: verify sum calculation
   - Output: `src/png/filter_score.go`
 
 - **[Task 3.4.2]** Create `src/png/filter_selector.go`
+
   - Add `SelectFilter(row []byte, prevRow []byte, bpp int) FilterType`
   - Try all 5 filters, pick one with minimum sum
   - Add `SelectAll(pixels []byte, width, height, bpp int) []FilterType`
@@ -374,6 +427,7 @@ Goal: Add preset system with configurable optimization options.
 ### 4.1 Options Structure
 
 - **[Task 4.1.1]** Create `src/png/options.go`
+
   - Define `Options` struct with optimization flags
   - Define `Preset` type (Fast, Balanced, Max)
   - Add `DefaultOptions() Options` function
@@ -396,6 +450,7 @@ Goal: Add preset system with configurable optimization options.
 ### 4.3 Color Type Analysis
 
 - **[Task 4.3.1]** Create `src/png/color_analysis.go`
+
   - Add `IsGrayscale(pixels []byte, colorType int) bool` function
   - Add `CanReduceToGrayscale(pixels []byte) bool` function
   - Add `CanReduceToRGB(pixels []byte) bool` function
@@ -438,17 +493,20 @@ Goal: Optional lossy PNG with palette quantization.
 ### 5.1 Palette Quantization Core
 
 - **[Task 5.1.1]** Create `src/png/palette.go`
+
   - Define `Palette` struct (Colors []Color, NumColors int)
   - Define `Color` struct (R, G, B uint8)
   - Add `NewPalette(maxColors int) *Palette` function
   - Output: `src/png/palette.go`
 
 - **[Task 5.1.2]** Create `src/png/color_count.go`
+
   - Add `CountColors(pixels []byte, colorType int) map[Color]int` function
   - Count frequency of each unique color
   - Output: `src/png/color_count.go`
 
 - **[Task 5.1.3]** Create `src/png/median_cut.go`
+
   - Add `MedianCut(colors []ColorWithCount, maxColors int) []Color` function
   - Recursively split color space
   - Output: `src/png/median_cut.go`, `src/png/median_cut_test.go`
@@ -506,6 +564,7 @@ Goal: Implement JPEG encoding for photos.
 ### 6.1 Color Conversion
 
 - **[Task 6.1.1]** Create `src/jpeg/constants.go`
+
   - Define JPEG marker constants (SOI, EOI, APP0, DQT, SOF0, DHT, SOS)
   - Define `Component` struct (ID, H, V, QuantTable, DCTable, ACTable)
   - Output: `src/jpeg/constants.go`
@@ -536,6 +595,7 @@ Goal: Implement JPEG encoding for photos.
 ### 6.4 Quantization
 
 - **[Task 6.4.1]** Create `src/jpeg/quantization_tables.go`
+
   - Define standard luminance table (quality 50)
   - Define standard chrominance table (quality 50)
   - Add `ScaleTable(table []int, quality int) []int` function
@@ -575,6 +635,7 @@ Goal: Implement JPEG encoding for photos.
 ### 6.8 Huffman Tables
 
 - **[Task 6.8.1]** Create `src/jpeg/huffman_tables.go`
+
   - Define standard DC luminance table
   - Define standard DC chrominance table
   - Define standard AC luminance table
@@ -610,6 +671,7 @@ Goal: Implement JPEG encoding for photos.
 ### 6.11 JPEG Encoder Entry Point
 
 - **[Task 6.11.1]** Create `src/jpeg/encoder.go`
+
   - Define `Encoder` struct (width, height, quality int)
   - Add `Encode(pixels []byte) ([]byte, error)` method
   - Sequence: RGB→YCbCr → blocks → DCT → quantize → zigzag → Huffman → markers
@@ -669,6 +731,7 @@ Goal: Make the product easy to use.
 ### 8.1 Drag and Drop
 
 - **[Task 8.1.1]** Update `web/src/main.ts` with visual drag feedback
+
   - Add dragenter/dragleave event handlers
   - Show visual indicator when file is over drop zone
   - Output: `web/src/main.ts`
@@ -721,6 +784,7 @@ Goal: Make the product easy to use.
 ### 8.7 Web Worker
 
 - **[Task 8.7.1]** Create `web/src/worker.ts`
+
   - Move WASM calls to Web Worker
   - Post messages for progress
   - Update main thread UI
@@ -745,6 +809,7 @@ Goal: Make the product easy to use.
 ### Build and Testing
 
 - **[Infra 1]** Update `AGENTS.md` with test commands
+
   - Add `go test ./...` command
   - Add `go fmt ./...` command
   - Add `go vet ./...` command
@@ -760,6 +825,7 @@ Goal: Make the product easy to use.
 ### Documentation
 
 - **[Doc 1]** Add Go doc comments to all exported functions
+
   - `src/png/*.go` (each file)
   - `src/compress/*.go` (each file)
   - `src/jpeg/*.go` (each file)
@@ -775,14 +841,14 @@ Goal: Make the product easy to use.
 ## Task Dependencies
 
 ```
-Phase 1 (PNG Encoder)
-  ├─ 1.1 PNG Infrastructure
-  ├─ 1.2 CRC32
-  ├─ 1.3-1.5 Chunks (IHDR, IEND)
-  ├─ 1.6-1.7 Zlib (Adler32, Header/Footer)
-  ├─ 1.8 Stored Blocks
-  ├─ 1.9 Scanlines + IDAT
-  └─ 1.10-1.11 Encoder + Tests
+Phase 1 (PNG Encoder) ✅ COMPLETED
+  ├─ 1.1 PNG Infrastructure ✅
+  ├─ 1.2 CRC32 ✅
+  ├─ 1.3-1.5 Chunks (IHDR, IEND) ✅
+  ├─ 1.6-1.7 Zlib (Adler32, Header/Footer) ✅
+  ├─ 1.8 Stored Blocks ✅
+  ├─ 1.9 Scanlines + IDAT ✅
+  └─ 1.10-1.11 Encoder + Tests ✅
 
 Phase 2 (DEFLATE) → depends on Phase 1
   ├─ 2.1 LZ77
@@ -825,17 +891,17 @@ Phase 8 (Web Polish) → depends on Phase 1+
 
 ## Quick Reference
 
-| Phase | Tasks | Primary Output |
-|-------|-------|----------------|
-| 1 | 11 | Valid PNG encoder |
-| 2 | 8 | DEFLATE compression |
-| 3 | 5 | Filter selection |
-| 4 | 6 | Preset system |
-| 5 | 6 | Lossy PNG |
-| 6 | 11 | JPEG encoder |
-| 7 | 4 | JPEG features |
-| 8 | 8 | Web UI polish |
-| Infra | 4 | Build/test/docs |
+| Phase | Tasks | Status      | Primary Output      |
+| ----- | ----- | ----------- | ------------------- |
+| 1     | 11    | ✅ Complete | Valid PNG encoder   |
+| 2     | 8     | Pending     | DEFLATE compression |
+| 3     | 5     | Pending     | Filter selection    |
+| 4     | 6     | Pending     | Preset system       |
+| 5     | 6     | Pending     | Lossy PNG           |
+| 6     | 11    | Pending     | JPEG encoder        |
+| 7     | 4     | Pending     | JPEG features       |
+| 8     | 8     | Pending     | Web UI polish       |
+| Infra | 4     | Partial     | Build/test/docs     |
 
 ---
 
@@ -843,8 +909,8 @@ Phase 8 (Web Polish) → depends on Phase 1+
 
 For fastest path to working product:
 
-1. **Phase 1** (all 11 tasks) - Complete PNG encoder
-2. **Phase 3** (all 5 tasks) - Add filters for compression
+1. **Phase 1** (all 11 tasks) ✅ Complete - Valid PNG encoder working
+2. **Phase 3** (all 5 tasks) - Add filters for compression (next)
 3. **Phase 2** (all 8 tasks) - Add DEFLATE (can do after filters)
 4. **Phase 4** (all 6 tasks) - Add presets (optional)
 5. **Phase 6-7** (JPEG) - Later phase
