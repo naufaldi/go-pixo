@@ -61,10 +61,10 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType) ([]byt
 		return nil, err
 	}
 
-	// Compress scanline data using DEFLATE with fixed Huffman tables
-	// TODO: Fix dynamic Huffman table building and switch to EncodeAuto
+	// Compress scanline data using DEFLATE with auto table selection
+	// EncodeAuto tries both fixed and dynamic tables and picks the smaller
 	encoder := compress.NewDeflateEncoder()
-	deflateData, err := encoder.Encode(pixels, false)
+	deflateData, err := encoder.EncodeAuto(pixels)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
 	}
