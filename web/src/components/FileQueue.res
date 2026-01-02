@@ -102,13 +102,13 @@ let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
                    | Some(bytes) =>
                      let originalSize = item.originalBytes
                      let saved = originalSize - bytes
-                    let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
-                    <span className={"text-xs font-medium " ++ savingsColor(percent)}>
-                      {React.string(
-                        formatSize(bytes) ++ " (" ++ savingsColor(percent) ++ " -" ++
-                        Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
-                      )}
-                    </span>
+                     let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
+                     <span className={"text-xs font-medium " ++ savingsColor(percent)}>
+                       {React.string(
+                         formatSize(bytes) ++ " (-" ++
+                         Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
+                       )}
+                     </span>
                    | None => React.null
                    }
                  | Types.Error(msg) =>

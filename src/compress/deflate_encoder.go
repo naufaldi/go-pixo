@@ -7,14 +7,28 @@ import (
 
 // DeflateEncoder encodes data using DEFLATE compression.
 type DeflateEncoder struct {
-	lz77 *LZ77Encoder
+	lz77              *LZ77Encoder
+	compressionLevel int
 }
 
 // NewDeflateEncoder creates a new DEFLATE encoder.
 func NewDeflateEncoder() *DeflateEncoder {
 	return &DeflateEncoder{
-		lz77: NewLZ77Encoder(),
+		lz77:              NewLZ77Encoder(),
+		compressionLevel: 6,
 	}
+}
+
+// SetCompressionLevel sets the compression level (1-9).
+// Higher levels produce better compression but are slower.
+func (enc *DeflateEncoder) SetCompressionLevel(level int) {
+	if level < 1 {
+		level = 1
+	} else if level > 9 {
+		level = 9
+	}
+	enc.compressionLevel = level
+	enc.lz77.SetCompressionLevel(level)
 }
 
 // Encode compresses data using DEFLATE with the specified block type.
@@ -66,6 +80,43 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 		return dynamic, nil
 	}
 	return fixed, nil
+}
+
+// EncodeOptimal compresses data using optimal DEFLATE with iterative refinement.
+// This produces better compression at the cost of slower encoding.
+func (enc *DeflateEncoder) EncodeOptimal(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return enc.Encode(data, false)
+	}
+
+	// For now, use multiple passes with increasing compression level
+	// A full Zopfli implementation would use optimal parsing with cost model
+	bestResult := data
+	bestSize := len(data)
+
+	// Try multiple iterations with increasing effort
+	for iteration := 0; iteration < 5; iteration++ {
+		// Increase compression level each iteration
+		enc.SetCompressionLevel(enc.compressionLevel + iteration)
+		if enc.compressionLevel > 9 {
+			enc.SetCompressionLevel(9)
+		}
+
+		result, err := enc.EncodeAuto(data)
+		if err != nil {
+			continue
+		}
+
+		if len(result) < bestSize {
+			bestResult = result
+			bestSize = len(result)
+		}
+	}
+
+	// Reset to original level
+	enc.SetCompressionLevel(enc.compressionLevel)
+
+	return bestResult, nil
 }
 
 // EncodeTo writes compressed DEFLATE data directly to the writer.

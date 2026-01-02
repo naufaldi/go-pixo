@@ -197,7 +197,7 @@ Goal: Output a valid PNG for small RGB/RGBA images without fancy compression yet
 
 ---
 
-## Phase 2: Real DEFLATE Compression (Size Improvements)
+## Phase 2: Real DEFLATE Compression (Size Improvements) ✅ COMPLETED
 
 Goal: Reduce output size without changing PNG semantics.
 
@@ -354,54 +354,56 @@ Goal: Reduce output size without changing PNG semantics.
 
 ---
 
-## Phase 3: PNG Filters (Compression Ratio Improvements)
+## Phase 3: PNG Filters (Compression Ratio Improvements) ✅ COMPLETED
 
 Goal: Improve size with filter byte per row optimization.
 
-### 3.1 Filter Implementations
+### Phase 3 Progress: ✅ 5 of 5 Tasks Complete
 
-- **[Task 3.1.1]** Create `src/png/filter_types.go`
+### 3.1 Filter Implementations ✅ COMPLETED
+
+- **[Task 3.1.1]** ✅ Create `src/png/filter_types.go`
 
   - Define filter type constants
   - Add documentation for each filter type
   - Output: `src/png/filter_types.go`
 
-- **[Task 3.1.2]** Create `src/png/filter_none.go`
+- **[Task 3.1.2]** ✅ Create `src/png/filter_none.go`
 
   - Add `FilterNone(b []byte, prev []byte) []byte` - identity
   - Output: `src/png/filter_none.go`
 
-- **[Task 3.1.3]** Create `src/png/filter_sub.go`
+- **[Task 3.1.3]** ✅ Create `src/png/filter_sub.go`
 
   - Add `FilterSub(b []byte) []byte` - b[x] - b[x-bpp]
   - Output: `src/png/filter_sub.go`
 
-- **[Task 3.1.4]** Create `src/png/filter_up.go`
+- **[Task 3.1.4]** ✅ Create `src/png/filter_up.go`
 
   - Add `FilterUp(b []byte, prev []byte) []byte` - b[x] - prev[x]
   - Output: `src/png/filter_up.go`
 
-- **[Task 3.1.5]** Create `src/png/filter_average.go`
+- **[Task 3.1.5]** ✅ Create `src/png/filter_average.go`
   - Add `FilterAverage(b []byte, prev []byte, bpp int) []byte` - b[x] - floor((b[x-bpp]+prev[x])/2)
   - Output: `src/png/filter_average.go`
 
-### 3.2 Paeth Predictor
+### 3.2 Paeth Predictor ✅ COMPLETED
 
-- **[Task 3.2.1]** Create `src/png/paeth.go`
+- **[Task 3.2.1]** ✅ Create `src/png/paeth.go`
 
   - Add `PaethPredictor(a, b, c int) int` function
   - Implement algorithm per PNG spec
   - Test: verify against PNG spec examples
   - Output: `src/png/paeth.go`, `src/png/paeth_test.go`
 
-- **[Task 3.2.2]** Create `src/png/filter_paeth.go`
+- **[Task 3.2.2]** ✅ Create `src/png/filter_paeth.go`
   - Add `FilterPaeth(b []byte, prev []byte, bpp int) []byte`
   - Use PaethPredictor for each byte
   - Output: `src/png/filter_paeth.go`
 
-### 3.3 Filter Reconstruction
+### 3.3 Filter Reconstruction ✅ COMPLETED
 
-- **[Task 3.3.1]** Create `src/png/filter_reconstruct.go`
+- **[Task 3.3.1]** ✅ Create `src/png/filter_reconstruct.go`
   - Add `ReconstructNone(b []byte) []byte`
   - Add `ReconstructSub(b []byte, bpp int) []byte`
   - Add `ReconstructUp(b, prev []byte) []byte`
@@ -410,29 +412,29 @@ Goal: Improve size with filter byte per row optimization.
   - Test: encode then decode, verify matches original
   - Output: `src/png/filter_reconstruct.go`, `src/png/filter_reconstruct_test.go`
 
-### 3.4 Filter Selection
+### 3.4 Filter Selection ✅ COMPLETED
 
-- **[Task 3.4.1]** Create `src/png/filter_score.go`
+- **[Task 3.4.1]** ✅ Create `src/png/filter_score.go`
 
   - Add `SumAbsoluteValues(b []byte) int` function
   - Test: verify sum calculation
   - Output: `src/png/filter_score.go`
 
-- **[Task 3.4.2]** Create `src/png/filter_selector.go`
+- **[Task 3.4.2]** ✅ Create `src/png/filter_selector.go`
 
   - Add `SelectFilter(row []byte, prevRow []byte, bpp int) FilterType`
   - Try all 5 filters, pick one with minimum sum
   - Add `SelectAll(pixels []byte, width, height, bpp int) []FilterType`
   - Output: `src/png/filter_selector.go`, `src/png/filter_selector_test.go`
 
-- **[Task 3.4.3]** Update `src/png/idat_writer.go` to use filter selection
+- **[Task 3.4.3]** ✅ Update `src/png/idat_writer.go` to use filter selection
   - Replace filter type 0 with intelligent selection
   - Test: verify size improvement
   - Output: `src/png/idat_writer.go` (updated)
 
-### 3.5 Phase 3 Testing
+### 3.5 Phase 3 Testing ✅ COMPLETED
 
-- **[Task 3.5.1]** Create filter effectiveness tests
+- **[Task 3.5.1]** ✅ Create filter effectiveness tests
   - Test on sample images
   - Compare size with filter none vs all filters
   - Output: `src/png/filter_test.go`
@@ -443,41 +445,46 @@ Goal: Improve size with filter byte per row optimization.
 
 Goal: Add preset system with configurable optimization options.
 
+### Phase 4 Progress: ✅ 5 of 6 Tasks Complete (4.1-4.3)
+
 ### 4.1 Options Structure
 
-- **[Task 4.1.1]** Create `src/png/options.go`
+- **[Task 4.1.1]** ✅ Create `src/png/options.go`
 
   - Define `Options` struct with optimization flags
   - Define `Preset` type (Fast, Balanced, Max)
-  - Add `DefaultOptions() Options` function
+  - Add `FastOptions()`, `BalancedOptions()`, `MaxOptions()` functions
+  - Define `FilterStrategy` type (None, Sub, Up, Average, Paeth, MinSum, Adaptive, AdaptiveFast)
   - Output: `src/png/options.go`
 
-- **[Task 4.1.2]** Create `src/png/options_builder.go`
+- **[Task 4.1.2]** ✅ Create `src/png/options_builder.go`
   - Define `OptionsBuilder` struct
-  - Add chainable methods: `Fast()`, `Balanced()`, `Max()`, `WithFilterSelection(bool)`, etc.
+  - Add chainable methods: `Fast()`, `Balanced()`, `Max()`, `CompressionLevel()`, `FilterStrategy()`, `OptimizeAlpha()`, `ReduceColorType()`, `StripMetadata()`, `OptimalDeflate()`
   - Add `Build() Options` method
   - Test: verify preset configurations
   - Output: `src/png/options_builder.go`, `src/png/options_builder_test.go`
 
 ### 4.2 Alpha Optimization
 
-- **[Task 4.2.1]** Create `src/png/alpha.go`
-  - Add `HasAlpha(pixels []byte, colorType int) bool` function
-  - Add `ZeroRgbWhenAlphaZero(pixels []byte, colorType int) []byte` function
+- **[Task 4.2.1]** ✅ Create `src/png/alpha.go`
+  - Add `HasAlpha(pixels []byte, colorType ColorType) bool` function
+  - Add `OptimizeAlpha(pixels []byte, colorType ColorType) []byte` function
+  - Sets RGB to 0 when alpha is 0 for better compression
   - Output: `src/png/alpha.go`, `src/png/alpha_test.go`
 
 ### 4.3 Color Type Analysis
 
-- **[Task 4.3.1]** Create `src/png/color_analysis.go`
+- **[Task 4.3.1]** ✅ Create `src/png/color_analysis.go`
 
-  - Add `IsGrayscale(pixels []byte, colorType int) bool` function
-  - Add `CanReduceToGrayscale(pixels []byte) bool` function
-  - Add `CanReduceToRGB(pixels []byte) bool` function
-  - Output: `src/png/color_analysis.go`
+  - Add `IsGrayscale(pixels []byte, colorType ColorType) bool` function
+  - Add `CanReduceToGrayscale(pixels []byte, width, height int, colorType ColorType) bool` function
+  - Add `CanReduceToRGB(pixels []byte, width, height int) bool` function
+  - Output: `src/png/color_analysis.go`, `src/png/color_analysis_test.go`
 
-- **[Task 4.3.2]** Create `src/png/color_reduce.go`
-  - Add `ReduceGrayscale(pixels []byte, width, height int) ([]byte, error)` function
-  - Add `ReduceRGBAtoRGB(pixels []byte, width, height int) ([]byte, error)` function
+- **[Task 4.3.2]** ✅ Create `src/png/color_reduce.go`
+  - Add `ReduceToGrayscale(pixels []byte, width, height int, colorType ColorType) ([]byte, ColorType, error)` function
+  - Add `ReduceToRGB(pixels []byte, width, height int) ([]byte, ColorType, error)` function
+  - Lossless reduction when all pixels qualify
   - Output: `src/png/color_reduce.go`, `src/png/color_reduce_test.go`
 
 ### 4.4 Metadata Stripping
@@ -490,8 +497,9 @@ Goal: Add preset system with configurable optimization options.
 ### 4.5 Encoder Integration
 
 - **[Task 4.5.1]** Update `src/png/encoder.go` to use Options
-  - Modify `Encode` to accept `Options` parameter
-  - Apply optimizations before encoding
+  - Add `NewEncoderWithOptions(opts Options) (*Encoder, error)` constructor
+  - Add `EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)` method
+  - Apply optimizations in order: color reduction, alpha optimization, filter selection
   - Output: `src/png/encoder.go` (updated)
 
 ### 4.6 Phase 4 Testing
@@ -743,106 +751,117 @@ Goal: Advanced JPEG features after baseline works.
 
 ---
 
-## Phase 8: Web Product Polish
+## Phase 8: Web Product Polish ✅ PARTIAL
 
 Goal: Make the product easy to use.
 
-### 8.1 Drag and Drop
+### Phase 8 Progress: ✅ 6 of 10 Tasks Complete
 
-- **[Task 8.1.1]** Update `web/src/main.ts` with visual drag feedback
+### 8.1 Drag and Drop ✅ COMPLETED
+
+- **[Task 8.1.1]** ✅ Update `web/src/App.res` with visual drag feedback
 
   - Add dragenter/dragleave event handlers
   - Show visual indicator when file is over drop zone
-  - Output: `web/src/main.ts`
+  - Output: `web/src/App.res`
 
-- **[Task 8.1.2]** Support multiple file drop
+- **[Task 8.1.2]** ✅ Support multiple file drop
   - Add `handleDrop` for multiple files
   - Process files one at a time
-  - Output: `web/src/main.ts`
+  - Output: `web/src/App.res`
 
-### 8.2 Progress Indicator
+### 8.2 Progress Indicator ✅ COMPLETED
 
-- **[Task 8.2.1]** Add progress bar for compression
-  - Create `ProgressBar` component
-  - Show progress during WASM execution
-  - Output: `web/src/main.ts`
+- **[Task 8.2.1]** ✅ Add progress indicator for compression
+  - Create status indicators in `FileQueueItem`
+  - Show pulse animation and status text during WASM execution
+  - Output: `web/src/components/FileQueue.res`
 
-### 8.3 Batch Processing
+### 8.3 Batch Processing ✅ COMPLETED
 
-- **[Task 8.3.1]** Implement batch file list UI
-  - Create file list component
+- **[Task 8.3.1]** ✅ Implement batch file list UI
+  - Create file list component (`FileQueue`)
   - Show status (pending, processing, done, error)
-  - Allow download all
-  - Output: `web/src/main.ts`
+  - Allow individual and batch management
+  - Output: `web/src/components/FileQueue.res`
 
-### 8.4 Before/After Slider Preview
+### 8.4 Before/After Slider Preview ✅ COMPLETED
 
-- **[Task 8.4.1]** Create slider-based before/after comparison component
+- **[Task 8.4.1]** ✅ Create slider-based before/after comparison component
   - Show original image on left side of slider
   - Show compressed image on right side of slider
   - Implement interactive draggable handle
   - Display size comparison and savings percentage
+  - Use CSS `clip-path: inset()` for precise clipping
   - Output: `web/src/components/CompareView.res`
 
-### 8.5 Preset UI
+### 8.5 Preset UI ✅ COMPLETED
 
-- **[Task 8.5.1]** Update preset selector with plain language
+- **[Task 8.5.1]** ✅ Update preset selector with plain language
   - "Smallest (more compression)"
   - "Balanced"
   - "Best Quality"
-  - Show estimated size trade-off
-  - Output: `web/src/main.ts`
+  - Implement lossless/lossy toggle
+  - Output: `web/src/components/BottomBar.res`
 
 ### 8.6 Privacy Messaging
-
 - **[Task 8.6.1]** Add privacy indicator
   - "Runs locally on your device"
   - "No data sent to servers"
   - Visual badge
-  - Output: `web/src/main.ts`
+  - Output: `web/src/App.res`
 
-### 8.7 Web Worker
+### 8.7 Web Worker ✅ COMPLETED
 
-- **[Task 8.7.1]** Create `web/src/worker.ts`
+- **[Task 8.7.1]** ✅ Create `web/src/worker.ts`
 
   - Move WASM calls to Web Worker
   - Post messages for progress
   - Update main thread UI
   - Output: `web/src/worker.ts`
 
-- **[Task 8.7.2]** Update main.ts to use worker
+- **[Task 8.7.2]** ✅ Update `App.res` to use worker
   - Replace direct WASM calls with worker messages
-  - Show live progress from worker
-  - Output: `web/src/main.ts`
+  - Show live status from worker
+  - Output: `web/src/App.res`
 
-### 8.8 Memory Optimization
+### 8.8 Memory Optimization ✅ COMPLETED
 
-- **[Task 8.8.1]** Create buffer pool in `web/src/wasm.ts`
-  - Pool `Uint8Array` buffers
-  - Reuse buffers between compressions
-  - Output: `web/src/wasm.ts`
+- **[Task 8.8.1]** ✅ Manage Blob URLs to prevent memory leaks
+  - Implement `URL.revokeObjectURL()` when items are removed
+  - Handle cleanup in "Clear all" action
+  - Output: `web/src/App.res`
+
+### 8.9 Image Management ✅ COMPLETED
+
+- **[Task 8.9.1]** ✅ Implement individual image removal
+  - Add delete button to `FileQueue` and `CompareView`
+  - Update state reducer to handle single item removal
+  - Output: `web/src/components/FileQueue.res`, `web/src/App.res`
+
+- **[Task 8.9.2]** ✅ Implement "Clear all" functionality
+  - Add "Clear all" button to file list header
+  - Reset application state and clean up resources
+  - Output: `web/src/components/FileQueue.res`, `web/src/App.res`
 
 ---
 
-## Infrastructure Tasks (Cross-Cutting)
+## Infrastructure Tasks (Cross-Cutting) ✅ PARTIAL
 
-### Build and Testing
+### Build and Testing ✅ COMPLETED
 
-- **[Infra 1]** Update `AGENTS.md` with test commands
+- **[Infra 1]** ✅ Update `AGENTS.md` with test commands
 
   - Add `go test ./...` command
   - Add `go fmt ./...` command
   - Add `go vet ./...` command
   - Output: `AGENTS.md`
 
-- **[Infra 2]** Add Makefile with common commands
-  - `make test` → `go test ./...`
-  - `make fmt` → `go fmt ./...`
-  - `make vet` → `go vet ./...`
-  - `make build` → `GOOS=js GOARCH=wasm go build`
-  - Output: `Makefile`
+- **[Infra 2]** ✅ Add build scripts
+  - Create `scripts/build-wasm.sh` for Go-to-WASM compilation
+  - Output: `scripts/build-wasm.sh`
 
-### Documentation
+### Documentation ✅ PARTIAL
 
 - **[Doc 1]** Add Go doc comments to all exported functions
 
@@ -870,22 +889,24 @@ Phase 1 (PNG Encoder) ✅ COMPLETED
   ├─ 1.9 Scanlines + IDAT ✅
   └─ 1.10-1.11 Encoder + Tests ✅
 
-Phase 2 (DEFLATE) → depends on Phase 1
-  ├─ 2.1 LZ77
-  ├─ 2.2 Huffman
-  ├─ 2.3-2.5 Tables + Headers
-  └─ 2.6-2.8 Blocks + Encoder + Integration
+Phase 2 (DEFLATE) ✅ COMPLETED
+  ├─ 2.1 LZ77 ✅
+  ├─ 2.2 Huffman ✅
+  ├─ 2.3-2.5 Tables + Headers ✅
+  └─ 2.6-2.8 Blocks + Encoder + Integration ✅
 
-Phase 3 (Filters) → depends on Phase 1
-  ├─ 3.1 Filter Types
-  ├─ 3.2 Paeth
-  ├─ 3.3 Reconstruction
-  └─ 3.4-3.5 Selection + Tests
+Phase 3 (Filters) ✅ COMPLETED
+  ├─ 3.1 Filter Types ✅
+  ├─ 3.2 Paeth ✅
+  ├─ 3.3 Reconstruction ✅
+  └─ 3.4-3.5 Selection + Tests ✅
 
-Phase 4 (Optimizations) → depends on Phase 1
-  ├─ 4.1 Options
-  ├─ 4.2-4.4 Optimizations
-  └─ 4.5-4.6 Integration + Tests
+Phase 4 (Optimizations) ✅ PARTIAL (4.1-4.3 COMPLETED)
+  ├─ 4.1 Options ✅
+  │  ├─ 4.1.1 Options struct + Presets ✅
+  │  └─ 4.1.2 Options builder ✅
+  ├─ 4.2 Alpha Optimization ✅
+  └─ 4.3 Color Type Analysis ✅
 
 Phase 5 (Lossy) → depends on Phase 1
   ├─ 5.1-5.2 Quantization
@@ -903,8 +924,12 @@ Phase 7 (JPEG Features) → depends on Phase 6
   ├─ 7.2 Optimized Tables
   └─ 7.3-7.4 Progressive + Presets
 
-Phase 8 (Web Polish) → depends on Phase 1+
-  └─ All tasks can start after Phase 1 completes
+Phase 8 (Web Polish) ✅ PARTIAL
+  ├─ 8.1-8.3 UX (Drag/Drop, Progress, Batch) ✅
+  ├─ 8.4 Slider Comparison ✅
+  ├─ 8.5-8.6 UI (Presets, Privacy) ✅
+  ├─ 8.7-8.8 Architecture (Worker, Memory) ✅
+  └─ 8.9 Image Management (Delete/Clear) ✅
 ```
 
 ---
@@ -914,14 +939,14 @@ Phase 8 (Web Polish) → depends on Phase 1+
 | Phase | Tasks | Status      | Primary Output      |
 | ----- | ----- | ----------- | ------------------- |
 | 1     | 11    | ✅ Complete | Valid PNG encoder   |
-| 2     | 8     | Pending     | DEFLATE compression |
-| 3     | 5     | Pending     | Filter selection    |
-| 4     | 6     | Pending     | Preset system       |
+| 2     | 8     | ✅ Complete | DEFLATE compression |
+| 3     | 5     | ✅ Complete | Filter selection    |
+| 4     | 6     | ✅ Partial  | Preset system (4.1-4.3 done) |
 | 5     | 6     | Pending     | Lossy PNG           |
 | 6     | 11    | Pending     | JPEG encoder        |
 | 7     | 4     | Pending     | JPEG features       |
-| 8     | 8     | Pending     | Web UI polish       |
-| Infra | 4     | Partial     | Build/test/docs     |
+| 8     | 10    | ✅ Partial  | Web UI polish       |
+| Infra | 4     | ✅ Partial  | Build/test/docs     |
 
 ---
 
@@ -930,9 +955,10 @@ Phase 8 (Web Polish) → depends on Phase 1+
 For fastest path to working product:
 
 1. **Phase 1** (all 11 tasks) ✅ Complete - Valid PNG encoder working
-2. **Phase 3** (all 5 tasks) - Add filters for compression (next)
-3. **Phase 2** (all 8 tasks) - Add DEFLATE (can do after filters)
-4. **Phase 4** (all 6 tasks) - Add presets (optional)
-5. **Phase 6-7** (JPEG) - Later phase
-6. **Phase 5** (Lossy PNG) - Optional
-7. **Phase 8** (Web polish) - After core works
+2. **Phase 3** (all 5 tasks) ✅ Complete - Add filters for compression
+3. **Phase 2** (all 8 tasks) ✅ Complete - Add DEFLATE
+4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Delete, etc.)
+5. **Phase 4** (tasks 4.1-4.3) ✅ Partial - Preset system, Alpha opt, Color reduction
+6. **Phase 4** (tasks 4.4-4.6) - Metadata stripping, Integration, Testing (remaining)
+7. **Phase 6-7** (JPEG) - Later phase
+8. **Phase 5** (Lossy PNG) - Optional

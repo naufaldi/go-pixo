@@ -8,14 +8,61 @@ const (
 
 // LZ77Encoder encodes data using LZ77 compression with DEFLATE constraints.
 type LZ77Encoder struct {
-	head []int32
-	prev []int32
+	head              []int32
+	prev              []int32
+	compressionLevel  int
+	maxChainLen       int
+	minMatchLen       int
 }
 
 // NewLZ77Encoder creates a new LZ77 encoder.
 func NewLZ77Encoder() *LZ77Encoder {
 	return &LZ77Encoder{
-		head: make([]int32, hashSize),
+		head:              make([]int32, hashSize),
+		compressionLevel:  6,
+		maxChainLen:       128,
+		minMatchLen:       minMatchLength,
+	}
+}
+
+// SetCompressionLevel sets the compression level (1-9).
+// Higher levels produce better compression but are slower.
+func (enc *LZ77Encoder) SetCompressionLevel(level int) {
+	if level < 1 {
+		level = 1
+	} else if level > 9 {
+		level = 9
+	}
+	enc.compressionLevel = level
+
+	switch level {
+	case 1:
+		enc.maxChainLen = 4
+		enc.minMatchLen = 3
+	case 2:
+		enc.maxChainLen = 8
+		enc.minMatchLen = 3
+	case 3:
+		enc.maxChainLen = 16
+		enc.minMatchLen = 3
+	case 4:
+		enc.maxChainLen = 32
+		enc.minMatchLen = 3
+	case 5:
+		enc.maxChainLen = 64
+		enc.minMatchLen = 3
+	case 6:
+		enc.maxChainLen = 128
+		enc.minMatchLen = 3
+	case 7:
+		enc.maxChainLen = 256
+		enc.minMatchLen = 3
+	case 8:
+		enc.maxChainLen = 512
+		enc.minMatchLen = 3
+	case 9:
+		enc.maxChainLen = 1024
+		enc.minMatchLen = 3
 	}
 }
 
@@ -39,7 +86,7 @@ func (enc *LZ77Encoder) Encode(data []byte) []Token {
 
 	for pos < len(data) {
 		remaining := len(data) - pos
-		if remaining < minMatchLength {
+		if remaining < enc.minMatchLen {
 			for pos < len(data) {
 				tokens = append(tokens, TokenLiteral(data[pos]))
 				pos++
@@ -54,8 +101,8 @@ func (enc *LZ77Encoder) Encode(data []byte) []Token {
 			tokens = append(tokens, TokenMatch(match.Distance, match.Length))
 			// Update hash table for all bytes in the match
 			for i := 0; i < int(match.Length); i++ {
-				if pos+i+minMatchLength <= len(data) {
-					h := enc.getHash(data[pos+i : pos+i+minMatchLength])
+				if pos+i+enc.minMatchLen <= len(data) {
+					h := enc.getHash(data[pos+i : pos+i+enc.minMatchLen])
 					enc.prev[pos+i] = enc.head[h]
 					enc.head[h] = int32(pos + i)
 				}
@@ -63,7 +110,7 @@ func (enc *LZ77Encoder) Encode(data []byte) []Token {
 			pos += int(match.Length)
 		} else {
 			// Update hash table for the literal byte
-			h := enc.getHash(data[pos : pos+minMatchLength])
+			h := enc.getHash(data[pos : pos+enc.minMatchLen])
 			enc.prev[pos] = enc.head[h]
 			enc.head[h] = int32(pos)
 
@@ -80,7 +127,7 @@ func (enc *LZ77Encoder) getHash(b []byte) uint32 {
 }
 
 func (enc *LZ77Encoder) findMatch(data []byte, pos int) (Match, bool) {
-	h := enc.getHash(data[pos : pos+minMatchLength])
+	h := enc.getHash(data[pos : pos+enc.minMatchLen])
 	matchPos := enc.head[h]
 
 	bestLen := 0
@@ -88,9 +135,8 @@ func (enc *LZ77Encoder) findMatch(data []byte, pos int) (Match, bool) {
 
 	// Limit search depth to avoid O(N^2) in worst case
 	chainLen := 0
-	maxChainLen := 128
 
-	for matchPos != -1 && chainLen < maxChainLen {
+	for matchPos != -1 && chainLen < enc.maxChainLen {
 		dist := pos - int(matchPos)
 		if dist > maxDistance {
 			break
@@ -107,7 +153,7 @@ func (enc *LZ77Encoder) findMatch(data []byte, pos int) (Match, bool) {
 			matchLen++
 		}
 
-		if matchLen >= minMatchLength && matchLen > bestLen {
+		if matchLen >= enc.minMatchLen && matchLen > bestLen {
 			bestLen = matchLen
 			bestMatch = Match{
 				Distance: uint16(dist),
@@ -122,7 +168,7 @@ func (enc *LZ77Encoder) findMatch(data []byte, pos int) (Match, bool) {
 		chainLen++
 	}
 
-	if bestLen >= minMatchLength {
+	if bestLen >= enc.minMatchLen {
 		return bestMatch, true
 	}
 	return Match{}, false

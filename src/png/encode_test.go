@@ -449,7 +449,7 @@ func assertIDATZlibScanlines(t *testing.T, pngData []byte, width, height int, co
 		t.Fatalf("IDAT zlib decompression error = %v", err)
 	}
 
-	bpp := bytesPerPixel(colorType)
+	bpp := BytesPerPixel(colorType)
 	wantRaw := buildRawScanlines(width, height, bpp, pixels)
 
 	if !bytes.Equal(raw, wantRaw) {
@@ -470,7 +470,7 @@ func assertDecodedPixels(t *testing.T, pngData []byte, width, height int, colorT
 		t.Fatalf("decoded bounds = %dx%d, want %dx%d", bounds.Dx(), bounds.Dy(), width, height)
 	}
 
-	bpp := bytesPerPixel(colorType)
+	bpp := BytesPerPixel(colorType)
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			offset := (y*width + x) * bpp

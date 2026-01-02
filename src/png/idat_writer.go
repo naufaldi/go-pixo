@@ -13,6 +13,13 @@ import (
 //   - zlib footer (Adler32 checksum)
 //   - wrapped in an IDAT chunk (length + "IDAT" + data + CRC)
 func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, height int, colorType ColorType) error {
+	opts := BalancedOptions(width, height)
+	opts.ColorType = colorType
+	return WriteIDATWithOptions(w, pixels, width, height, colorType, opts)
+}
+
+// WriteIDATWithOptions writes IDAT chunk with configurable options.
+func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []byte, width, height int, colorType ColorType, opts Options) error {
 	if width <= 0 || height <= 0 {
 		return ErrInvalidDimensions
 	}
@@ -25,20 +32,20 @@ func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, 
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with per-row filter selection
+	// Build scanlines with filter selection based on strategy
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
 	var prevRow []byte
 	for y := 0; y < height; y++ {
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
-		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
 		scanlineData = append(scanlineData, byte(filterType))
 		scanlineData = append(scanlineData, filteredRow...)
 		prevRow = row
 	}
 
 	// Build zlib-compressed data
-	zlibData, err := buildZlibData(scanlineData, width, height, colorType)
+	zlibData, err := buildZlibData(scanlineData, width, height, colorType, opts)
 	if err != nil {
 		return fmt.Errorf("png: failed to build zlib data: %w", err)
 	}
@@ -54,18 +61,23 @@ func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, 
 
 // buildZlibData builds the zlib-wrapped DEFLATE data containing scanlines.
 // The pixels parameter contains all scanline data with filter bytes prepended.
-func buildZlibData(pixels []byte, width, height int, colorType ColorType) ([]byte, error) {
+func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
 	if err != nil {
 		return nil, err
 	}
 
-	// Compress scanline data using DEFLATE with auto table selection
-	// EncodeAuto tries both fixed and dynamic tables and picks the smaller
-	// If dynamic encoding fails, it falls back to fixed encoding
+	// Compress scanline data using DEFLATE with compression level from options
 	encoder := compress.NewDeflateEncoder()
-	deflateData, err := encoder.EncodeAuto(pixels)
+	encoder.SetCompressionLevel(opts.CompressionLevel)
+
+	var deflateData []byte
+	if opts.OptimalDeflate {
+		deflateData, err = encoder.EncodeOptimal(pixels)
+	} else {
+		deflateData, err = encoder.EncodeAuto(pixels)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
 	}
@@ -86,6 +98,13 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType) ([]byt
 // IDATDataBytes returns the raw zlib data for IDAT without the chunk wrapper.
 // This is useful for testing or when you need to write multiple IDAT chunks.
 func IDATDataBytes(pixels []byte, width, height int, colorType ColorType) ([]byte, error) {
+	opts := BalancedOptions(width, height)
+	opts.ColorType = colorType
+	return IDATDataBytesWithOptions(pixels, width, height, colorType, opts)
+}
+
+// IDATDataBytesWithOptions returns the raw zlib data with configurable options.
+func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
 	bpp := BytesPerPixel(colorType)
 	expectedRawLen := width * bpp * height
 
@@ -94,19 +113,19 @@ func IDATDataBytes(pixels []byte, width, height int, colorType ColorType) ([]byt
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with per-row filter selection
+	// Build scanlines with filter selection based on strategy
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
 	var prevRow []byte
 	for y := 0; y < height; y++ {
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
-		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
 		scanlineData = append(scanlineData, byte(filterType))
 		scanlineData = append(scanlineData, filteredRow...)
 		prevRow = row
 	}
 
-	return buildZlibData(scanlineData, width, height, colorType)
+	return buildZlibData(scanlineData, width, height, colorType, opts)
 }
 
 // ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.
