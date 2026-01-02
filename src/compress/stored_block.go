@@ -63,7 +63,7 @@ func WriteBlockFooter(w io.Writer, n uint32) error {
 }
 
 // WriteStoredBlock writes a complete stored block (header + data + footer).
-func WriteStoredBlock(w io.Writer, data []byte, final bool) error {
+func WriteStoredBlock(w io.Writer, final bool, data []byte) error {
 	if err := WriteStoredBlockHeader(w, final); err != nil {
 		return err
 	}

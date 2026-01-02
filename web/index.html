@@ -8,61 +8,7 @@
     <script src="/wasm_exec.js"></script>
   </head>
   <body class="bg-slate-50 text-slate-900 font-sans antialiased">
-    <div id="app" class="min-h-screen flex flex-col items-center justify-center p-4">
-      <div class="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8 space-y-8">
-        <header class="text-center">
-          <h1 class="text-4xl font-black tracking-tight text-slate-900 mb-2">Go-Pixo</h1>
-          <p class="text-slate-500">Fast, local, client-side PNG compression powered by Go & WASM.</p>
-        </header>
-
-        <main class="space-y-6">
-          <div id="drop-zone" class="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center hover:border-blue-400 transition-colors cursor-pointer group">
-            <input type="file" id="file-input" class="hidden" accept="image/png,image/jpeg" />
-            <div class="space-y-2">
-              <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12 text-slate-300 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <p class="text-lg font-medium text-slate-700">Click to select or drag and drop</p>
-              <p class="text-sm text-slate-400 text-slate-400">PNG or JPEG</p>
-            </div>
-          </div>
-
-          <div id="status" class="hidden bg-blue-50 text-blue-700 px-4 py-3 rounded-lg text-sm font-medium animate-pulse">
-            Processing...
-          </div>
-
-          <div id="preview-container" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="space-y-2">
-              <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Original</p>
-              <div class="aspect-square bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center border border-slate-200">
-                <img id="original-preview" class="max-w-full max-h-full object-contain" />
-              </div>
-              <p id="original-info" class="text-xs text-slate-500"></p>
-            </div>
-            <div class="space-y-2">
-              <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Compressed</p>
-              <div class="aspect-square bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center border border-slate-200">
-                <img id="compressed-preview" class="max-w-full max-h-full object-contain" />
-              </div>
-              <p id="compressed-info" class="text-xs text-slate-500"></p>
-            </div>
-          </div>
-
-          <div id="actions" class="hidden flex justify-center">
-            <button id="download-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-              Download Result
-            </button>
-          </div>
-        </main>
-
-        <footer class="pt-8 border-t border-slate-100 text-center">
-          <p class="text-xs text-slate-400">
-            Inspired by <a href="https://github.com/leerob/pixo" class="underline hover:text-slate-600">pixo</a>.
-            Built with Go, WASM, and Tailwind CSS v4.
-          </p>
-        </footer>
-      </div>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.res.js"></script>
   </body>
 </html>

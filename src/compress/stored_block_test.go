@@ -194,9 +194,9 @@ func TestWriteStoredBlock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			err := WriteStoredBlock(&buf, tt.data, tt.final)
+			err := WriteStoredBlock(&buf, tt.final, tt.data)
 			if err != nil {
-				t.Fatalf("WriteStoredBlock(%v, %v) error = %v", tt.data, tt.final, err)
+				t.Fatalf("WriteStoredBlock(final=%v, data=%v) error = %v", tt.final, tt.data, err)
 			}
 
 			if buf.Len() != tt.expectLen {

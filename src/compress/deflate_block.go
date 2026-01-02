@@ -3,9 +3,8 @@ package compress
 import "io"
 
 // WriteStoredBlockDeflate writes a stored (uncompressed) DEFLATE block.
-// This wraps the existing stored block implementation with the expected signature (final, data).
 func WriteStoredBlockDeflate(w io.Writer, final bool, data []byte) error {
-	return WriteStoredBlock(w, data, final)
+	return WriteStoredBlock(w, final, data)
 }
 
 // WriteFixedBlock writes a fixed Huffman DEFLATE block.
@@ -130,10 +129,8 @@ func countTokenFrequencies(tokens []Token) ([]int, []int) {
 // extractCodeLengths extracts code lengths from a Huffman table.
 func extractCodeLengths(table Table) []int {
 	lengths := make([]int, len(table.Codes))
-	for i, code := range table.Codes {
-		if i < len(lengths) {
-			lengths[i] = code.Length
-		}
+	for i := range table.Codes {
+		lengths[i] = table.Codes[i].Length
 	}
 	return lengths
 }

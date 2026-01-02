@@ -38,22 +38,29 @@ Each block starts with a **3-bit header**:
 - Used when data is incompressible or already compressed
 - Simple format: header + LEN/NLEN + raw bytes
 - 5-byte overhead per block (max 65535 bytes per block)
+- See [DEFLATE Block Writer](deflate-block-writer.md) for implementation details
 
 **Type 1 (Fixed Huffman)**: Predefined Huffman tables
 - Uses RFC1951 fixed code lengths (no table transmission needed)
 - Good for small data or when encoding speed matters
 - Implemented in `src/compress/fixed_huffman_tables.go`
+- See [DEFLATE Block Writer](deflate-block-writer.md) for implementation details
 
 **Type 2 (Dynamic Huffman)**: Custom Huffman tables
 - Tables are transmitted before the data (HLIT/HDIST/HCLEN + code lengths)
 - Best compression for larger blocks
 - Implemented in `src/compress/huffman_header.go` and `src/compress/dynamic_tables.go`
+- See [DEFLATE Block Writer](deflate-block-writer.md) for implementation details
 
 ---
 
 ## Bit Ordering: LSB-First
 
 DEFLATE packs bits **LSB-first** (least significant bit first) within bytes. This is different from many other formats that use MSB-first.
+
+### Visual Explanation
+
+When writing bits sequentially, the first bit goes into the rightmost position (bit 0):
 
 ```text
 Bits written: 1, 0, 1, 1, 0
@@ -70,6 +77,22 @@ Resulting byte: 0b_???01011
                       1st bit ─────┘
 ```
 
+### Bit Buffering
+
+The `BitWriter` accumulates bits in an internal buffer until a full byte (8 bits) is formed:
+
+```text
+Step 1: Write 3 bits (101)
+  Buffer: 0b_00000101 (nbits=3)
+  
+Step 2: Write 2 more bits (10)
+  Buffer: 0b_00010101 (nbits=5)
+  
+Step 3: Write 3 more bits (111)
+  Buffer: 0b_11110101 (nbits=8) → Flush to output
+  Buffer: 0b_00000000 (nbits=0)
+```
+
 Our `BitWriter` (`src/compress/bit_writer.go`) handles LSB-first writing:
 
 ```go
@@ -77,88 +100,235 @@ func (bw *BitWriter) Write(bits uint16, n int) error {
     for i := 0; i < n; i++ {
         bit := (bits >> uint(i)) & 1  // Extract LSB first
         bw.buf |= byte(bit) << uint(bw.nbits)
-        // ...
+        bw.nbits++
+        
+        if bw.nbits == 8 {
+            bw.flushByte()  // Write full byte
+        }
     }
+    return nil
+}
+
+func (bw *BitWriter) Flush() error {
+    if bw.nbits > 0 {
+        return bw.flushByte()  // Write remaining partial byte
+    }
+    return nil
 }
 ```
 
-**Why LSB-first?** Historical reasons—DEFLATE was designed for efficient bit manipulation on little-endian systems. The bit order is consistent throughout the DEFLATE format.
+**Why LSB-first?** Historical reasons—DEFLATE was designed for efficient bit manipulation on little-endian systems. The bit order is consistent throughout the DEFLATE format. When reading bits back, decoders extract bits starting from bit 0 (rightmost) and work leftward.
 
 ---
 
 ## Fixed Huffman Tables
 
-Fixed blocks use predefined code lengths from RFC1951:
+Fixed blocks use predefined code lengths from RFC1951 Table 1 and Table 2. These tables are **hardcoded** in the DEFLATE specification, so no table transmission is needed—decoders know them by heart.
 
-### Literal/Length Table (0-287 symbols)
+### RFC1951 Table 1: Literal/Length Table (0-287 symbols)
 
-| Symbol Range | Code Length |
-| ------------ | ----------- |
-| 0-143        | 8 bits      |
-| 144-255      | 9 bits      |
-| 256-279      | 7 bits      |
-| 280-287      | 8 bits      |
+The fixed literal/length table covers:
+- **Symbols 0-255**: Literal byte values
+- **Symbol 256**: End-of-block marker
+- **Symbols 257-285**: Length codes (for match lengths 3-258)
 
-**Why these lengths?** They provide reasonable compression for typical text/data without needing to transmit the tables. The shorter codes (7 bits) are assigned to length symbols (256-279), which are common in compressed data.
+| Symbol Range | Code Length | Purpose |
+| ------------ | ----------- | ------- |
+| 0-143        | 8 bits      | Common literals (ASCII printable) |
+| 144-255      | 9 bits      | Less common literals (extended ASCII) |
+| 256          | 7 bits      | End-of-block marker |
+| 257-279      | 7 bits      | Short length codes (3-258 bytes) |
+| 280-287      | 8 bits      | Reserved/extension length codes |
 
-### Distance Table (0-29 symbols)
+**Why these lengths?** 
+- **7-bit codes** for length symbols (256-279) optimize for common match lengths
+- **8-bit codes** for most literals provide good balance
+- **9-bit codes** for extended literals handle edge cases
+- No table overhead—decoders can reconstruct codes from lengths using canonical Huffman
 
-All distance codes use **5 bits**.
+### RFC1951 Table 2: Distance Table (0-29 symbols)
 
-**Why 5 bits?** Distances are less frequent than literals, so a fixed 5-bit code is a good tradeoff between table size and compression efficiency.
+All distance codes use **5 bits** uniformly.
+
+| Symbol Range | Code Length | Purpose |
+| ------------ | ----------- | ------- |
+| 0-29         | 5 bits      | Distance codes (1-32768 bytes) |
+
+**Why 5 bits?** 
+- Distances are less frequent than literals in typical data
+- Fixed 5-bit codes simplify decoding
+- Extra bits (0-13) extend the range to 32768 bytes
+
+### Using Fixed Tables
 
 Our implementation (`src/compress/fixed_huffman_tables.go`):
 
 ```go
-func LiteralLengthTable() Table {
-    lengths := make([]int, 288)
-    // Assign lengths per RFC1951...
-    codes, _ := buildTableFromLengths(lengths)
-    return Table{Codes: codes, MaxLength: 9}
-}
+// Get the fixed literal/length table
+litTable := LiteralLengthTable()
+// litTable.Codes[0-287] contains canonical Huffman codes
+// litTable.MaxLength = 9
+
+// Get the fixed distance table
+distTable := DistanceTable()
+// distTable.Codes[0-29] contains canonical Huffman codes
+// distTable.MaxLength = 5
+
+// Encode a literal byte 'A' (ASCII 65)
+code := litTable.Codes[65]
+bitWriter.Write(code.Bits, code.Length)  // Writes 8 bits
+
+// Encode end-of-block
+code = litTable.Codes[256]
+bitWriter.Write(code.Bits, code.Length)  // Writes 7 bits
+
+// Encode distance 10
+distCode := distTable.Codes[5]  // Distance code for ~10
+bitWriter.Write(distCode.Bits, distCode.Length)  // Writes 5 bits
 ```
+
+### Canonical Code Construction
+
+Fixed tables use **canonical Huffman coding**: codes are assigned deterministically based on code lengths:
+
+1. Sort symbols by length (shortest first)
+2. Assign codes sequentially: 0, 1, 2, ...
+3. When length increases, shift left and continue: `code = (code + count) << 1`
+4. Store codes **LSB-first** (bit-reversed) for DEFLATE
+
+This ensures any decoder can reconstruct the exact same codes from just the lengths.
 
 ---
 
 ## Dynamic Huffman Tables
 
-Dynamic blocks build custom Huffman tables optimized for the specific data in the block.
+Dynamic blocks build custom Huffman tables optimized for the specific data in the block. This provides better compression than fixed tables but requires transmitting the table structure.
 
-### Building Dynamic Tables
+### Building Dynamic Tables Algorithm
 
-1. **Count frequencies**: How often does each literal/length and distance symbol appear?
-2. **Build Huffman tree**: Connect symbols based on frequency (most frequent = shortest code)
-3. **Extract code lengths**: Traverse tree to get length for each symbol
-4. **Canonicalize**: Assign codes deterministically (same lengths → same codes)
+The process follows these steps:
+
+1. **Count frequencies**: Count how often each literal/length (0-287) and distance (0-29) symbol appears in the data
+2. **Build Huffman tree**: Construct a binary tree where frequent symbols have shorter paths (using priority queue)
+3. **Extract code lengths**: Traverse the tree to determine code length for each symbol
+4. **Canonicalize**: Convert lengths to canonical Huffman codes (deterministic assignment)
 
 Our implementation (`src/compress/dynamic_tables.go`):
 
 ```go
 func BuildDynamicTables(litFreq []int, distFreq []int) (litTable Table, distTable Table) {
+    // Build literal/length tree from frequencies
     litTree := BuildTree(litFreq)
     codesMap := GenerateCodes(litTree)
     litCodes, litLengths := Canonicalize(codesMap)
-    // ...
+    
+    // Build distance tree from frequencies
+    distTree := BuildTree(distFreq)
+    codesMap = GenerateCodes(distTree)
+    distCodes, distLengths := Canonicalize(codesMap)
+    
+    return Table{Codes: litCodes, MaxLength: max(litLengths)},
+           Table{Codes: distCodes, MaxLength: max(distLengths)}
 }
 ```
 
-### Dynamic Block Header
+**Example**: If symbol 'A' appears 100 times and 'B' appears 10 times, 'A' gets a shorter code.
 
-Before the compressed data, dynamic blocks transmit the Huffman tables:
+### Dynamic Block Header Structure
 
-1. **HLIT** (5 bits): Number of literal/length codes - 257
-2. **HDIST** (5 bits): Number of distance codes - 1
-3. **HCLEN** (4 bits): Number of code length codes - 4
-4. **Code length code lengths** (3 bits each, in DEFLATE order)
-5. **RLE-encoded literal/length code lengths**
-6. **RLE-encoded distance code lengths**
+Before the compressed data, dynamic blocks transmit the Huffman tables in this order:
 
-**Why RLE?** Code lengths often have long runs of zeros (unused symbols) or repeated values. RLE reduces the header size.
+#### 1. HLIT (5 bits): Literal/Length Code Count
 
-**RLE Symbols**:
-- **16**: Repeat previous code length 3-6 times (+ 2 bits)
-- **17**: Zero run of 3-10 (+ 3 bits)
-- **18**: Zero run of 11-138 (+ 7 bits)
+```
+HLIT = number of literal/length codes - 257
+Range: 257-286 (encoded as 0-29)
+```
+
+**Example**: If you use codes 0-285, HLIT = 285 - 257 = 28 (encoded as 5 bits: `11100`)
+
+#### 2. HDIST (5 bits): Distance Code Count
+
+```
+HDIST = number of distance codes - 1
+Range: 1-30 (encoded as 0-29)
+```
+
+**Example**: If you use codes 0-4, HDIST = 5 - 1 = 4 (encoded as 5 bits: `00100`)
+
+#### 3. HCLEN (4 bits): Code Length Code Count
+
+```
+HCLEN = number of code length codes - 4
+Range: 4-19 (encoded as 0-15)
+```
+
+Code length codes are used to encode the literal/length and distance code lengths themselves.
+
+#### 4. Code Length Code Lengths (3 bits each)
+
+The code length codes (0-18) are stored in a special order defined by `CodeLengthOrder`:
+
+```
+Order: [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+```
+
+Each code length code gets 3 bits (0-7 length).
+
+#### 5. RLE-Encoded Literal/Length Code Lengths
+
+The actual code lengths for symbols 0-285 are encoded using RLE compression.
+
+#### 6. RLE-Encoded Distance Code Lengths
+
+The actual code lengths for distance symbols 0-29 are encoded using RLE compression.
+
+### RLE Encoding for Code Lengths
+
+Code lengths often have long runs of zeros (unused symbols) or repeated values. RLE reduces header size significantly.
+
+**RLE Symbols** (encoded using the code length table):
+
+| Symbol | Meaning | Extra Bits | Range |
+| ------ | ------- | ---------- | ----- |
+| 0-15   | Literal code length | 0 | Direct length value |
+| 16     | Repeat previous length | 2 bits | 3-6 repetitions |
+| 17     | Zero run | 3 bits | 3-10 zeros |
+| 18     | Zero run | 7 bits | 11-138 zeros |
+
+**Example RLE Encoding**:
+
+```text
+Original lengths: [8, 8, 8, 0, 0, 0, 0, 0, 9, 9, 9, 9, 9, 9]
+
+Encoded:
+  8 (literal)
+  16 (repeat) + 2 extra bits = 2 → repeat 8 three more times (total 4)
+  17 (zero run) + 3 extra bits = 4 → 5 zeros
+  9 (literal)
+  16 (repeat) + 2 extra bits = 4 → repeat 9 five more times (total 6)
+```
+
+This compresses 14 values into ~6-8 symbols, saving significant space.
+
+### Complete Header Example
+
+```go
+// Build dynamic tables from frequencies
+litTable, distTable := BuildDynamicTables(litFreq, distFreq)
+
+// Extract code lengths
+litLengths := extractLengths(litTable)
+distLengths := extractLengths(distTable)
+
+// Write header
+bitWriter := NewBitWriter(output)
+WriteDynamicHeader(bitWriter, litLengths, distLengths)
+
+// Now encode data using litTable and distTable
+```
+
+**Why Dynamic Tables?** For data with skewed symbol distributions (e.g., mostly 'A' characters), dynamic tables assign very short codes to frequent symbols, achieving better compression than fixed tables. The overhead (~50-200 bytes) is amortized over larger blocks.
 
 ---
 
@@ -211,6 +381,8 @@ Distances (1-32768) use a separate distance table:
 ---
 
 ## The Complete DEFLATE Pipeline
+
+See [DEFLATE Encoder](deflate-encoder.md) for a detailed explanation of the encoding pipeline from raw data to compressed blocks.
 
 ```mermaid
 flowchart TD
@@ -285,6 +457,12 @@ flowchart TD
 DEFLATE is the compression engine inside PNG's IDAT chunks, wrapped in zlib format (CMF/FLG header + Adler32 footer).
 
 ---
+
+## Related Documentation
+
+- [DEFLATE Block Writer](deflate-block-writer.md): How stored, fixed, and dynamic blocks are written
+- [DEFLATE Encoder](deflate-encoder.md): The complete pipeline from data to compressed blocks
+- [IDAT Zlib Integration](idat-zlib-integration.md): How PNG IDAT chunks use zlib-wrapped DEFLATE
 
 ## Next Steps
 

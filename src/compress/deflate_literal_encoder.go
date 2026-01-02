@@ -18,7 +18,10 @@ const (
 
 // EncodeLiteral writes a literal symbol (0-255) or end-of-block (256) to the bit writer.
 func EncodeLiteral(w *BitWriter, symbol int, table Table) error {
-	if symbol < 0 || symbol >= len(table.Codes) {
+	if symbol < 0 {
+		return ErrInvalidSymbol
+	}
+	if symbol >= len(table.Codes) {
 		return ErrInvalidSymbol
 	}
 	

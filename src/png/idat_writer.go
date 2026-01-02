@@ -9,7 +9,7 @@ import (
 // WriteIDAT writes a complete IDAT chunk containing the compressed image data.
 // It writes:
 //   - zlib header (CMF + FLG bytes)
-//   - stored block(s) containing filter bytes + pixel scanlines
+//   - DEFLATE-compressed data (fixed or dynamic Huffman blocks)
 //   - zlib footer (Adler32 checksum)
 //   - wrapped in an IDAT chunk (length + "IDAT" + data + CRC)
 func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, height int, colorType ColorType) error {
@@ -25,12 +25,16 @@ func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, 
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter byte 0 (None) prepended to each row
+	// Build scanlines with per-row filter selection
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+	var prevRow []byte
 	for y := 0; y < height; y++ {
 		offset := y * width * bpp
-		scanlineData = append(scanlineData, 0)
-		scanlineData = append(scanlineData, pixels[offset:offset+width*bpp]...)
+		row := pixels[offset : offset+width*bpp]
+		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		scanlineData = append(scanlineData, byte(filterType))
+		scanlineData = append(scanlineData, filteredRow...)
+		prevRow = row
 	}
 
 	// Build zlib-compressed data
@@ -49,65 +53,33 @@ func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, 
 }
 
 // buildZlibData builds the zlib-wrapped DEFLATE data containing scanlines.
+// The pixels parameter contains all scanline data with filter bytes prepended.
 func buildZlibData(pixels []byte, width, height int, colorType ColorType) ([]byte, error) {
-	bpp := BytesPerPixel(colorType)
-	scanlineLen := 1 + width*bpp
-
-	// Estimate buffer size: zlib header (2) + max stored blocks + adler32 (4)
-	// Each scanline: 1 filter byte + width*bpp pixels
-	// Each stored block: 1 header + 4 footer + data
-	estimatedSize := 2 + (1+4+scanlineLen)*height + 4
-	buf := make([]byte, 0, estimatedSize)
-
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
 	if err != nil {
 		return nil, err
 	}
-	buf = append(buf, cmf[:]...)
 
-	// Write scanlines wrapped in stored blocks
-	// For Phase 1, we use filter type 0 (None) for simplicity
-	for y := 0; y < height; y++ {
-		offset := y * (1 + width*bpp)
-		scanlineData := pixels[offset : offset+1+width*bpp]
-
-		// Each scanline goes in its own stored block (final block for last scanline)
-		isFinal := (y == height-1)
-
-		// Build the stored block
-		// Header (1 byte) + LEN (2 bytes) + NLEN (2 bytes) + data
-		blockData := make([]byte, 1+4+len(scanlineData))
-
-		// Header: type=000, BFINAL
-		if isFinal {
-			blockData[0] = 0x01 // Final block
-		} else {
-			blockData[0] = 0x00 // Not final
-		}
-
-		// LEN: little-endian length of data
-		dataLen := uint16(len(scanlineData))
-		blockData[1] = byte(dataLen)
-		blockData[2] = byte(dataLen >> 8)
-
-		// NLEN: one's complement of LEN
-		nlen := ^dataLen
-		blockData[3] = byte(nlen)
-		blockData[4] = byte(nlen >> 8)
-
-		// Copy scanline data (filter byte + pixels)
-		copy(blockData[5:], scanlineData)
-
-		buf = append(buf, blockData...)
+	// Compress scanline data using DEFLATE with fixed Huffman tables
+	// TODO: Fix dynamic Huffman table building and switch to EncodeAuto
+	encoder := compress.NewDeflateEncoder()
+	deflateData, err := encoder.Encode(pixels, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
 	}
 
 	// Write Adler32 checksum of the uncompressed scanline data
 	adler := compress.Adler32(pixels)
 	adlerBuf := compress.ZlibFooterBytes(adler)
-	buf = append(buf, adlerBuf[:]...)
 
-	return buf, nil
+	// Combine: zlib header + DEFLATE data + Adler32 footer
+	result := make([]byte, 0, len(cmf)+len(deflateData)+len(adlerBuf))
+	result = append(result, cmf...)
+	result = append(result, deflateData...)
+	result = append(result, adlerBuf[:]...)
+
+	return result, nil
 }
 
 // IDATDataBytes returns the raw zlib data for IDAT without the chunk wrapper.
@@ -121,22 +93,32 @@ func IDATDataBytes(pixels []byte, width, height int, colorType ColorType) ([]byt
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter byte 0 (None) prepended to each row
+	// Build scanlines with per-row filter selection
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+	var prevRow []byte
 	for y := 0; y < height; y++ {
 		offset := y * width * bpp
-		scanlineData = append(scanlineData, 0)
-		scanlineData = append(scanlineData, pixels[offset:offset+width*bpp]...)
+		row := pixels[offset : offset+width*bpp]
+		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		scanlineData = append(scanlineData, byte(filterType))
+		scanlineData = append(scanlineData, filteredRow...)
+		prevRow = row
 	}
 
 	return buildZlibData(scanlineData, width, height, colorType)
 }
 
-// ExpectedIDATSize returns the expected size of the IDAT chunk data for a given image.
+// ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.
+// The actual size may vary due to DEFLATE compression, so this is only an approximation.
 func ExpectedIDATSize(width, height int, colorType ColorType) int {
 	bpp := BytesPerPixel(colorType)
 	scanlineLen := 1 + width*bpp
-	// zlib header (2) + scanlines in stored blocks (each: 1 header + 4 footer + scanline) + Adler32 (4)
-	// = 2 + height * (5 + scanlineLen) + 4
-	return 2 + height*(5+scanlineLen) + 4
+	uncompressedSize := scanlineLen * height
+	// Estimate: zlib header (2) + compressed data (assume 50% compression) + Adler32 (4)
+	// This is a rough estimate; actual compression ratio depends on image content
+	estimatedCompressed := uncompressedSize / 2
+	if estimatedCompressed < 10 {
+		estimatedCompressed = 10
+	}
+	return 2 + estimatedCompressed + 4
 }

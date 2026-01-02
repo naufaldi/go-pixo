@@ -2,7 +2,9 @@ package png
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
+	"io"
 	"testing"
 
 	"github.com/mac/go-pixo/src/compress"
@@ -24,12 +26,10 @@ func TestWriteIDAT_RGB(t *testing.T) {
 		t.Fatalf("IDAT chunk too short: %d bytes", len(data))
 	}
 
-	// Check length field (big-endian)
+	// Check length field (big-endian) - should be reasonable (at least zlib header + footer)
 	length := binary.BigEndian.Uint32(data[0:4])
-	// Chunk length = IDAT data size (zlib header + stored blocks + adler32)
-	expectedLength := uint32(ExpectedIDATSize(1, 1, ColorRGB))
-	if length != expectedLength {
-		t.Errorf("chunk length = %d, want %d", length, expectedLength)
+	if length < 6 {
+		t.Errorf("chunk length = %d, want at least 6 (zlib header + footer)", length)
 	}
 
 	// Check type field
@@ -166,11 +166,27 @@ func TestIDATDataBytes(t *testing.T) {
 		t.Errorf("zlib FLG = 0x%02X, want 0x9C", data[1])
 	}
 
-	// Last 4 bytes should be Adler32
-	// Adler32 is computed on the uncompressed data (with filter bytes)
-	adler := binary.BigEndian.Uint32(data[len(data)-4:])
+	// Decompress and verify data
+	zlibReader, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("failed to create zlib reader: %v", err)
+	}
+	defer zlibReader.Close()
+
+	decompressed := make([]byte, 100)
+	n, err := zlibReader.Read(decompressed)
+	if err != nil && err != io.EOF {
+		t.Fatalf("decompression failed: %v", err)
+	}
+
 	// Build expected scanline data with filter byte 0
 	expectedScanlineData := []byte{0x00, 0xFF, 0x00, 0x00}
+	if !bytes.Equal(decompressed[:n], expectedScanlineData) {
+		t.Errorf("decompressed data = %v, want %v", decompressed[:n], expectedScanlineData)
+	}
+
+	// Verify Adler32 footer
+	adler := binary.BigEndian.Uint32(data[len(data)-4:])
 	expectedAdler := compress.Adler32(expectedScanlineData)
 	if adler != expectedAdler {
 		t.Errorf("Adler32 = 0x%08X, want 0x%08X", adler, expectedAdler)
@@ -183,39 +199,93 @@ func TestExpectedIDATSize(t *testing.T) {
 		width     int
 		height    int
 		colorType ColorType
-		expect    int
+		minSize   int
 	}{
 		{
 			name:      "1x1 RGB",
 			width:     1,
 			height:    1,
 			colorType: ColorRGB,
-			expect:    2 + 1*(5+4) + 4, // zlib header + 1 scanline block + adler32 = 15
+			minSize:   6, // zlib header (2) + minimum DEFLATE data + adler32 (4)
 		},
 		{
 			name:      "1x1 RGBA",
 			width:     1,
 			height:    1,
 			colorType: ColorRGBA,
-			expect:    2 + 1*(5+5) + 4, // zlib header + 1 scanline block + adler32 = 16
+			minSize:   6,
 		},
 		{
 			name:      "2x2 RGB",
 			width:     2,
 			height:    2,
 			colorType: ColorRGB,
-			expect:    2 + 2*(5+7) + 4, // zlib header + 2 scanline blocks + adler32 = 32
+			minSize:   6,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ExpectedIDATSize(tt.width, tt.height, tt.colorType)
-			if got != tt.expect {
-				t.Errorf("ExpectedIDATSize(%d, %d, %d) = %d, want %d",
-					tt.width, tt.height, tt.colorType, got, tt.expect)
+			if got < tt.minSize {
+				t.Errorf("ExpectedIDATSize(%d, %d, %d) = %d, want at least %d",
+					tt.width, tt.height, tt.colorType, got, tt.minSize)
 			}
 		})
+	}
+}
+
+func TestWriteIDAT_CompressionReducesSize(t *testing.T) {
+	// Create a repetitive image that should compress well
+	width, height := 10, 10
+	bpp := 3 // RGB
+	repetitivePixel := []byte{0xFF, 0x00, 0x00}
+	pixels := make([]byte, width*height*bpp)
+	for i := 0; i < width*height; i++ {
+		copy(pixels[i*bpp:], repetitivePixel)
+	}
+
+	data, err := IDATDataBytes(pixels, width, height, ColorRGB)
+	if err != nil {
+		t.Fatalf("IDATDataBytes() error = %v", err)
+	}
+
+	// Build expected scanline data using filter selection
+	expectedScanlineData := make([]byte, 0, (1+width*bpp)*height)
+	var prevRow []byte
+	for y := 0; y < height; y++ {
+		rowStart := y * width * bpp
+		row := pixels[rowStart : rowStart+width*bpp]
+		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		expectedScanlineData = append(expectedScanlineData, byte(filterType))
+		expectedScanlineData = append(expectedScanlineData, filteredRow...)
+		prevRow = row
+	}
+
+	uncompressedSize := len(expectedScanlineData)
+	compressedSize := len(data) - 6 // subtract zlib header (2) + Adler32 (4)
+
+	// Compressed size should be smaller than uncompressed for repetitive data
+	if compressedSize >= uncompressedSize {
+		t.Errorf("compression didn't reduce size: compressed=%d, uncompressed=%d",
+			compressedSize, uncompressedSize)
+	}
+
+	// Verify decompression
+	zlibReader, err := zlib.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("failed to create zlib reader: %v", err)
+	}
+	defer zlibReader.Close()
+
+	decompressed := make([]byte, uncompressedSize+100)
+	n, err := zlibReader.Read(decompressed)
+	if err != nil && err != io.EOF {
+		t.Fatalf("decompression failed: %v", err)
+	}
+
+	if !bytes.Equal(decompressed[:n], expectedScanlineData) {
+		t.Errorf("decompressed data doesn't match expected scanline data")
 	}
 }
 

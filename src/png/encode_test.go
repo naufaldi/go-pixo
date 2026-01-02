@@ -495,11 +495,15 @@ func assertDecodedPixels(t *testing.T, pngData []byte, width, height int, colorT
 func buildRawScanlines(width, height, bytesPerPixel int, pixels []byte) []byte {
 	rowBytes := width * bytesPerPixel
 	want := make([]byte, 0, height*(1+rowBytes))
+	var prevRow []byte
 
 	for y := 0; y < height; y++ {
-		want = append(want, 0x00) // filter type 0 (None)
 		rowStart := y * rowBytes
-		want = append(want, pixels[rowStart:rowStart+rowBytes]...)
+		row := pixels[rowStart : rowStart+rowBytes]
+		filterType, filteredRow := SelectFilter(row, prevRow, bytesPerPixel)
+		want = append(want, byte(filterType))
+		want = append(want, filteredRow...)
+		prevRow = row
 	}
 
 	return want

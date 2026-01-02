@@ -5,6 +5,8 @@ package wasm
 import (
 	"fmt"
 	"syscall/js"
+
+	"github.com/mac/go-pixo/src/png"
 )
 
 /**
@@ -53,12 +55,33 @@ func HandleBytesPerPixel(this js.Value, args []js.Value) any {
 }
 
 /**
- * EncodePng is a placeholder for the actual implementation in Phase 1.
- * Currently returns input pixels to verify data transfer.
+ * EncodePng encodes pixels as a PNG image using the go-pixo PNG encoder.
+ * Returns PNG file bytes ready to be written to a file or used in a browser.
  */
 func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bool) ([]byte, error) {
-	// TODO: Implement real PNG encoding in Phase 1
-	return pixels, nil
+	var pngColorType png.ColorType
+	switch colorType {
+	case 0:
+		pngColorType = png.ColorGrayscale
+	case 2:
+		pngColorType = png.ColorRGB
+	case 6:
+		pngColorType = png.ColorRGBA
+	default:
+		return nil, fmt.Errorf("unsupported color type: %d", colorType)
+	}
+
+	encoder, err := png.NewEncoder(width, height, pngColorType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create encoder: %w", err)
+	}
+
+	pngBytes, err := encoder.Encode(pixels)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode PNG: %w", err)
+	}
+
+	return pngBytes, nil
 }
 
 /**

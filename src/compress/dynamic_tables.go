@@ -2,13 +2,18 @@ package compress
 
 // BuildDynamicTables builds canonical Huffman tables from literal/length and distance frequencies.
 // Returns the literal/length table and distance table.
+// The tables are sized to accommodate all possible DEFLATE symbols (0-286 for literal/length, 0-29 for distance).
 func BuildDynamicTables(litFreq []int, distFreq []int) (litTable Table, distTable Table) {
 	litTree := BuildTree(litFreq)
-	var litCodes []Code
-	var litLengths []int
+	litCodes := make([]Code, 287)
+	litLengths := make([]int, 287)
 	if litTree != nil {
 		codesMap := GenerateCodes(litTree)
-		litCodes, litLengths = Canonicalize(codesMap)
+		canonCodes, canonLengths := Canonicalize(codesMap)
+		if canonCodes != nil {
+			copy(litCodes, canonCodes)
+			copy(litLengths, canonLengths)
+		}
 	}
 	
 	maxLitLength := 0
@@ -19,11 +24,15 @@ func BuildDynamicTables(litFreq []int, distFreq []int) (litTable Table, distTabl
 	}
 	
 	distTree := BuildTree(distFreq)
-	var distCodes []Code
-	var distLengths []int
+	distCodes := make([]Code, 30)
+	distLengths := make([]int, 30)
 	if distTree != nil {
 		codesMap := GenerateCodes(distTree)
-		distCodes, distLengths = Canonicalize(codesMap)
+		canonCodes, canonLengths := Canonicalize(codesMap)
+		if canonCodes != nil {
+			copy(distCodes, canonCodes)
+			copy(distLengths, canonLengths)
+		}
 	}
 	
 	maxDistLength := 0

@@ -288,8 +288,9 @@ flowchart TD
 
 ## Next Steps
 
+- [PNG Filters](filters.md) - Detailed explanation of filter algorithms and reconstruction
+- [Paeth Predictor](paeth.md) - How the Paeth predictor works
+- [Filter Selection](filter-selection.md) - Why and how filters are chosen per row
 - **Task 1.9.2**: IDAT Writer (`docs/learning/png/idat_writer.md`) - Wrapping scanlines in zlib format
 - **Task 1.10**: PNG Encoder (`docs/learning/png/encoder.md`) - Complete PNG file assembly
 - **Phase 2**: DEFLATE Compression (`docs/learning/png/deflate.md`) - LZ77 + Huffman coding
-
-These files will be created when their respective tasks are implemented.

@@ -191,6 +191,7 @@ PNG Pixels → Scanlines → Filters → DEFLATE → Zlib → IDAT Chunk
 4. **Zlib Wrapper**: Adds CMF/FLG header and Adler32 footer
 5. **IDAT Chunk**: Wraps compressed data with chunk structure (length + "IDAT" + data + CRC32)
 
+See [IDAT Zlib Integration](idat-zlib-integration.md) for details on how zlib wraps DEFLATE in PNG IDAT chunks.
 See `docs/learning/png/zlib.md` for details on LZ77 and Huffman coding internals.
 
 ## Summary: Signature, Constants, and Validation
