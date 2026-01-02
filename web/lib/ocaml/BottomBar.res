@@ -14,10 +14,8 @@ let make = (
   ~format,
   ~preset,
   ~lossless,
-  ~compareMode,
   ~onPresetChange,
   ~onLosslessChange,
-  ~onCompareModeChange,
   ~onDownload,
   ~onDownloadAll,
   ~hasCompletedItems,
@@ -72,19 +70,6 @@ let make = (
         />
         <span className="text-sm text-neutral-300">{React.string("Lossless")}</span>
       </label>
-      
-      <button
-        type_="button"
-        onClick={_ => onCompareModeChange(switch compareMode {
-        | SideBySide => Slider
-        | Slider => SideBySide
-        })}
-        className="text-sm text-neutral-300 hover:text-white px-3 py-1 rounded hover:bg-neutral-800 transition-colors">
-        {React.string(switch compareMode {
-        | SideBySide => "Slider View"
-        | Slider => "Side-by-Side"
-        })}
-      </button>
       
       <button
         type_="button"

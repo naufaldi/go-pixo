@@ -11,7 +11,8 @@ type action =
   | SelectItem(option<string>)
   | SetPreset(preset)
   | SetLossless(bool)
-  | SetCompareMode(compareMode)
+  | RemoveItem(string)
+  | ClearAll
 
 let generateId = (): string => {
   %raw("Math.random().toString(36).substring(2, 9)")
@@ -78,7 +79,57 @@ let reducer = (state: appState, action: action): appState => {
   | SelectItem(id) => {...state, selectedId: id}
   | SetPreset(preset) => {...state, preset}
   | SetLossless(lossless) => {...state, lossless}
-  | SetCompareMode(mode) => {...state, compareMode: mode}
+  | RemoveItem(id) => {
+      let itemToRemove = state.items->Array.find(item => item.id == id)
+      switch itemToRemove {
+      | Some(item) => {
+          switch item.originalUrl {
+          | Some(url) => {
+              let _ = url
+              %raw("URL.revokeObjectURL(url)")
+            }
+          | None => ()
+          }
+          switch item.compressedUrl {
+          | Some(url) => {
+              let _ = url
+              %raw("URL.revokeObjectURL(url)")
+            }
+          | None => ()
+          }
+        }
+      | None => ()
+      }
+      let newItems = state.items->Array.filter(item => item.id != id)
+      let newSelectedId = if state.selectedId == Some(id) {
+        switch newItems->Array.get(0) {
+        | Some(item) => Some(item.id)
+        | None => None
+        }
+      } else {
+        state.selectedId
+      }
+      {...state, items: newItems, selectedId: newSelectedId}
+    }
+  | ClearAll => {
+      state.items->Array.forEach(item => {
+        switch item.originalUrl {
+        | Some(url) => {
+            let _ = url
+            %raw("URL.revokeObjectURL(url)")
+          }
+        | None => ()
+        }
+        switch item.compressedUrl {
+        | Some(url) => {
+            let _ = url
+            %raw("URL.revokeObjectURL(url)")
+          }
+        | None => ()
+        }
+      })
+      {...state, items: [], selectedId: None}
+    }
   }
 }
 
@@ -93,7 +144,6 @@ let make = () => {
       selectedId: None,
       preset: Balanced,
       lossless: true,
-      compareMode: SideBySide,
     },
   )
   
@@ -114,7 +164,7 @@ let make = () => {
     let worker = %raw("new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })");
     workerRef.current = Nullable.make(worker);
     
-    let handleWorkerMessage = (event: {..}) => {
+    let handleWorkerMessage = (_event: {..}) => {
       let data = %raw("event.data");
       logWorkerMessage(data)
       let msgType = %raw("data.type");
@@ -190,7 +240,7 @@ let make = () => {
     ReactEvent.Mouse.preventDefault(e)
     dispatch(SetDragActive(false))
     let files = %raw("e.nativeEvent.dataTransfer?.files")
-    if files->Js.Nullable.isNullable == false {
+    if files->Nullable.isNullable == false {
       let fileArray = %raw("Array.from(files)")
       let items = fileArray->Array.map(createQueueItem)
       dispatch(AddItems(items))
@@ -321,15 +371,15 @@ let make = () => {
   let handlePasteRef = React.useRef(Nullable.null)
 
   React.useEffect0(() => {
-    let handlePaste = (e: 'a) => {
+    let handlePaste = (_e: 'a) => {
       let items = %raw("e.clipboardData?.items")
-      if items->Js.Nullable.isNullable == false {
+      if items->Nullable.isNullable == false {
         let itemArray = %raw("Array.from(items)")
-        let imageItems = itemArray->Array.filter(item => {
+        let imageItems = itemArray->Array.filter(_item => {
           %raw("item.type.startsWith('image/')")
         })
         if imageItems->Array.length > 0 {
-          let files = imageItems->Array.map(item => {
+          let files = imageItems->Array.map(_item => {
             %raw("item.getAsFile()")
           })
           let items = files->Array.map(createQueueItem)
@@ -337,7 +387,7 @@ let make = () => {
         }
       }
     }
-    handlePasteRef.current = Js.Nullable.return(handlePaste)
+    handlePasteRef.current = Nullable.make(handlePaste)
     %raw("window.addEventListener('paste', handlePaste)")
 
     Some(() => {
@@ -408,11 +458,11 @@ let make = () => {
       {switch selectedItem {
       | Some(item) =>
         <CompareView
-          mode={state.compareMode}
           originalUrl={item.originalUrl}
           compressedUrl={item.compressedUrl}
           originalBytes={item.originalBytes}
           compressedBytes={item.compressedBytes}
+          onRemove={() => dispatch(RemoveItem(item.id))}
         />
       | None =>
         <Dropzone
@@ -421,7 +471,7 @@ let make = () => {
           onDragOver=handleDragOver
           onDragLeave=handleDragLeave
           onDrop=handleDrop
-          onFileSelect=handleFileSelect
+          onFileSelect={handleFileSelect}
         />
       }}
       
@@ -429,6 +479,8 @@ let make = () => {
         items={state.items}
         selectedId={state.selectedId}
         onSelect={id => dispatch(SelectItem(Some(id)))}
+        onRemove={id => dispatch(RemoveItem(id))}
+        onClearAll={() => dispatch(ClearAll)}
       />
     </main>
     
@@ -436,10 +488,8 @@ let make = () => {
       format=formatText
       preset={state.preset}
       lossless={state.lossless}
-      compareMode={state.compareMode}
       onPresetChange={preset => dispatch(SetPreset(preset))}
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
-      onCompareModeChange={mode => dispatch(SetCompareMode(mode))}
       onDownload=handleDownload
       onDownloadAll=handleDownloadAll
       hasCompletedItems

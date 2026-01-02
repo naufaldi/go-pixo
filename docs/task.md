@@ -775,13 +775,14 @@ Goal: Make the product easy to use.
   - Allow download all
   - Output: `web/src/main.ts`
 
-### 8.4 Before/After Preview
+### 8.4 Before/After Slider Preview
 
-- **[Task 8.4.1]** Create side-by-side preview component
-  - Show original image on left
-  - Show compressed image on right
-  - Display size comparison
-  - Output: `web/src/main.ts`
+- **[Task 8.4.1]** Create slider-based before/after comparison component
+  - Show original image on left side of slider
+  - Show compressed image on right side of slider
+  - Implement interactive draggable handle
+  - Display size comparison and savings percentage
+  - Output: `web/src/components/CompareView.res`
 
 ### 8.5 Preset UI
 

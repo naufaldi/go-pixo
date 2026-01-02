@@ -143,6 +143,7 @@ self.onmessage = async (event: MessageEvent<{
 
       try {
         console.debug('[worker] compress start', req.id);
+        const startTime = Date.now();
         const compressedBytes = encodePng(
           req.pixels,
           req.width,
@@ -151,6 +152,7 @@ self.onmessage = async (event: MessageEvent<{
           req.preset,
           req.lossy
         );
+        const duration = Date.now() - startTime;
 
         self.postMessage({
           type: 'compressed',

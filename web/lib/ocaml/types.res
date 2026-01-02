@@ -21,10 +21,6 @@ type fileKind =
   | Jpeg
   | Unknown
 
-type compareMode =
-  | SideBySide
-  | Slider
-
 type preset =
   | Smaller
   | Balanced
@@ -50,7 +46,6 @@ type appState = {
   selectedId: option<string>,
   preset: preset,
   lossless: bool,
-  compareMode: compareMode,
 }
 
 let presetToInt = (preset: preset): int => {
