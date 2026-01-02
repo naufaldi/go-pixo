@@ -16,22 +16,23 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
-    "@rescript/react": "^1.1.0",
+    "@rescript/react": "^0.14.0",
+    "@rescript/core": "^1.6.0",
     "@tailwindcss/vite": "^4.1.18",
     "@testing-library/react": "^16.0.1",
     "@testing-library/jest-dom": "^6.6.3",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@vitejs/plugin-react": "^5.1.2",
     "@vitest/ui": "^2.1.8",
     "concurrently": "^9.1.0",
     "jsdom": "^25.0.1",
-    "rescript": "^11.1.0",
+    "rescript": "^12.0.2",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }
