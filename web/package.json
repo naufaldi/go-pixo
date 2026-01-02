@@ -4,11 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"rescript build -w\" \"vite\"",
+    "dev": "bun run scripts/dev.ts",
     "build": "rescript build && vite build",
     "preview": "vite preview",
     "rescript:build": "rescript build",
-    "rescript:watch": "rescript build -w",
+    "rescript:watch": "rescript watch",
     "rescript:clean": "rescript clean",
     "test": "vitest",
     "test:e2e": "playwright test",

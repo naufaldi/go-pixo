@@ -30,8 +30,12 @@ let initWasm = (): Promise.t<unit> => {
   ")
 }
 
-@val external encodePng: (array<int>, int, int, int, int, bool) => array<int> = "window.encodePng"
+@val external encodePng: ('a, int, int, int, int, bool) => array<int> = "window.encodePng"
 
-let encodePngImage = (pixels: array<int>, width: int, height: int, colorType: int): array<int> => {
+let encodePngImage = (pixels: 'a, width: int, height: int, colorType: int): array<int> => {
   encodePng(pixels, width, height, colorType, 1, false)
+}
+
+let encodePngImageWithOptions = (pixels: 'a, width: int, height: int, colorType: int, preset: int, lossy: bool): array<int> => {
+  encodePng(pixels, width, height, colorType, preset, lossy)
 }
