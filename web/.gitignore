@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ReScript/BuckleScript generated files
+*.ast
+*.cmi
+*.cmj
+*.cmt
+*.res.js
