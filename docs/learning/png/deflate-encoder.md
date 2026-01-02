@@ -74,6 +74,25 @@ compressed, err := encoder.EncodeAuto(data)
 - Fixed: Fast encoding, no table overhead, predictable size
 - Dynamic: Better compression for larger/repetitive data, but table overhead (HLIT/HDIST/HCLEN + code lengths)
 
+### Important: encoder state must not leak across streams
+
+Our `DeflateEncoder` reuses an internal `LZ77Encoder`. LZ77 has a **sliding window history** (up to 32KiB). For DEFLATE, that history must start empty for each independent DEFLATE stream.
+
+This matters in two places:
+
+1) **Encoding multiple streams with the same encoder instance**
+
+If you call `enc.Encode(...)` multiple times, you must reset the LZ77 window each time or you can emit matches that reference bytes from a previous stream (corrupt output).
+
+2) **`EncodeAuto` (fixed then dynamic)**
+
+`EncodeAuto` runs *two* encodes back-to-back (fixed, then dynamic). If the LZ77 window isn’t reset per encode attempt, the dynamic attempt can be corrupted even though it “succeeds” (no error returned). This showed up as decompression errors like **`unexpected EOF`**.
+
+We fix this by resetting the sliding window at the start of `LZ77Encoder.Encode()`.
+
+For a concrete write-up of the failure mode and the dynamic header pitfalls, see:
+- [Dynamic Huffman: Corrupt Stream Postmortem](dynamic-huffman-corrupt-stream.md)
+
 ## Implementation
 
 The encoder is in `src/compress/deflate_encoder.go`:

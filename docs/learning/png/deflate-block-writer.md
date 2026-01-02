@@ -65,6 +65,33 @@ Dynamic blocks build custom Huffman tables from the actual data frequencies. The
 
 **Why dynamic blocks?** They adapt to the data, often achieving better compression than fixed tables, especially for larger blocks with skewed symbol distributions.
 
+#### Dynamic header pitfalls (what can corrupt the stream)
+
+Dynamic blocks are easy to get “almost right” and still produce a DEFLATE stream that looks plausible but fails to decode (common decoder errors include **`unexpected EOF`** or **`flate: corrupt input`**).
+
+Key invariants from RFC 1951 (plus what broke in `go-pixo` previously):
+
+1) **HLIT must include End-of-Block (symbol 256)**
+   - HLIT encodes the number of literal/length code lengths that follow.
+   - Even if your data only uses a few literals, you must include symbol **256** so the decoder can read the End-of-Block marker.
+
+2) **HCLEN has a minimum of 4**
+   - The code-length alphabet is 19 symbols, transmitted in `CodeLengthOrder`.
+   - Even if only 1–2 code-length codes are non-zero, the header still must transmit at least **4** code-length code lengths (`HCLEN >= 4`).
+
+3) **The code-length Huffman table must match the lengths you transmit**
+   - The decoder reconstructs the *code-length Huffman tree* from the lengths you wrote in the header.
+   - If you build a different table for encoding the RLE stream than the one implied by the transmitted lengths, the decoder will misread the RLE stream and the rest of the block becomes garbage.
+
+4) **RLE encoding of code lengths must handle long runs correctly**
+   - Symbol `16` repeats the **previous** non-zero length 3–6 times (2 extra bits, value = repeat-3).
+   - Symbol `17` repeats zero 3–10 times (3 extra bits, value = repeat-3).
+   - Symbol `18` repeats zero 11–138 times (7 extra bits, value = repeat-11).
+   - Runs longer than these ranges must be split across multiple `17`/`18` (or literals).
+
+We keep a full “learn from the failure” write-up here:
+- [Dynamic Huffman: Corrupt Stream Postmortem](dynamic-huffman-corrupt-stream.md)
+
 ## LSB-First Bit Ordering
 
 DEFLATE packs bits **LSB-first** (least significant bit first) within bytes. This is different from many formats that use MSB-first.

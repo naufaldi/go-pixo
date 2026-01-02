@@ -99,6 +99,13 @@ To verify a zlib stream:
 
 Our tests (`src/png/idat_writer_test.go`) do this using Go's `compress/zlib` package.
 
+### Debugging tip: “unexpected EOF” usually means invalid DEFLATE
+
+If zlib decompression fails with errors like **`unexpected EOF`** or **`flate: corrupt input`**, the problem is almost always inside the DEFLATE stream (block header / Huffman tables / token encoding), not in the Adler32 footer.
+
+See:
+- [Dynamic Huffman: Corrupt Stream Postmortem](dynamic-huffman-corrupt-stream.md)
+
 ## Why Zlib Instead of Raw DEFLATE?
 
 PNG uses zlib (not raw DEFLATE) because:

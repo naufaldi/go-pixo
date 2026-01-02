@@ -51,6 +51,7 @@ Each block starts with a **3-bit header**:
 - Best compression for larger blocks
 - Implemented in `src/compress/huffman_header.go` and `src/compress/dynamic_tables.go`
 - See [DEFLATE Block Writer](deflate-block-writer.md) for implementation details
+- If you hit decoder errors like `unexpected EOF`, see [Dynamic Huffman: Corrupt Stream Postmortem](dynamic-huffman-corrupt-stream.md)
 
 ---
 
