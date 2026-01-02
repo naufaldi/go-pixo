@@ -97,20 +97,79 @@ let make = () => {
     },
   )
   
+  let workerRef = React.useRef(Nullable.null)
   let processingRef = React.useRef(false)
   
   React.useEffect0(() => {
-    Wasm.initWasm()
-      ->Promise.then(_ => {
+    let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
+    let postInit: 'a => unit = %raw("worker => worker.postMessage({ type: 'init' })")
+    let logPostingInit: unit => unit = %raw("() => console.debug('[app] posting init')")
+    let logWorkerMessage: 'a => unit = %raw("data => console.debug('[app] worker message', data)")
+    let logWasmReady: unit => unit = %raw("() => console.debug('[app] wasm ready')")
+    let logCompressed: (string, int) => unit = %raw("(id, size) => console.debug('[app] compressed', id, size)")
+    let logWorkerError: (string, 'a) => unit = %raw("(id, err) => console.debug('[app] worker error', id, err)")
+    let logMissingId: (string, 'a) => unit = %raw("(label, data) => console.error(label, data)")
+
+    // Initialize Web Worker for compression
+    let worker = %raw("new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })");
+    workerRef.current = Nullable.make(worker);
+    
+    let handleWorkerMessage = (event: {..}) => {
+      let data = %raw("event.data");
+      logWorkerMessage(data)
+      let msgType = %raw("data.type");
+      switch msgType {
+      | "ready" =>
+        logWasmReady()
         dispatch(SetWasmReady(true))
-        Promise.resolve()
-      })
-      ->Promise.catch(_ => {
-        dispatch(SetWasmReady(true))
-        Promise.resolve()
-      })
-      ->ignore
-    None
+      | "compressed" =>
+        let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
+        switch id {
+        | Some(id) =>
+          let compressedBytes = %raw("new Uint8Array(data.compressedBytes)");
+          let compressedUrl = %raw(`
+            (() => {
+              const blob = new Blob([new Uint8Array(compressedBytes)], { type: 'image/png' });
+              return URL.createObjectURL(blob);
+            })()
+          `);
+          let compressedSize = compressedBytes->Array.length;
+          logCompressed(id, compressedSize)
+          dispatch(UpdateItem(id, item => {
+            ...item,
+            status: Done,
+            compressedUrl: Some(compressedUrl),
+            compressedBytes: Some(compressedSize),
+          }))
+        | None =>
+          logMissingId("[app] compressed message missing id", data)
+        }
+      | "error" =>
+        let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
+        let errorMsg = %raw("data.error");
+        switch id {
+        | Some(id) =>
+          logWorkerError(id, errorMsg)
+          dispatch(UpdateItem(id, item => {
+            ...item,
+            status: Error(errorMsg),
+          }))
+        | None =>
+          logMissingId("Worker error (no id):", errorMsg)
+        }
+      | _ => ()
+      }
+    };
+    setOnMessage(worker, handleWorkerMessage)
+    logPostingInit()
+    postInit(worker)
+    
+    Some(() => {
+      switch workerRef.current->Nullable.toOption {
+      | Some(w) => %raw("w.terminate()")
+      | None => ()
+      }
+    })
   })
   
   let handleDragEnter = (e: ReactEvent.Mouse.t) => {
@@ -157,33 +216,22 @@ let make = () => {
             height: Some(result.height),
           }))
           
-          let pixels = %raw("new Uint8Array(result.pixels)")
+          let pixels: 'a = %raw("new Uint8Array(result.pixels)")
           let presetInt = presetToInt(state.preset)
           let lossy = !state.lossless
-          
-          let compressedBytes = Wasm.encodePngImageWithOptions(
-            pixels,
-            result.width,
-            result.height,
-            result.colorType,
-            presetInt,
-            lossy,
+          let postCompress: ('a, string, 'b, int, int, int, int, bool) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, preset, lossy) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy }); }"
           )
           
-          let compressedUrl = %raw("
-            (() => {
-              const blob = new Blob([new Uint8Array(compressedBytes)], { type: 'image/png' });
-              return URL.createObjectURL(blob);
-            })()
-          ")
-          let compressedSize = compressedBytes->Array.length
-          
-          dispatch(UpdateItem(item.id, item => {
-            ...item,
-            status: Done,
-            compressedUrl: Some(compressedUrl),
-            compressedBytes: Some(compressedSize),
-          }))
+          switch workerRef.current->Nullable.toOption {
+          | Some(worker) =>
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy)
+          | None =>
+            dispatch(UpdateItem(item.id, item => {
+              ...item,
+              status: Error("Worker not available"),
+            }))
+          }
           
           Promise.resolve()
         })
@@ -255,19 +303,20 @@ let make = () => {
     }
   }
   
-  React.useEffect(() => {
-    if state.wasmReady && state.items->Array.length > 0 {
+  React.useEffect2(() => {
+    let hasPending =
+      state.items->Array.some(item =>
+        switch item.status {
+        | Pending => true
+        | _ => false
+        }
+      )
+
+    if state.wasmReady && hasPending && !processingRef.current {
       processQueue()
     }
     None
-  }, [state.wasmReady])
-  
-  React.useEffect(() => {
-    if state.wasmReady {
-      processQueue()
-    }
-    None
-  }, [state.items])
+  }, (state.wasmReady, state.items))
   
   let handlePasteRef = React.useRef(Nullable.null)
 
@@ -356,15 +405,6 @@ let make = () => {
     </header>
     
     <main className="flex-1 px-6 pb-6">
-      <Dropzone
-        dragActive={state.dragActive}
-        onDragEnter=handleDragEnter
-        onDragOver=handleDragOver
-        onDragLeave=handleDragLeave
-        onDrop=handleDrop
-        onFileSelect=handleFileSelect
-      />
-      
       {switch selectedItem {
       | Some(item) =>
         <CompareView
@@ -374,7 +414,15 @@ let make = () => {
           originalBytes={item.originalBytes}
           compressedBytes={item.compressedBytes}
         />
-      | None => React.null
+      | None =>
+        <Dropzone
+          dragActive={state.dragActive}
+          onDragEnter=handleDragEnter
+          onDragOver=handleDragOver
+          onDragLeave=handleDragLeave
+          onDrop=handleDrop
+          onFileSelect=handleFileSelect
+        />
       }}
       
       <FileQueue
