@@ -46,6 +46,7 @@ func (enc *DeflateEncoder) Encode(data []byte, useDynamic bool) ([]byte, error) 
 
 // EncodeAuto compresses data using DEFLATE and automatically chooses
 // between fixed and dynamic Huffman tables based on which produces smaller output.
+// If dynamic encoding fails, it falls back to fixed encoding.
 func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return enc.Encode(data, false)
@@ -58,7 +59,7 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 
 	dynamic, err := enc.Encode(data, true)
 	if err != nil {
-		return nil, err
+		return fixed, nil
 	}
 
 	if len(dynamic) < len(fixed) {

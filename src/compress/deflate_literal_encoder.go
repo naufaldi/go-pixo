@@ -24,12 +24,12 @@ func EncodeLiteral(w *BitWriter, symbol int, table Table) error {
 	if symbol >= len(table.Codes) {
 		return ErrInvalidSymbol
 	}
-	
+
 	code := table.Codes[symbol]
 	if code.Length == 0 {
-		return ErrInvalidSymbol
+		return DeflateError("invalid symbol")
 	}
-	
+
 	return w.Write(code.Bits, code.Length)
 }
 
@@ -39,32 +39,32 @@ func EncodeLength(w *BitWriter, length int, table Table) error {
 	if length < MinMatchLength || length > MaxMatchLength {
 		return ErrInvalidLength
 	}
-	
+
 	code := findLengthCode(length)
 	if code < 257 || code > 285 {
 		return ErrInvalidLength
 	}
-	
+
 	if code-257 >= len(table.Codes) {
 		return ErrInvalidSymbol
 	}
-	
+
 	huffmanCode := table.Codes[code]
 	if huffmanCode.Length == 0 {
 		return ErrInvalidSymbol
 	}
-	
+
 	if err := w.Write(huffmanCode.Bits, huffmanCode.Length); err != nil {
 		return err
 	}
-	
+
 	extraBits := LengthExtraBits[code-257]
 	if extraBits > 0 {
 		base := LengthBase[code-257]
 		extraValue := uint16(length - int(base))
 		return w.Write(extraValue, int(extraBits))
 	}
-	
+
 	return nil
 }
 
@@ -74,32 +74,32 @@ func EncodeDistance(w *BitWriter, distance int, table Table) error {
 	if distance < 1 || distance > MaxDistance {
 		return ErrInvalidDistance
 	}
-	
+
 	code := findDistanceCode(distance)
 	if code < 0 || code >= 30 {
 		return ErrInvalidDistance
 	}
-	
+
 	if code >= len(table.Codes) {
 		return ErrInvalidSymbol
 	}
-	
+
 	huffmanCode := table.Codes[code]
 	if huffmanCode.Length == 0 {
 		return ErrInvalidSymbol
 	}
-	
+
 	if err := w.Write(huffmanCode.Bits, huffmanCode.Length); err != nil {
 		return err
 	}
-	
+
 	extraBits := DistanceExtraBits[code]
 	if extraBits > 0 {
 		base := DistanceBase[code]
 		extraValue := uint16(distance - int(base))
 		return w.Write(extraValue, int(extraBits))
 	}
-	
+
 	return nil
 }
 
@@ -109,7 +109,7 @@ func findLengthCode(length int) int {
 		base := int(LengthBase[code])
 		extraBits := LengthExtraBits[code]
 		maxLength := base + (1 << extraBits) - 1
-		
+
 		if length >= base && length <= maxLength {
 			return 257 + code
 		}
@@ -123,7 +123,7 @@ func findDistanceCode(distance int) int {
 		base := int(DistanceBase[code])
 		extraBits := DistanceExtraBits[code]
 		maxDistance := base + (1 << extraBits) - 1
-		
+
 		if distance >= base && distance <= maxDistance {
 			return code
 		}

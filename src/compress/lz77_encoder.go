@@ -19,6 +19,11 @@ func (enc *LZ77Encoder) Encode(data []byte) []Token {
 		return nil
 	}
 
+	// Each DEFLATE stream starts with an empty history window. The encoder is
+	// reused across calls, so reset the sliding window to avoid producing matches
+	// that reference bytes from previous encodings (which corrupts output).
+	enc.window.Reset()
+
 	var tokens []Token
 	pos := 0
 

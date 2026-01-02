@@ -63,6 +63,7 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType) ([]byt
 
 	// Compress scanline data using DEFLATE with auto table selection
 	// EncodeAuto tries both fixed and dynamic tables and picks the smaller
+	// If dynamic encoding fails, it falls back to fixed encoding
 	encoder := compress.NewDeflateEncoder()
 	deflateData, err := encoder.EncodeAuto(pixels)
 	if err != nil {

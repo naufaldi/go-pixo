@@ -22,19 +22,19 @@ func (bw *BitWriter) Write(bits uint16, n int) error {
 	if n == 0 {
 		return nil
 	}
-	
+
 	for i := 0; i < n; i++ {
 		bit := (bits >> uint(i)) & 1
 		bw.buf |= byte(bit) << uint(bw.nbits)
 		bw.nbits++
-		
+
 		if bw.nbits == 8 {
 			if err := bw.flushByte(); err != nil {
 				return err
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -51,12 +51,12 @@ func (bw *BitWriter) flushByte() error {
 	if bw.nbits == 0 {
 		return nil
 	}
-	
+
 	_, err := bw.w.Write([]byte{bw.buf})
 	if err != nil {
 		return err
 	}
-	
+
 	bw.buf = 0
 	bw.nbits = 0
 	return nil

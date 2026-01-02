@@ -59,3 +59,10 @@ func (sw *SlidingWindow) WriteBytes(data []byte) {
 		sw.Write(b)
 	}
 }
+
+// Reset clears the window contents, so subsequent matches only reference bytes
+// written after the reset. This is required when encoding independent DEFLATE streams.
+func (sw *SlidingWindow) Reset() {
+	sw.pos = 0
+	sw.full = false
+}

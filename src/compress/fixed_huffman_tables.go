@@ -8,7 +8,7 @@ package compress
 //   - Symbols 280-287: 8 bits
 func LiteralLengthTable() Table {
 	lengths := make([]int, 288)
-	
+
 	for i := 0; i < 144; i++ {
 		lengths[i] = 8
 	}
@@ -21,7 +21,7 @@ func LiteralLengthTable() Table {
 	for i := 280; i < 288; i++ {
 		lengths[i] = 8
 	}
-	
+
 	codes, _ := buildTableFromLengths(lengths)
 	maxLength := 0
 	for _, length := range lengths {
@@ -29,7 +29,7 @@ func LiteralLengthTable() Table {
 			maxLength = length
 		}
 	}
-	
+
 	return Table{
 		Codes:     codes,
 		MaxLength: maxLength,
@@ -43,9 +43,9 @@ func DistanceTable() Table {
 	for i := 0; i < 30; i++ {
 		lengths[i] = 5
 	}
-	
+
 	codes, _ := buildTableFromLengths(lengths)
-	
+
 	return Table{
 		Codes:     codes,
 		MaxLength: 5,
@@ -55,12 +55,12 @@ func DistanceTable() Table {
 // buildTableFromLengths builds canonical Huffman codes from code lengths.
 func buildTableFromLengths(lengths []int) ([]Code, []int) {
 	codesMap := make(map[int]Code)
-	
+
 	for symbol, length := range lengths {
 		if length > 0 {
 			codesMap[symbol] = Code{Length: length}
 		}
 	}
-	
+
 	return Canonicalize(codesMap)
 }

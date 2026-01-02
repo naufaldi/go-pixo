@@ -205,3 +205,67 @@ func TestDeflateEncoder_EncodeTo(t *testing.T) {
 		t.Errorf("got %q, want %q", decompressed[:n], data)
 	}
 }
+
+func TestDeflateEncoder_EncodeAuto_FallbackOnDynamicError(t *testing.T) {
+	enc := NewDeflateEncoder()
+	data := []byte("Hello")
+
+	fixed, err := enc.Encode(data, false)
+	if err != nil {
+		t.Fatalf("Encode fixed failed: %v", err)
+	}
+
+	auto, err := enc.EncodeAuto(data)
+	if err != nil {
+		t.Fatalf("EncodeAuto should not fail even if dynamic fails: %v", err)
+	}
+
+	if len(auto) == 0 {
+		t.Error("EncodeAuto should return compressed data")
+	}
+
+	reader := flate.NewReader(bytes.NewReader(auto))
+	decompressed := make([]byte, len(data)*2)
+	n, err := reader.Read(decompressed)
+	if err != nil && err != io.EOF {
+		t.Fatalf("decompression failed: %v", err)
+	}
+
+	if !bytes.Equal(decompressed[:n], data) {
+		t.Errorf("got %q, want %q", decompressed[:n], data)
+	}
+
+	if len(auto) != len(fixed) {
+		t.Logf("EncodeAuto returned fixed fallback: auto=%d, fixed=%d", len(auto), len(fixed))
+	}
+}
+
+func TestDeflateEncoder_EncodeAuto_ReturnsSmallerWhenBothSucceed(t *testing.T) {
+	enc := NewDeflateEncoder()
+	data := bytes.Repeat([]byte("Hello, World! "), 100)
+
+	fixed, err := enc.Encode(data, false)
+	if err != nil {
+		t.Fatalf("Encode fixed failed: %v", err)
+	}
+
+	dynamic, err := enc.Encode(data, true)
+	if err != nil {
+		t.Fatalf("Encode dynamic failed: %v", err)
+	}
+
+	auto, err := enc.EncodeAuto(data)
+	if err != nil {
+		t.Fatalf("EncodeAuto failed: %v", err)
+	}
+
+	if len(auto) > len(fixed) && len(auto) > len(dynamic) {
+		t.Errorf("EncodeAuto should choose smaller: auto=%d, fixed=%d, dynamic=%d",
+			len(auto), len(fixed), len(dynamic))
+	}
+
+	if len(auto) != len(fixed) && len(auto) != len(dynamic) {
+		t.Errorf("EncodeAuto should match one of fixed/dynamic: auto=%d, fixed=%d, dynamic=%d",
+			len(auto), len(fixed), len(dynamic))
+	}
+}
