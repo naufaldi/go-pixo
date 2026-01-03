@@ -514,75 +514,75 @@ Goal: Add preset system with configurable optimization options.
 
 ---
 
-## Phase 5: PNG Lossy Mode (Quantization)
+## Phase 5: PNG Lossy Mode (Quantization) ✅ COMPLETED
 
 Goal: Optional lossy PNG with palette quantization.
 
-### 5.1 Palette Quantization Core
+### 5.1 Palette Quantization Core ✅
 
-- **[Task 5.1.1]** Create `src/png/palette.go`
+- **[Task 5.1.1]** ✅ Create `src/png/palette.go`
 
   - Define `Palette` struct (Colors []Color, NumColors int)
   - Define `Color` struct (R, G, B uint8)
   - Add `NewPalette(maxColors int) *Palette` function
   - Output: `src/png/palette.go`
 
-- **[Task 5.1.2]** Create `src/png/color_count.go`
+- **[Task 5.1.2]** ✅ Create `src/png/color_count.go`
 
   - Add `CountColors(pixels []byte, colorType int) map[Color]int` function
   - Count frequency of each unique color
   - Output: `src/png/color_count.go`
 
-- **[Task 5.1.3]** Create `src/png/median_cut.go`
+- **[Task 5.1.3]** ✅ Create `src/png/median_cut.go`
 
   - Add `MedianCut(colors []ColorWithCount, maxColors int) []Color` function
   - Recursively split color space
   - Output: `src/png/median_cut.go`, `src/png/median_cut_test.go`
 
-- **[Task 5.1.4]** Create `src/png/quantize.go`
+- **[Task 5.1.4]** ✅ Create `src/png/quantize.go`
   - Add `Quantize(pixels []byte, colorType int, maxColors int) ([]byte, Palette)` function
   - Build palette from colors
   - Map each pixel to nearest palette color
   - Test: verify color count ≤ 256
   - Output: `src/png/quantize.go`, `src/png/quantize_test.go`
 
-### 5.2 Dithering
+### 5.2 Dithering ✅
 
-- **[Task 5.2.1]** Create `src/png/dither.go`
+- **[Task 5.2.1]** ✅ Create `src/png/dither.go`
   - Define `Ditherer` struct (error []int)
   - Add `FloydSteinberg(pixels []byte, palette Palette) []byte` function
   - Add `Threshold(pixels []byte, palette Palette) []byte` function (no dithering)
   - Output: `src/png/dither.go`, `src/png/dither_test.go`
 
-### 5.3 PLTE Chunk
+### 5.3 PLTE Chunk ✅
 
-- **[Task 5.3.1]** Create `src/png/plte_writer.go`
+- **[Task 5.3.1]** ✅ Create `src/png/plte_writer.go`
   - Add `WritePLTE(w io.Writer, palette Palette) error` function
   - Write palette as PLTE chunk (before IDAT)
   - Output: `src/png/plte_writer.go`, `src/png/plte_writer_test.go`
 
-### 5.4 tRNS Chunk
+### 5.4 tRNS Chunk ✅
 
-- **[Task 5.3.2]** Create `src/png/trns_writer.go`
+- **[Task 5.3.2]** ✅ Create `src/png/trns_writer.go`
   - Add `WriteTRNS(w io.Writer, palette Palette) error` function
   - Write alpha values for palette entries (after PLTE)
   - Output: `src/png/trns_writer.go`, `src/png/trns_writer_test.go`
 
-### 5.5 Lossy API Integration
+### 5.5 Lossy API Integration ✅
 
-- **[Task 5.5.1]** Update `src/png/encoder.go` for lossy mode
+- **[Task 5.5.1]** ✅ Update `src/png/encoder.go` for lossy mode
 
   - Add `QuantizeBeforeEncoding(pixels []byte, colorType int, options Options) ([]byte, Palette)` function
   - Modify `Encode` to handle quantized data
   - Output: `src/png/encoder.go` (updated)
 
-- **[Task 5.5.2]** Update WASM bridge and Web UI for lossy mode
+- **[Task 5.5.2]** ✅ Update WASM bridge and Web UI for lossy mode
   - Expose quantization options in `src/wasm/bridge.go`
   - Update `web/src/Wasm.res` and UI components to support lossy settings
 
-### 5.6 Phase 5 Testing
+### 5.6 Phase 5 Testing ✅
 
-- **[Task 5.6.1]** Create lossy PNG tests
+- **[Task 5.6.1]** ✅ Create lossy PNG tests
   - Test quantization on various images
   - Test dithering on/off
   - Verify output < lossless size
@@ -931,10 +931,18 @@ Phase 4 (Optimizations) ✅ COMPLETED
   ├─ 4.5 Encoder Integration ✅
   └─ 4.6 Phase 4 Testing ✅
 
-Phase 5 (Lossy) → depends on Phase 1
-  ├─ 5.1-5.2 Quantization
-  ├─ 5.3-5.4 PLTE/tRNS
-  └─ 5.5-5.6 Integration + Tests
+Phase 5 (Lossy PNG) ✅ COMPLETED
+  ├─ 5.1 Palette Quantization Core ✅
+  │  ├─ 5.1.1 Palette struct ✅
+  │  ├─ 5.1.2 Color counting ✅
+  │  ├─ 5.1.3 Median cut ✅
+  │  └─ 5.1.4 Quantize function ✅
+  ├─ 5.2 Dithering ✅
+  │  └─ 5.2.1 Threshold + Floyd-Steinberg ✅
+  ├─ 5.3-5.4 PLTE/tRNS Chunks ✅
+  │  ├─ 5.3.1 PLTE writer ✅
+  │  └─ 5.4.1 tRNS writer ✅
+  └─ 5.5-5.6 Integration + Tests ✅
 
 Phase 6 (JPEG) → independent of PNG phases
   ├─ 6.1-6.5 Core (YCbCr, Blocks, DCT, Quant, Zigzag)
@@ -959,17 +967,17 @@ Phase 8 (Web Polish) ✅ PARTIAL
 
 ## Quick Reference
 
-| Phase | Tasks | Status      | Primary Output            |
-| ----- | ----- | ----------- | ------------------------- |
-| 1     | 11    | ✅ Complete | Valid PNG encoder         |
-| 2     | 8     | ✅ Complete | DEFLATE compression       |
-| 3     | 5     | ✅ Complete | Filter selection          |
-| 4     | 8     | ✅ Complete | Preset system             |
-| 5     | 6     | Pending     | Lossy PNG                 |
-| 6     | 11    | Pending     | JPEG encoder              |
-| 7     | 4     | Pending     | JPEG features             |
-| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done) |
-| Infra | 4     | ✅ Partial  | Build/test/docs           |
+| Phase | Tasks | Status      | Primary Output              |
+| ----- | ----- | ----------- | --------------------------- |
+| 1     | 11    | ✅ Complete | Valid PNG encoder           |
+| 2     | 8     | ✅ Complete | DEFLATE compression         |
+| 3     | 5     | ✅ Complete | Filter selection            |
+| 4     | 8     | ✅ Complete | Preset system               |
+| 5     | 6     | ✅ Complete | Lossy PNG with quantization |
+| 6     | 11    | Pending     | JPEG encoder                |
+| 7     | 4     | Pending     | JPEG features               |
+| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)   |
+| Infra | 4     | ✅ Partial  | Build/test/docs             |
 
 ---
 
@@ -982,5 +990,5 @@ For fastest path to working product:
 3. **Phase 2** (all 8 tasks) ✅ Complete - Add DEFLATE
 4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Privacy, etc.)
 5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
-6. **Phase 6-7** (JPEG) - Later phase
-7. **Phase 5** (Lossy PNG) - Optional
+6. **Phase 5** (all 6 tasks) ✅ Complete - Lossy PNG with palette quantization
+7. **Phase 6-7** (JPEG) - Later phase
