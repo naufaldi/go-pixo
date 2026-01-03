@@ -213,10 +213,10 @@ func JarvisJudiceNinke(pixels []byte, palette Palette) []byte {
 
 		// Distribute error to neighboring pixels
 		weights := [][3]int{
-			{7, 0, 0},  // i+1
-			{5, 0, 0},  // i+2
-			{3, 0, 0},  // i+3
-			{1, 0, 0},  // i+4
+			{7, 0, 0}, // i+1
+			{5, 0, 0}, // i+2
+			{3, 0, 0}, // i+3
+			{1, 0, 0}, // i+4
 		}
 		divisors := []int{48, 48, 48, 48}
 

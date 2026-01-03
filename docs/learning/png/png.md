@@ -105,7 +105,12 @@ const (
 - `2` = RGB (no palette)
 - `6` = RGBA (RGB + alpha channel)
 
-The gaps (`1`, `3`, `4`, `5`) are reserved for palette-based modes we'll implement later.
+The gaps (`1`, `3`, `4`, `5`) are reserved for palette-based modes:
+
+- `3` = Indexed color (palette-based PNG with PLTE chunk)
+- `4` = Grayscale + alpha
+
+See [PNG Lossy Quantization](quantization.md) for how we implement palette-based (indexed) PNG with up to 256 colors.
 
 ### Filter Types
 
@@ -491,3 +496,4 @@ FLG = check_bits | (dict_flag << 5) | (level << 6)
 - Learn about [PNG Chunks](../png-encoding.md#file-structure) (IHDR, IDAT, IEND)
 - Understand [PNG Filters](../png-encoding.md#the-five-png-filters) (Sub, Up, Average, Paeth)
 - Explore [PNG Encoding Pipeline](../png-encoding.md#the-png-pipeline)
+- Learn about [PNG Lossy Quantization](quantization.md) (palette quantization, median cut, dithering, PLTE/tRNS chunks)

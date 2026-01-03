@@ -74,9 +74,9 @@ func TestCountColorsRGBA(t *testing.T) {
 
 func TestToColorWithCountSlice(t *testing.T) {
 	colorMap := map[Color]int{
-		{255, 0, 0}:   5,
-		{0, 255, 0}:   3,
-		{0, 0, 255}:   1,
+		{255, 0, 0}: 5,
+		{0, 255, 0}: 3,
+		{0, 0, 255}: 1,
 	}
 
 	slice := ToColorWithCountSlice(colorMap)
@@ -185,9 +185,9 @@ func TestToColorWithCountSliceEmpty(t *testing.T) {
 
 func TestToColorWithCountSliceSorted(t *testing.T) {
 	colorMap := map[Color]int{
-		{255, 0, 0}:   1,
-		{0, 255, 0}:   10,
-		{0, 0, 255}:   5,
+		{255, 0, 0}: 1,
+		{0, 255, 0}: 10,
+		{0, 0, 255}: 5,
 	}
 
 	slice := ToColorWithCountSlice(colorMap)

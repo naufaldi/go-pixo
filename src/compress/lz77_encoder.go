@@ -8,20 +8,20 @@ const (
 
 // LZ77Encoder encodes data using LZ77 compression with DEFLATE constraints.
 type LZ77Encoder struct {
-	head              []int32
-	prev              []int32
-	compressionLevel  int
-	maxChainLen       int
-	minMatchLen       int
+	head             []int32
+	prev             []int32
+	compressionLevel int
+	maxChainLen      int
+	minMatchLen      int
 }
 
 // NewLZ77Encoder creates a new LZ77 encoder.
 func NewLZ77Encoder() *LZ77Encoder {
 	return &LZ77Encoder{
-		head:              make([]int32, hashSize),
-		compressionLevel:  6,
-		maxChainLen:       128,
-		minMatchLen:       minMatchLength,
+		head:             make([]int32, hashSize),
+		compressionLevel: 6,
+		maxChainLen:      128,
+		minMatchLen:      minMatchLength,
 	}
 }
 
@@ -173,4 +173,3 @@ func (enc *LZ77Encoder) findMatch(data []byte, pos int) (Match, bool) {
 	}
 	return Match{}, false
 }
-

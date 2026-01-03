@@ -93,8 +93,8 @@ func TestFloydSteinbergEmpty(t *testing.T) {
 
 func TestFloydSteinbergGradient(t *testing.T) {
 	palette := NewPalette(2)
-	palette.AddColor(Color{0, 0, 0})     // black
-	palette.AddColor(Color{255, 0, 0})   // red
+	palette.AddColor(Color{0, 0, 0})   // black
+	palette.AddColor(Color{255, 0, 0}) // red
 
 	// Create a gradient from black to red
 	pixels := make([]byte, 6*10)

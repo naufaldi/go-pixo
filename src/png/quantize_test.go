@@ -7,9 +7,9 @@ import (
 func TestQuantizeBasic(t *testing.T) {
 	// 2x2 RGB image (2*2*3 = 12 bytes)
 	pixels := []byte{
-		255, 0, 0,   // red
-		0, 255, 0,   // green
-		0, 0, 255,   // blue
+		255, 0, 0, // red
+		0, 255, 0, // green
+		0, 0, 255, // blue
 		255, 255, 0, // yellow
 	}
 
@@ -130,7 +130,7 @@ func TestQuantizeLargeImage(t *testing.T) {
 			idx := (y*width + x) * bpp
 			pixels[idx] = uint8((x * y) % 256)
 			pixels[idx+1] = uint8((x + y) % 256)
-			pixels[idx+2] = uint8((x * 2 + y) % 256)
+			pixels[idx+2] = uint8((x*2 + y) % 256)
 		}
 	}
 

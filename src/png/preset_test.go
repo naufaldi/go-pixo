@@ -21,7 +21,7 @@ func createTestImage(width, height int) []byte {
 			} else {
 				pixels[idx] = 0     // R
 				pixels[idx+1] = 255 // G
-				pixels[idx+2] = 0     // B
+				pixels[idx+2] = 0   // B
 				pixels[idx+3] = 128 // A (semi-transparent)
 			}
 		}
@@ -104,10 +104,10 @@ func TestAlphaOptimizationEffect(t *testing.T) {
 	width, height := 10, 10
 	pixels := make([]byte, width*height*4)
 	for i := 0; i < len(pixels); i += 4 {
-		pixels[i] = 100     // R
-		pixels[i+1] = 150   // G
-		pixels[i+2] = 200   // B
-		pixels[i+3] = 0     // Fully transparent
+		pixels[i] = 100   // R
+		pixels[i+1] = 150 // G
+		pixels[i+2] = 200 // B
+		pixels[i+3] = 0   // Fully transparent
 	}
 
 	// With Alpha optimization, all R,G,B should become 0, leading to better compression
@@ -129,10 +129,10 @@ func TestColorReductionEffect(t *testing.T) {
 	width, height := 10, 10
 	pixels := make([]byte, width*height*4)
 	for i := 0; i < len(pixels); i += 4 {
-		pixels[i] = 100     // R
-		pixels[i+1] = 100   // G
-		pixels[i+2] = 100   // B
-		pixels[i+3] = 255   // Opaque
+		pixels[i] = 100   // R
+		pixels[i+1] = 100 // G
+		pixels[i+2] = 100 // B
+		pixels[i+3] = 255 // Opaque
 	}
 	// This image is grayscale and opaque. Can be reduced to Grayscale (1 byte per pixel).
 

@@ -6,10 +6,10 @@ import (
 
 func TestNewPalette(t *testing.T) {
 	tests := []struct {
-		name       string
-		maxColors  int
-		wantCap    int
-		wantNum    int
+		name      string
+		maxColors int
+		wantCap   int
+		wantNum   int
 	}{
 		{"max 256", 256, 256, 0},
 		{"max 128", 128, 128, 0},
@@ -36,10 +36,10 @@ func TestPaletteAddColor(t *testing.T) {
 	p := NewPalette(4)
 
 	tests := []struct {
-		name       string
-		color      Color
-		wantIdx    int
-		wantNum    int
+		name    string
+		color   Color
+		wantIdx int
+		wantNum int
 	}{
 		{"add red", Color{255, 0, 0}, 0, 1},
 		{"add green", Color{0, 255, 0}, 1, 2},

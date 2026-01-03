@@ -7,9 +7,9 @@ import (
 
 func TestWritePLTE(t *testing.T) {
 	palette := NewPalette(3)
-	palette.AddColor(Color{255, 0, 0})   // red
-	palette.AddColor(Color{0, 255, 0})   // green
-	palette.AddColor(Color{0, 0, 255})   // blue
+	palette.AddColor(Color{255, 0, 0}) // red
+	palette.AddColor(Color{0, 255, 0}) // green
+	palette.AddColor(Color{0, 0, 255}) // blue
 
 	var buf bytes.Buffer
 	err := WritePLTE(&buf, *palette)

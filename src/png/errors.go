@@ -11,8 +11,8 @@ func (e *PngError) Error() string {
 }
 
 var (
-	ErrInvalidSignature   = &PngError{"invalid PNG signature"}
-	ErrUnknownChunkType   = &PngError{"unknown chunk type"}
-	ErrInvalidDimensions  = &PngError{"invalid image dimensions"}
-	ErrInvalidChunkData   = &PngError{"invalid chunk data"}
+	ErrInvalidSignature  = &PngError{"invalid PNG signature"}
+	ErrUnknownChunkType  = &PngError{"unknown chunk type"}
+	ErrInvalidDimensions = &PngError{"invalid image dimensions"}
+	ErrInvalidChunkData  = &PngError{"invalid chunk data"}
 )

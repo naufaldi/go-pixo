@@ -7,14 +7,14 @@ import (
 
 // DeflateEncoder encodes data using DEFLATE compression.
 type DeflateEncoder struct {
-	lz77              *LZ77Encoder
+	lz77             *LZ77Encoder
 	compressionLevel int
 }
 
 // NewDeflateEncoder creates a new DEFLATE encoder.
 func NewDeflateEncoder() *DeflateEncoder {
 	return &DeflateEncoder{
-		lz77:              NewLZ77Encoder(),
+		lz77:             NewLZ77Encoder(),
 		compressionLevel: 6,
 	}
 }

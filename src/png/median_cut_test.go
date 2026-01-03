@@ -177,7 +177,7 @@ func TestMedianCutBlueChannel(t *testing.T) {
 func TestMedianCutWithCounts(t *testing.T) {
 	// Colors with different frequencies
 	colors := []ColorWithCount{
-		{Color{0, 0, 0}, 100},  // Most frequent
+		{Color{0, 0, 0}, 100}, // Most frequent
 		{Color{255, 0, 0}, 50},
 		{Color{0, 255, 0}, 25},
 		{Color{0, 0, 255}, 10},
@@ -212,8 +212,8 @@ func TestAverageColors(t *testing.T) {
 
 func TestAverageColorsWeighted(t *testing.T) {
 	colors := []ColorWithCount{
-		{Color{0, 0, 0}, 3},        // Weight 3
-		{Color{255, 255, 255}, 1},  // Weight 1
+		{Color{0, 0, 0}, 3},       // Weight 3
+		{Color{255, 255, 255}, 1}, // Weight 1
 	}
 
 	avg := averageColors(colors)
