@@ -22,15 +22,17 @@ const (
 )
 
 type Options struct {
-	Width           int
-	Height          int
-	ColorType       ColorType
+	Width            int
+	Height           int
+	ColorType        ColorType
 	CompressionLevel int
-	FilterStrategy  FilterStrategy
-	OptimizeAlpha   bool
-	ReduceColorType bool
-	StripMetadata   bool
-	OptimalDeflate  bool
+	FilterStrategy   FilterStrategy
+	OptimizeAlpha    bool
+	ReduceColorType  bool
+	StripMetadata    bool
+	OptimalDeflate   bool
+	MaxColors        int
+	Dithering        bool
 }
 
 func FastOptions(width, height int) Options {
@@ -44,6 +46,8 @@ func FastOptions(width, height int) Options {
 		ReduceColorType:  false,
 		StripMetadata:    false,
 		OptimalDeflate:   false,
+		MaxColors:        0,
+		Dithering:        false,
 	}
 }
 
@@ -58,6 +62,8 @@ func BalancedOptions(width, height int) Options {
 		ReduceColorType:  true,
 		StripMetadata:    true,
 		OptimalDeflate:   false,
+		MaxColors:        0,
+		Dithering:        false,
 	}
 }
 
@@ -72,5 +78,29 @@ func MaxOptions(width, height int) Options {
 		ReduceColorType:  true,
 		StripMetadata:    true,
 		OptimalDeflate:   true,
+		MaxColors:        0,
+		Dithering:        false,
+	}
+}
+
+func LossyOptions(width, height int, maxColors int) Options {
+	if maxColors <= 0 {
+		maxColors = 256
+	}
+	if maxColors > 256 {
+		maxColors = 256
+	}
+	return Options{
+		Width:            width,
+		Height:           height,
+		ColorType:        ColorRGBA,
+		CompressionLevel: 9,
+		FilterStrategy:   FilterStrategyMinSum,
+		OptimizeAlpha:    true,
+		ReduceColorType:  false,
+		StripMetadata:    true,
+		OptimalDeflate:   true,
+		MaxColors:        maxColors,
+		Dithering:        false,
 	}
 }

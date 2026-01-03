@@ -8,6 +8,7 @@ This document contains all tasks needed to complete the go-pixo project, organiz
 - Engineer can complete one task in 2-4 hours
 - Task has clear start and end state
 - No task depends on multiple other tasks at the same level
+- **WASM Sync**: Every core Go feature must be exposed via `src/wasm/bridge.go` and integrated into the `web/` frontend if applicable.
 
 ---
 
@@ -445,7 +446,7 @@ Goal: Improve size with filter byte per row optimization.
 
 Goal: Add preset system with configurable optimization options.
 
-### Phase 4 Progress: ✅ 5 of 6 Tasks Complete (4.1-4.3)
+### Phase 4 Progress: ✅ 8 of 8 Tasks Complete
 
 ### 4.1 Options Structure
 
@@ -489,14 +490,14 @@ Goal: Add preset system with configurable optimization options.
 
 ### 4.4 Metadata Stripping
 
-- **[Task 4.4.1]** Update chunk writer to skip ancillary chunks
+- **[Task 4.4.1]** ✅ Update chunk writer to skip ancillary chunks
   - Modify `WriteTo` to only write required chunks (IHDR, IDAT, IEND)
   - Test: verify no tEXt, zTXt, etc. chunks written
   - Output: `src/png/chunk.go` (updated)
 
 ### 4.5 Encoder Integration
 
-- **[Task 4.5.1]** Update `src/png/encoder.go` to use Options
+- **[Task 4.5.1]** ✅ Update `src/png/encoder.go` to use Options
   - Add `NewEncoderWithOptions(opts Options) (*Encoder, error)` constructor
   - Add `EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)` method
   - Apply optimizations in order: color reduction, alpha optimization, filter selection
@@ -504,7 +505,7 @@ Goal: Add preset system with configurable optimization options.
 
 ### 4.6 Phase 4 Testing
 
-- **[Task 4.6.1]** Create preset tests
+- **[Task 4.6.1]** ✅ Create preset tests
   - Test Fast preset (minimal processing)
   - Test Balanced preset (filters only)
   - Test Max preset (all optimizations)
@@ -570,9 +571,14 @@ Goal: Optional lossy PNG with palette quantization.
 ### 5.5 Lossy API Integration
 
 - **[Task 5.5.1]** Update `src/png/encoder.go` for lossy mode
+
   - Add `QuantizeBeforeEncoding(pixels []byte, colorType int, options Options) ([]byte, Palette)` function
   - Modify `Encode` to handle quantized data
   - Output: `src/png/encoder.go` (updated)
+
+- **[Task 5.5.2]** Update WASM bridge and Web UI for lossy mode
+  - Expose quantization options in `src/wasm/bridge.go`
+  - Update `web/src/Wasm.res` and UI components to support lossy settings
 
 ### 5.6 Phase 5 Testing
 
@@ -705,10 +711,15 @@ Goal: Implement JPEG encoding for photos.
   - Output: `src/jpeg/encoder.go`
 
 - **[Task 6.11.2]** Test JPEG encoder
+
   - Encode 1×1, 8×8, 16×16 images
   - Verify output opens in browsers
   - Test various quality settings
   - Output: `src/jpeg/encoder_test.go`
+
+- **[Task 6.11.3]** Update WASM bridge and Web UI for JPEG
+  - Expose JPEG encoding in `src/wasm/bridge.go`
+  - Add JPEG support to `web/src/worker.ts` and `web/src/App.res`
 
 ---
 
@@ -755,7 +766,7 @@ Goal: Advanced JPEG features after baseline works.
 
 Goal: Make the product easy to use.
 
-### Phase 8 Progress: ✅ 6 of 10 Tasks Complete
+### Phase 8 Progress: ✅ 7 of 10 Tasks Complete
 
 ### 8.1 Drag and Drop ✅ COMPLETED
 
@@ -804,8 +815,9 @@ Goal: Make the product easy to use.
   - Implement lossless/lossy toggle
   - Output: `web/src/components/BottomBar.res`
 
-### 8.6 Privacy Messaging
-- **[Task 8.6.1]** Add privacy indicator
+### 8.6 Privacy Messaging ✅ COMPLETED
+
+- **[Task 8.6.1]** ✅ Add privacy indicator
   - "Runs locally on your device"
   - "No data sent to servers"
   - Visual badge
@@ -835,6 +847,7 @@ Goal: Make the product easy to use.
 ### 8.9 Image Management ✅ COMPLETED
 
 - **[Task 8.9.1]** ✅ Implement individual image removal
+
   - Add delete button to `FileQueue` and `CompareView`
   - Update state reducer to handle single item removal
   - Output: `web/src/components/FileQueue.res`, `web/src/App.res`
@@ -875,6 +888,13 @@ Goal: Make the product easy to use.
   - Web usage
   - API reference
 
+### WASM/Web Synchronization
+
+- **[Sync 1]** Ensure all core features are exposed to WASM
+  - Verify `src/wasm/bridge.go` maps all relevant Go options/functions
+  - Ensure `web/src/worker.ts` can communicate with new WASM exports
+  - Validate UI components in `web/src/components/` reflect new capabilities
+
 ---
 
 ## Task Dependencies
@@ -901,12 +921,15 @@ Phase 3 (Filters) ✅ COMPLETED
   ├─ 3.3 Reconstruction ✅
   └─ 3.4-3.5 Selection + Tests ✅
 
-Phase 4 (Optimizations) ✅ PARTIAL (4.1-4.3 COMPLETED)
+Phase 4 (Optimizations) ✅ COMPLETED
   ├─ 4.1 Options ✅
   │  ├─ 4.1.1 Options struct + Presets ✅
   │  └─ 4.1.2 Options builder ✅
   ├─ 4.2 Alpha Optimization ✅
-  └─ 4.3 Color Type Analysis ✅
+  ├─ 4.3 Color Type Analysis ✅
+  ├─ 4.4 Metadata Stripping ✅
+  ├─ 4.5 Encoder Integration ✅
+  └─ 4.6 Phase 4 Testing ✅
 
 Phase 5 (Lossy) → depends on Phase 1
   ├─ 5.1-5.2 Quantization
@@ -936,17 +959,17 @@ Phase 8 (Web Polish) ✅ PARTIAL
 
 ## Quick Reference
 
-| Phase | Tasks | Status      | Primary Output      |
-| ----- | ----- | ----------- | ------------------- |
-| 1     | 11    | ✅ Complete | Valid PNG encoder   |
-| 2     | 8     | ✅ Complete | DEFLATE compression |
-| 3     | 5     | ✅ Complete | Filter selection    |
-| 4     | 6     | ✅ Partial  | Preset system (4.1-4.3 done) |
-| 5     | 6     | Pending     | Lossy PNG           |
-| 6     | 11    | Pending     | JPEG encoder        |
-| 7     | 4     | Pending     | JPEG features       |
-| 8     | 10    | ✅ Partial  | Web UI polish       |
-| Infra | 4     | ✅ Partial  | Build/test/docs     |
+| Phase | Tasks | Status      | Primary Output            |
+| ----- | ----- | ----------- | ------------------------- |
+| 1     | 11    | ✅ Complete | Valid PNG encoder         |
+| 2     | 8     | ✅ Complete | DEFLATE compression       |
+| 3     | 5     | ✅ Complete | Filter selection          |
+| 4     | 8     | ✅ Complete | Preset system             |
+| 5     | 6     | Pending     | Lossy PNG                 |
+| 6     | 11    | Pending     | JPEG encoder              |
+| 7     | 4     | Pending     | JPEG features             |
+| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done) |
+| Infra | 4     | ✅ Partial  | Build/test/docs           |
 
 ---
 
@@ -957,8 +980,7 @@ For fastest path to working product:
 1. **Phase 1** (all 11 tasks) ✅ Complete - Valid PNG encoder working
 2. **Phase 3** (all 5 tasks) ✅ Complete - Add filters for compression
 3. **Phase 2** (all 8 tasks) ✅ Complete - Add DEFLATE
-4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Delete, etc.)
-5. **Phase 4** (tasks 4.1-4.3) ✅ Partial - Preset system, Alpha opt, Color reduction
-6. **Phase 4** (tasks 4.4-4.6) - Metadata stripping, Integration, Testing (remaining)
-7. **Phase 6-7** (JPEG) - Later phase
-8. **Phase 5** (Lossy PNG) - Optional
+4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Privacy, etc.)
+5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
+6. **Phase 6-7** (JPEG) - Later phase
+7. **Phase 5** (Lossy PNG) - Optional

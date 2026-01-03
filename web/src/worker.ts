@@ -8,6 +8,8 @@ interface CompressionRequest {
   colorType: number;
   preset: number;
   lossy: boolean;
+  maxColors: number;
+  dithering: boolean;
 }
 
 interface CompressionResponse {
@@ -76,7 +78,9 @@ function encodePng(
   height: number,
   colorType: number = 6,
   preset: number = 1,
-  lossy: boolean = false
+  lossy: boolean = false,
+  maxColors: number = 0,
+  dithering: boolean = false
 ): Uint8Array {
   // @ts-ignore - encodePng is exposed by Go WASM on the worker global
   if (!(self as any).encodePng) {
@@ -84,8 +88,8 @@ function encodePng(
   }
 
   // @ts-ignore - encodePng is exposed by Go WASM on the worker global
-  const result = (self as any).encodePng(pixels, width, height, colorType, preset, lossy);
-  
+  const result = (self as any).encodePng(pixels, width, height, colorType, preset, lossy, maxColors);
+
   if (typeof result === 'string' && result.startsWith('error:')) {
     throw new Error(result);
   }
@@ -150,7 +154,9 @@ self.onmessage = async (event: MessageEvent<{
           req.height,
           req.colorType,
           req.preset,
-          req.lossy
+          req.lossy,
+          req.maxColors,
+          req.dithering
         );
         const duration = Date.now() - startTime;
 

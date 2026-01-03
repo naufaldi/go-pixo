@@ -45,3 +45,20 @@ func (c *Chunk) WriteTo(w io.Writer) (int64, error) {
 	n, err := w.Write(bytes)
 	return int64(n), err
 }
+
+// IsCritical returns true if the chunk is critical for PNG decoding.
+// Critical chunks have an uppercase first letter in their type.
+func (c *Chunk) IsCritical() bool {
+	if len(c.chunkType) == 0 {
+		return false
+	}
+	// Per PNG spec, the 5th bit of the first byte of the chunk type
+	// indicates if it's ancillary (1) or critical (0).
+	return (c.chunkType[0] & 0x20) == 0
+}
+
+// IsRequired returns true if the chunk is absolutely required for a valid PNG.
+// These are IHDR, IDAT, and IEND.
+func (c *Chunk) IsRequired() bool {
+	return c.chunkType == ChunkIHDR || c.chunkType == ChunkIDAT || c.chunkType == ChunkIEND
+}

@@ -18,12 +18,10 @@ func NewEncoder(width, height int, colorType ColorType) (*Encoder, error) {
 		return nil, ErrInvalidDimensions
 	}
 
-	ihdr, err := NewIHDRData(width, height, 8, uint8(colorType))
-	if err != nil {
+	// Validate parameters by creating a dummy IHDR
+	if _, err := NewIHDRData(width, height, 8, uint8(colorType)); err != nil {
 		return nil, err
 	}
-
-	_ = ihdr
 
 	opts := FastOptions(width, height)
 	opts.ColorType = colorType
@@ -41,12 +39,10 @@ func NewEncoderWithOptions(opts Options) (*Encoder, error) {
 		return nil, ErrInvalidDimensions
 	}
 
-	ihdr, err := NewIHDRData(opts.Width, opts.Height, 8, uint8(opts.ColorType))
-	if err != nil {
+	// Validate parameters by creating a dummy IHDR
+	if _, err := NewIHDRData(opts.Width, opts.Height, 8, uint8(opts.ColorType)); err != nil {
 		return nil, err
 	}
-
-	_ = ihdr
 
 	return &Encoder{
 		width:     opts.Width,
@@ -70,6 +66,43 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 	processedPixels := pixels
 
+	// 0. Quantization (Lossy) - before other optimizations
+	if opts.MaxColors > 0 && opts.MaxColors < 256 {
+		var indexedPixels []byte
+		var palette Palette
+
+		if opts.Dithering {
+			indexedPixels, palette = QuantizeWithDithering(processedPixels, int(colorType), opts.MaxColors)
+		} else {
+			indexedPixels, palette = Quantize(processedPixels, int(colorType), opts.MaxColors)
+		}
+
+		var buf bytes.Buffer
+
+		if err := writeSignature(&buf); err != nil {
+			return nil, err
+		}
+
+		if err := writeIHDR(&buf, opts.Width, opts.Height, ColorIndexed); err != nil {
+			return nil, err
+		}
+
+		if err := WritePLTE(&buf, palette); err != nil {
+			return nil, err
+		}
+
+		if err := WriteIDATWithOptions(&buf, indexedPixels, opts.Width, opts.Height, ColorIndexed, opts); err != nil {
+			return nil, err
+		}
+
+		if err := writeIEND(&buf); err != nil {
+			return nil, err
+		}
+
+		return buf.Bytes(), nil
+	}
+
+	// 1. Color Reduction (Lossless)
 	if opts.ReduceColorType {
 		if CanReduceToRGB(processedPixels, opts.Width, opts.Height) {
 			var err error
@@ -88,24 +121,32 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		}
 	}
 
+	// 2. Alpha Optimization (RGB=0 when A=0)
 	if opts.OptimizeAlpha && colorType == ColorRGBA {
 		processedPixels = OptimizeAlpha(processedPixels, colorType)
 	}
 
 	var buf bytes.Buffer
 
+	// 3. Write PNG Signature
 	if err := writeSignature(&buf); err != nil {
 		return nil, err
 	}
 
+	// 4. Write IHDR Chunk (Critical)
 	if err := writeIHDR(&buf, opts.Width, opts.Height, colorType); err != nil {
 		return nil, err
 	}
 
+	// Note: If we had ancillary chunks (metadata), we would check opts.StripMetadata
+	// here before writing them. Currently, we only write required chunks.
+
+	// 5. Write IDAT Chunk (Critical) - Includes Filter Strategy and Deflate Compression
 	if err := WriteIDATWithOptions(&buf, processedPixels, opts.Width, opts.Height, colorType, opts); err != nil {
 		return nil, err
 	}
 
+	// 6. Write IEND Chunk (Critical)
 	if err := writeIEND(&buf); err != nil {
 		return nil, err
 	}

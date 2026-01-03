@@ -16,4 +16,5 @@ const (
 	ColorGrayscale ColorType = 0
 	ColorRGB       ColorType = 2
 	ColorRGBA      ColorType = 6
+	ColorIndexed   ColorType = 3
 )
