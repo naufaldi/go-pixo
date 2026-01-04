@@ -859,6 +859,185 @@ Goal: Make the product easy to use.
 
 ---
 
+## Phase 9: Advanced PNG Compression Optimization ✅ PARTIAL
+
+Goal: Improve PNG compression to match or beat existing tools like OxiPNG and OptiPNG, using cursor-meetup.png (727 KB baseline) as the target.
+
+**Documentation Created:**
+
+- `docs/learning/png/entropy-filtering.md` - Entropy-based filter scoring
+- `docs/learning/png/zopfli-optimization.md` - Zopfli DEFLATE optimization
+- `docs/learning/png/advanced-compression.md` - Advanced compression techniques overview
+- `docs/learning/png/compression-regression.md` - Compression regression case study
+- `docs/learning/png/index.md` - Updated index with new docs
+
+### Phase 9 Progress: ✅ 3 complete, 3 in progress, 1 pending
+
+### 9.1 Entropy-Based Filter Scoring ✅ COMPLETED
+
+- **[Task 9.1.1]** ✅ Create `src/png/filter_entropy.go`
+
+  - Add `CalculateEntropy(data []byte) float64` function
+  - Implement entropy calculation per byte value frequency distribution
+  - Output: `src/png/filter_entropy.go`
+
+- **[Task 9.1.2]** ✅ Update `src/png/filter_selector.go`
+
+  - Add `SelectFilterWithEntropy(row, prevRow []byte, bpp int)` function
+  - Try all 5 filters, score by entropy instead of sum of absolute values
+  - Select filter with lowest entropy (most compressible)
+  - Output: `src/png/filter_selector.go` (updated)
+
+- **[Task 9.1.3]** ✅ Add `FilterStrategyEntropy` option
+
+  - Update `src/png/options.go` with new strategy constant
+  - Test: verify entropy scoring produces better compression than sum scoring
+  - Tests: `TestCalculateEntropy`, `TestEntropyScore`, `TestSelectFilterWithEntropy`
+
+### 9.2 Brute Force Filter Optimization ✅ COMPLETED
+
+- **[Task 9.2.1]** ✅ Create `src/png/filter_bruteforce.go`
+
+  - Add `BruteForceFilters(pixels []byte, width, height, bpp int) []FilterType` function
+  - For each row, try all 5 filters and select best based on compressed size
+  - For images below threshold, try all row combinations (expensive but optimal)
+  - Output: `src/png/filter_bruteforce.go`
+
+- **[Task 9.2.2]** ✅ Update `src/png/options.go`
+
+  - Add `FilterStrategyBruteForce` option
+  - Define size threshold for automatic brute force (65536 pixels)
+  - Output: `src/png/options.go` (updated)
+
+- **[Task 9.2.3]** ✅ Test with various image sizes
+
+  - Test small images (< 64x64): full brute force
+  - Test medium images (64x64 to 256x256): per-row optimization
+  - Tests: 14 new tests for brute force functionality
+
+### 9.3 Zopfli-Style DEFLATE Iteration ✅ COMPLETED
+
+- **[Task 9.3.1]** ✅ Update `src/compress/deflate_encoder.go`
+
+  - Enhance `EncodeOptimal()` with proper Zopfli iteration
+  - Implement cost model for evaluating configurations
+  - Try multiple encoding modes (fixed, dynamic, auto)
+  - Select configuration with best compression ratio
+
+- **[Task 9.3.2]** ✅ Create `src/compress/zopfli.go`
+
+  - Add `ZopfliEncode(data []byte, config ZopfliConfig) ([]byte, error)` function
+  - Implement iterative refinement algorithm
+  - Track best result across iterations
+  - Support configurable iterations and block splitting
+
+- **[Task 9.3.3]** ✅ Update `src/png/options.go`
+
+  - Add `ZopfliIterations` field to Options struct
+  - Add `ExtremeOptions()` preset for maximum compression
+  - Support for compression level 10
+
+- **[Task 9.3.4]** ✅ Test compression improvement
+
+  - Target: match or beat 727 KB for `cursor-meetup.png`
+  - Measure: compare output size with current implementation
+  - Tests: 11 new tests for Zopfli functionality
+
+### 9.4 Enhanced Palette Quantization 🔄 IN PROGRESS
+
+- **[Task 9.4.1]** 🔄 Update `src/png/median_cut.go`
+
+  - Improve median cut algorithm for better color selection
+  - Add quality parameter for color accuracy vs size trade-off
+  - Support alpha channel in quantization
+  - Status: `median_cut.go` and `median_cut_test.go` modified
+
+- **[Task 9.4.2]** 🔄 Add dithering support in `src/png/dither.go`
+
+  - Implement Floyd-Steinberg dithering
+  - Add `DitherLevel` parameter (0-10) for control
+  - Output: `src/png/dither.go` (updated), `src/png/dither_test.go` (updated)
+
+- **[Task 9.4.3]** Update quantization options in `src/png/options.go`
+
+  - Add `DitheringStrength` option
+  - Add `QualityTarget` option for lossy compression
+
+### 9.5 CLI Enhancement for Testing 🔄 IN PROGRESS
+
+- **[Task 9.5.1]** 🔄 Update `src/cmd/cli/main.go`
+
+  - Add `-preset` flag (fast, balanced, max, extreme)
+  - Add `-lossy` flag for palette quantization
+  - Add `-quality` flag (0-100) for lossy compression level
+  - Add `-compare` flag to show original vs compressed size
+  - Add `-verbose` flag for detailed output
+  - Status: `main.go` modified
+
+- **[Task 9.5.2]** Add benchmark mode
+
+  - Compress multiple times and report average
+  - Compare against original file size
+  - Output compression ratio percentage
+
+- **[Task 9.5.3]** ✅ Create test script for `cursor-meetup.png`
+
+  - Script: `scripts/test-advanced-compression.sh`
+  - Test all presets and configurations
+  - Report which achieves best compression
+  - Target: achieve <= 727 KB (original size)
+
+### 9.6 WASM Integration 🔄 IN PROGRESS
+
+- **[Task 9.6.1]** 🔄 Update `src/wasm/bridge.go`
+
+  - Expose new compression options (Zopfli, entropy filters, lossy)
+  - Add `EncodePngAdvanced()` function with full options
+  - Update `EncodePng()` to use best available settings
+  - Status: `bridge.go` modified
+
+- **[Task 9.6.2]** Update `web/src/worker.ts`
+
+  - Support new compression options from UI
+  - Add progress indication for slow operations (Zopfli iteration)
+
+- **[Task 9.6.3]** Update `web/src/App.res`
+
+  - Add UI controls for advanced options
+  - Display compression ratio and savings
+
+### 9.7 Problem Documentation ✅ 4 of 4 Tasks Complete
+
+- **[Task 9.7.1]** ✅ Create `docs/learning/png/compression-regression.md`
+
+  - Document the problem: `cursor-meetup.png` case study
+  - Explain why re-compression can produce larger files
+  - Describe technical root causes (filter scoring, DEFLATE iteration, palette optimization)
+  - Include comparison with reference tools (OxiPNG, OptiPNG, pngquant)
+  - Document proposed solutions and expected improvements
+
+- **[Task 9.7.2]** ✅ Create `docs/learning/png/entropy-filtering.md`
+
+  - Explain entropy-based filter scoring concept
+  - Compare with traditional sum of absolute values scoring
+  - Document when entropy scoring provides better results
+  - Include examples with real image data
+
+- **[Task 9.7.3]** ✅ Create `docs/learning/png/zopfli-optimization.md`
+
+  - Explain Zopfli algorithm and iterative DEFLATE optimization
+  - Document cost model for Huffman table evaluation
+  - Include performance vs compression trade-offs
+  - Reference: Zopfli whitepaper and implementations
+
+- **[Task 9.7.4]** ✅ Update `docs/learning/png/index.md`
+
+  - Add links to new documentation
+  - Organize learning materials by topic
+  - Add quick reference for compression strategies
+
+---
+
 ## Infrastructure Tasks (Cross-Cutting) ✅ PARTIAL
 
 ### Build and Testing ✅ COMPLETED
@@ -961,23 +1140,33 @@ Phase 8 (Web Polish) ✅ PARTIAL
   ├─ 8.5-8.6 UI (Presets, Privacy) ✅
   ├─ 8.7-8.8 Architecture (Worker, Memory) ✅
   └─ 8.9 Image Management (Delete/Clear) ✅
+
+Phase 9 (Advanced PNG Compression) ✅ PARTIAL
+  ├─ 9.1 Entropy-Based Filter Scoring ✅
+  ├─ 9.2 Brute Force Filter Optimization ✅
+  ├─ 9.3 Zopfli-Style DEFLATE Iteration ✅
+  ├─ 9.4 Enhanced Palette Quantization 🔄
+  ├─ 9.5 CLI Enhancement 🔄
+  ├─ 9.6 WASM Integration 🔄
+  └─ 9.7 Problem Documentation ✅ (4/4 done)
 ```
 
 ---
 
 ## Quick Reference
 
-| Phase | Tasks | Status      | Primary Output              |
-| ----- | ----- | ----------- | --------------------------- |
-| 1     | 11    | ✅ Complete | Valid PNG encoder           |
-| 2     | 8     | ✅ Complete | DEFLATE compression         |
-| 3     | 5     | ✅ Complete | Filter selection            |
-| 4     | 8     | ✅ Complete | Preset system               |
-| 5     | 6     | ✅ Complete | Lossy PNG with quantization |
-| 6     | 11    | Pending     | JPEG encoder                |
-| 7     | 4     | Pending     | JPEG features               |
-| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)   |
-| Infra | 4     | ✅ Partial  | Build/test/docs             |
+| Phase | Tasks | Status      | Primary Output                           |
+| ----- | ----- | ----------- | ---------------------------------------- |
+| 1     | 11    | ✅ Complete | Valid PNG encoder                        |
+| 2     | 8     | ✅ Complete | DEFLATE compression                      |
+| 3     | 5     | ✅ Complete | Filter selection                         |
+| 4     | 8     | ✅ Complete | Preset system                            |
+| 5     | 6     | ✅ Complete | Lossy PNG with quantization              |
+| 6     | 11    | Pending     | JPEG encoder                             |
+| 7     | 4     | Pending     | JPEG features                            |
+| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)                |
+| 9     | 7     | ✅ Partial  | Advanced PNG compression (3✅, 3🔄, 1⏳) |
+| Infra | 4     | ✅ Partial  | Build/test/docs                          |
 
 ---
 
@@ -991,4 +1180,5 @@ For fastest path to working product:
 4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Privacy, etc.)
 5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
 6. **Phase 5** (all 6 tasks) ✅ Complete - Lossy PNG with palette quantization
-7. **Phase 6-7** (JPEG) - Later phase
+7. **Phase 9** (tasks 9.1-9.3) ✅ Partial - Advanced PNG compression (entropy, brute force, Zopfli)
+8. **Phase 6-7** (JPEG) - Later phase

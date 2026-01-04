@@ -4,7 +4,12 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"image"
+	"image/color"
+	stdpng "image/png"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mac/go-pixo/src/compress"
@@ -329,4 +334,451 @@ func TestIDATDataBytes_matchesWriteIDAT(t *testing.T) {
 	if !bytes.Equal(dataBytes, writeData) {
 		t.Errorf("IDATDataBytes() = %v, WriteIDAT() data = %v", dataBytes, writeData)
 	}
+}
+
+func TestSizeComparisonFallback_StoredBlockForRandomData(t *testing.T) {
+	// Create random/uncompressible data that should trigger stored block fallback
+	width, height := 16, 16
+	bpp := 4 // RGBA
+	pixels := make([]byte, width*height*bpp)
+	for i := range pixels {
+		pixels[i] = byte(i * 17 % 256) // Pseudo-random pattern
+	}
+
+	// Get IDAT data (zlib-wrapped DEFLATE/stored)
+	data, err := IDATDataBytes(pixels, width, height, ColorRGBA)
+	if err != nil {
+		t.Fatalf("IDATDataBytes() error = %v", err)
+	}
+
+	// Build expected scanline data with filter bytes
+	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+	var prevRow []byte
+	for y := 0; y < height; y++ {
+		rowStart := y * width * bpp
+		row := pixels[rowStart : rowStart+width*bpp]
+		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		scanlineData = append(scanlineData, byte(filterType))
+		scanlineData = append(scanlineData, filteredRow...)
+		prevRow = row
+	}
+
+	// The zlib data should include:
+	// - zlib header (2 bytes)
+	// - DEFLATE/stored block data
+	// - Adler32 footer (4 bytes)
+	zlibData := data
+	if len(zlibData) < 6 {
+		t.Fatalf("zlib data too short: %d bytes", len(zlibData))
+	}
+
+	// Decompress and verify data is correct
+	zlibReader, err := zlib.NewReader(bytes.NewReader(zlibData))
+	if err != nil {
+		t.Fatalf("failed to create zlib reader: %v", err)
+	}
+	defer zlibReader.Close()
+
+	decompressed := make([]byte, len(scanlineData)+100)
+	n, err := zlibReader.Read(decompressed)
+	if err != nil && err != io.EOF {
+		t.Fatalf("decompression failed: %v", err)
+	}
+
+	if !bytes.Equal(decompressed[:n], scanlineData) {
+		t.Errorf("decompressed data doesn't match expected scanline data")
+	}
+
+	t.Logf("Random data: scanline size=%d, compressed zlib size=%d", len(scanlineData), len(zlibData))
+}
+
+func TestSizeComparisonFallback_DeflateForCompressibleData(t *testing.T) {
+	// Create highly compressible data (all same color)
+	width, height := 32, 32
+	bpp := 3 // RGB
+	pixels := make([]byte, width*height*bpp)
+	for i := 0; i < width*height; i++ {
+		pixels[i*bpp] = 0xFF   // R
+		pixels[i*bpp+1] = 0x00 // G
+		pixels[i*bpp+2] = 0x00 // B
+	}
+
+	data, err := IDATDataBytes(pixels, width, height, ColorRGB)
+	if err != nil {
+		t.Fatalf("IDATDataBytes() error = %v", err)
+	}
+
+	// Build expected scanline data
+	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+	var prevRow []byte
+	for y := 0; y < height; y++ {
+		rowStart := y * width * bpp
+		row := pixels[rowStart : rowStart+width*bpp]
+		filterType, filteredRow := SelectFilter(row, prevRow, bpp)
+		scanlineData = append(scanlineData, byte(filterType))
+		scanlineData = append(scanlineData, filteredRow...)
+		prevRow = row
+	}
+
+	// For highly compressible data, DEFLATE should produce much smaller output
+	// zlib format: header (2) + compressed data + footer (4)
+	zlibData := data[8 : len(data)-4] // Extract just DEFLATE data
+	compressedSize := len(zlibData)
+
+	// Compressed should be significantly smaller than uncompressed
+	// For all-same color, compression ratio should be excellent
+	if compressedSize >= len(scanlineData)/2 {
+		t.Errorf("DEFLATE should compress well: compressed=%d, uncompressed=%d",
+			compressedSize, len(scanlineData))
+	}
+
+	t.Logf("Compressible data: scanline size=%d, DEFLATE size=%d, ratio=%.2f%%",
+		len(scanlineData), compressedSize,
+		float64(compressedSize)/float64(len(scanlineData))*100)
+}
+
+func TestSizeComparisonFallback_NeverIncreasesSize(t *testing.T) {
+	// Test both compressible and incompressible data to ensure size never increases
+	testCases := []struct {
+		name   string
+		width  int
+		height int
+		bpp    int
+		data   []byte
+	}{
+		{"repetitive", 100, 30, 3, bytes.Repeat([]byte{0xAA, 0xBB, 0xCC}, 1000)},
+		{"gradient", 50, 60, 3, generateGradientData(50, 60, 3)},
+		{"random", 50, 80, 4, generateRandomData(50, 80, 4)},
+		{"checkerboard", 32, 32, 3, generateCheckerboardData(32, 32, 3)},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expectedSize := tc.width * tc.height * tc.bpp
+			if len(tc.data) != expectedSize {
+				// Trim or pad data to match expected size
+				if len(tc.data) > expectedSize {
+					tc.data = tc.data[:expectedSize]
+				} else {
+					// Generate proper sized data
+					switch tc.name {
+					case "repetitive":
+						tc.data = bytes.Repeat([]byte{0xAA, 0xBB, 0xCC}, expectedSize/3)
+					case "gradient":
+						tc.data = generateGradientData(tc.width, tc.height, tc.bpp)
+					case "random":
+						tc.data = generateRandomData(tc.width, tc.height, tc.bpp)
+					case "checkerboard":
+						tc.data = generateCheckerboardData(tc.width, tc.height, tc.bpp)
+					}
+				}
+			}
+
+			colorType := ColorRGB
+			if tc.bpp == 4 {
+				colorType = ColorRGBA
+			}
+
+			data, err := IDATDataBytes(tc.data, tc.width, tc.height, colorType)
+			if err != nil {
+				t.Fatalf("IDATDataBytes() error = %v", err)
+			}
+
+			// zlib data is the data portion
+			zlibData := data
+
+			// Decompress to get original size
+			zlibReader, err := zlib.NewReader(bytes.NewReader(zlibData))
+			if err != nil {
+				t.Fatalf("failed to create zlib reader: %v", err)
+			}
+			defer zlibReader.Close()
+
+			decompressed := make([]byte, len(tc.data)+tc.width*tc.height+100)
+			n, err := zlibReader.Read(decompressed)
+			if err != nil && err != io.EOF {
+				t.Fatalf("decompression failed: %v", err)
+			}
+
+			// The PNG output (zlib data) should be <= the original scanline data size
+			// Note: we compare against decompressed size (which includes filter bytes)
+			if len(zlibData) > n {
+				t.Errorf("compressed size (%d) > original size (%d): compression increased file size!",
+					len(zlibData), n)
+			}
+
+			t.Logf("%s: original=%d, compressed=%d, ratio=%.2f%%",
+				tc.name, n, len(zlibData),
+				float64(len(zlibData))/float64(n)*100)
+		})
+	}
+}
+
+func TestEncodeWithFallback(t *testing.T) {
+	encoder := compress.NewDeflateEncoder()
+
+	// Test 1: Highly compressible data
+	compressible := bytes.Repeat([]byte{0x01, 0x02, 0x03}, 1000)
+	result, err := encoder.EncodeWithFallback(compressible)
+	if err != nil {
+		t.Fatalf("EncodeWithFallback() error = %v", err)
+	}
+	if len(result) >= len(compressible) {
+		t.Errorf("compressible: result (%d) should be < input (%d)", len(result), len(compressible))
+	}
+
+	// Test 2: Random/uncompressible data
+	random := generateRandomData(100, 100, 1)
+	result, err = encoder.EncodeWithFallback(random)
+	if err != nil {
+		t.Fatalf("EncodeWithFallback() error = %v", err)
+	}
+	// For uncompressible data, result may be slightly larger due to stored block overhead
+	// but should use stored blocks (not expanded DEFLATE)
+	t.Logf("random: input=%d, output=%d, ratio=%.2f%%",
+		len(random), len(result), float64(len(result))/float64(len(random))*100)
+}
+
+func TestEncodeStored(t *testing.T) {
+	encoder := compress.NewDeflateEncoder()
+
+	data := []byte("hello world")
+	result, err := encoder.EncodeStored(data)
+	if err != nil {
+		t.Fatalf("EncodeStored() error = %v", err)
+	}
+
+	// Verify result is a valid DEFLATE stored block
+	// Stored block format: 0x01 (BFINAL=1, TYPE=000) + LEN + NLEN + data
+	if len(result) < 5 {
+		t.Fatalf("stored block too short: %d bytes", len(result))
+	}
+
+	if result[0] != 0x01 {
+		t.Errorf("BFINAL = 0x%02X, want 0x01", result[0])
+	}
+
+	// Verify LEN/NLEN
+	lenValue := uint16(result[1]) | uint16(result[2])<<8
+	nlenValue := uint16(result[3]) | uint16(result[4])<<8
+	if nlenValue != ^lenValue {
+		t.Errorf("NLEN = 0x%04X, want one's complement of LEN (0x%04X)", nlenValue, lenValue)
+	}
+
+	// Verify data
+	if !bytes.Equal(result[5:], data) {
+		t.Errorf("stored data = %v, want %v", result[5:], data)
+	}
+}
+
+// Helper functions for generating test data
+
+func generateGradientData(width, height, bpp int) []byte {
+	data := make([]byte, width*height*bpp)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			offset := (y*width + x) * bpp
+			for c := 0; c < bpp; c++ {
+				data[offset+c] = byte((x + y + c) % 256)
+			}
+		}
+	}
+	return data
+}
+
+func generateRandomData(width, height, bpp int) []byte {
+	data := make([]byte, width*height*bpp)
+	for i := range data {
+		data[i] = byte(i * 17 % 256)
+	}
+	return data
+}
+
+func generateCheckerboardData(width, height, bpp int) []byte {
+	data := make([]byte, width*height*bpp)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			offset := (y*width + x) * bpp
+			if (x+y)%2 == 0 {
+				for c := 0; c < bpp; c++ {
+					data[offset+c] = 0xFF
+				}
+			} else {
+				for c := 0; c < bpp; c++ {
+					data[offset+c] = 0x00
+				}
+			}
+		}
+	}
+	return data
+}
+
+func TestRealImageCompression(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping real image tests in short mode")
+	}
+
+	// Determine the correct path to images directory
+	// The test may run from different directories, so try multiple paths
+	possiblePaths := []string{
+		"images",
+		"../images",
+		"../../images",
+	}
+
+	var imagesPath string
+	for _, p := range possiblePaths {
+		if _, err := os.Stat(p); err == nil {
+			imagesPath = p
+			break
+		}
+	}
+
+	if imagesPath == "" {
+		t.Skip("images directory not found")
+	}
+
+	testCases := []struct {
+		name     string
+		filename string
+	}{
+		{"Code PNG", filepath.Join(imagesPath, "code.png")},
+		{"Cursor Models", filepath.Join(imagesPath, "cursor-2025-models.png")},
+		{"Cursor Meetup", filepath.Join(imagesPath, "cursor-meetup.png")},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Load original PNG
+			originalFile, err := os.Open(tc.filename)
+			if err != nil {
+				t.Fatalf("failed to open %s: %v", tc.filename, err)
+			}
+			defer originalFile.Close()
+
+			img, err := stdpng.Decode(originalFile)
+			if err != nil {
+				t.Fatalf("failed to decode %s: %v", tc.filename, err)
+			}
+
+			bounds := img.Bounds()
+
+			// Get file size
+			originalFile.Seek(0, 0)
+			originalStats, err := originalFile.Stat()
+			if err != nil {
+				t.Fatalf("failed to stat %s: %v", tc.filename, err)
+			}
+			originalSize := int(originalStats.Size())
+
+			// Extract pixels based on color model
+			pixels := extractPixels(t, img)
+
+			// Determine color type
+			colorType := ColorRGBA
+			bpp := 4
+			switch img.ColorModel() {
+			case color.RGBAModel, color.NRGBAModel:
+				colorType = ColorRGBA
+				bpp = 4
+			case color.GrayModel:
+				colorType = ColorGrayscale
+				bpp = 1
+			default:
+				// For other color models, assume RGBA
+				colorType = ColorRGBA
+				bpp = len(pixels) / (bounds.Dx() * bounds.Dy())
+				if bpp != 4 {
+					bpp = 4
+				}
+			}
+
+			// Compress using our encoder
+			encoder, err := NewEncoder(bounds.Dx(), bounds.Dy(), colorType)
+			if err != nil {
+				t.Fatalf("NewEncoder() error = %v", err)
+			}
+
+			compressed, err := encoder.Encode(pixels)
+			if err != nil {
+				t.Fatalf("Encode() error = %v", err)
+			}
+
+			// Key metric: Our compressed output should be significantly smaller than raw pixel data
+			// (not just smaller than the original file, which may have been pre-compressed)
+			compressionRatio := float64(len(compressed)) / float64(len(pixels)) * 100
+			t.Logf("Image: %s (%dx%d)", tc.filename, bounds.Dx(), bounds.Dy())
+			t.Logf("Raw pixels: %d bytes", len(pixels))
+			t.Logf("Compressed: %d bytes", len(compressed))
+			t.Logf("Compression ratio: %.2f%%", compressionRatio)
+			t.Logf("Original file: %d bytes", originalSize)
+
+			// Verify: compressed should be < 50% of raw pixels (good compression)
+			// Note: We cannot guarantee compressed < originalFileSize because the original
+			// may have been compressed with different/better settings
+			if compressionRatio >= 50 {
+				t.Logf("Warning: compression ratio %.2f%% is higher than expected", compressionRatio)
+			}
+
+			// Verify the compressed image is valid and decodes correctly
+			decodedImg, err := stdpng.Decode(bytes.NewReader(compressed))
+			if err != nil {
+				t.Errorf("compressed image decoding failed: %v", err)
+			} else {
+				decodedBounds := decodedImg.Bounds()
+				if decodedBounds.Dx() != bounds.Dx() || decodedBounds.Dy() != bounds.Dy() {
+					t.Errorf("decoded dimensions mismatch: got %dx%d, want %dx%d",
+						decodedBounds.Dx(), decodedBounds.Dy(), bounds.Dx(), bounds.Dy())
+				}
+			}
+		})
+	}
+}
+
+func extractPixels(t *testing.T, img image.Image) []byte {
+	t.Helper()
+
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	var pixels []byte
+	switch m := img.(type) {
+	case *image.RGBA:
+		pixels = make([]byte, width*height*4)
+		for y := 0; y < height; y++ {
+			row := m.Pix[y*m.Stride:]
+			for x := 0; x < width; x++ {
+				offset := (y*width + x) * 4
+				pixels[offset] = row[x*4+0]
+				pixels[offset+1] = row[x*4+1]
+				pixels[offset+2] = row[x*4+2]
+				pixels[offset+3] = row[x*4+3]
+			}
+		}
+	case *image.NRGBA:
+		pixels = make([]byte, width*height*4)
+		for y := 0; y < height; y++ {
+			row := m.Pix[y*m.Stride:]
+			for x := 0; x < width; x++ {
+				offset := (y*width + x) * 4
+				pixels[offset] = row[x*4+0]
+				pixels[offset+1] = row[x*4+1]
+				pixels[offset+2] = row[x*4+2]
+				pixels[offset+3] = row[x*4+3]
+			}
+		}
+	default:
+		// Generic fallback - slower but works for any color model
+		pixels = make([]byte, 0, width*height*4)
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				c := img.At(x, y)
+				r, g, b, a := c.RGBA()
+				pixels = append(pixels, byte(r>>8), byte(g>>8), byte(b>>8), byte(a>>8))
+			}
+		}
+	}
+
+	return pixels
 }

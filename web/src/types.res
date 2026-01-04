@@ -57,6 +57,9 @@ type appState = {
   lossless: bool,
   quantization: quantizationLevel,
   dithering: bool,
+  ditherStrength: float,  // 0.0 to 1.0
+  qualityTarget: int,      // 0 to 100
+  zopfliIterations: int,   // 0 to 50
 }
 
 let presetToInt = (preset: preset): int => {

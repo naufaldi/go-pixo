@@ -28,14 +28,39 @@ let make = (
   ~lossless,
   ~quantization,
   ~dithering,
+  ~ditherStrength,
+  ~qualityTarget,
+  ~zopfliIterations,
   ~onPresetChange,
   ~onLosslessChange,
   ~onQuantizationChange,
   ~onDitheringChange,
+  ~onDitheringStrengthChange,
+  ~onQualityTargetChange,
+  ~onZopfliIterationsChange,
   ~onDownload,
   ~onDownloadAll,
   ~hasCompletedItems,
 ) => {
+  // #region agent log
+  let _ = React.useEffect1(() => {
+    Log.info(
+      ~hypothesisId="A",
+      ~location="BottomBar.res:render",
+      ~message="BottomBar rendered",
+      ~data={
+        "format": format,
+        "lossless": lossless,
+        "quantization": quantization,
+        "dithering": dithering,
+        "ditherStrength": ditherStrength,
+        "qualityTarget": qualityTarget,
+        "zopfliIterations": zopfliIterations,
+      },
+    )
+    None
+  }, [lossless, dithering, ditherStrength, qualityTarget, zopfliIterations])
+  // #endregion
   let handleSliderChange = (e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
     switch value {
@@ -85,12 +110,12 @@ let make = (
             }}
             className="bg-neutral-800 text-neutral-300 text-sm px-3 py-1.5 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
           >
-            <option value="256">256 colors</option>
-            <option value="128">128 colors</option>
-            <option value="64">64 colors</option>
-            <option value="32">32 colors</option>
-            <option value="16">16 colors</option>
-            <option value="8">8 colors</option>
+            <option value="256">{React.string("256 colors")}</option>
+            <option value="128">{React.string("128 colors")}</option>
+            <option value="64">{React.string("64 colors")}</option>
+            <option value="32">{React.string("32 colors")}</option>
+            <option value="16">{React.string("16 colors")}</option>
+            <option value="8">{React.string("8 colors")}</option>
           </select>
         : React.null}
 
@@ -108,6 +133,61 @@ let make = (
             <span className="text-sm text-neutral-300">{React.string("Dithering")}</span>
           </label>
         : React.null}
+
+      {!isLosslessMode && dithering
+        ? <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500">{React.string("0%")}</span>
+            <input
+              type_="range"
+              min="0"
+              max="100"
+              step=1.0
+              value={Int.toString(int_of_float(ditherStrength *. 100.0))}
+              onChange={e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+                onDitheringStrengthChange(float_of_int(value) /. 100.0)
+              }}
+              className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+            <span className="text-xs text-neutral-500">{React.string("100%")}</span>
+          </div>
+        : React.null}
+
+      {!isLosslessMode
+        ? <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500">{React.string("Q:")}</span>
+            <input
+              type_="range"
+              min="0"
+              max="100"
+              step=1.0
+              value={Int.toString(qualityTarget)}
+              onChange={e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+                onQualityTargetChange(value)
+              }}
+              className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+            <span className="text-xs text-neutral-400">{React.string(Int.toString(qualityTarget))}</span>
+          </div>
+        : React.null}
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-neutral-500">{React.string("Z:")}</span>
+        <input
+          type_="number"
+          min="0"
+          max="50"
+          value={Int.toString(zopfliIterations)}
+          onChange={e => {
+            let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+            if value >= 0 && value <= 50 {
+              onZopfliIterationsChange(value)
+            }
+          }}
+          className="w-16 bg-neutral-800 text-neutral-300 text-sm px-2 py-1 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+        />
+      </div>
 
       <label className="flex items-center gap-2 cursor-pointer">
         <input

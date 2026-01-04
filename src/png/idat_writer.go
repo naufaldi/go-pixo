@@ -61,6 +61,8 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 
 // buildZlibData builds the zlib-wrapped DEFLATE data containing scanlines.
 // The pixels parameter contains all scanline data with filter bytes prepended.
+// This function uses size comparison fallback: if DEFLATE doesn't reduce the size,
+// it falls back to stored blocks (uncompressed) to ensure the output is never larger.
 func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
@@ -68,15 +70,18 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts O
 		return nil, err
 	}
 
-	// Compress scanline data using DEFLATE with compression level from options
+	// Compress scanline data using DEFLATE with size comparison fallback
+	// This ensures the output is never larger than the input
 	encoder := compress.NewDeflateEncoder()
 	encoder.SetCompressionLevel(opts.CompressionLevel)
 
 	var deflateData []byte
 	if opts.OptimalDeflate {
+		// EncodeOptimal already tries multiple passes, use it directly
 		deflateData, err = encoder.EncodeOptimal(pixels)
 	} else {
-		deflateData, err = encoder.EncodeAuto(pixels)
+		// Use fallback: if DEFLATE doesn't help, use stored blocks
+		deflateData, err = encoder.EncodeWithFallback(pixels)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
@@ -86,7 +91,7 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts O
 	adler := compress.Adler32(pixels)
 	adlerBuf := compress.ZlibFooterBytes(adler)
 
-	// Combine: zlib header + DEFLATE data + Adler32 footer
+	// Combine: zlib header + DEFLATE/stored block data + Adler32 footer
 	result := make([]byte, 0, len(cmf)+len(deflateData)+len(adlerBuf))
 	result = append(result, cmf...)
 	result = append(result, deflateData...)

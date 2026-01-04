@@ -3,6 +3,7 @@ open Types
 
 
 
+
 type action =
   | SetWasmReady(bool)
   | SetDragActive(bool)
@@ -13,6 +14,9 @@ type action =
   | SetLossless(bool)
   | SetQuantization(quantizationLevel)
   | SetDithering(bool)
+  | SetDitherStrength(float)
+  | SetQualityTarget(int)
+  | SetZopfliIterations(int)
   | RemoveItem(string)
   | ClearAll
 
@@ -83,6 +87,9 @@ let reducer = (state: appState, action: action): appState => {
   | SetLossless(lossless) => {...state, lossless}
   | SetQuantization(quantization) => {...state, quantization}
   | SetDithering(dithering) => {...state, dithering}
+  | SetDitherStrength(strength) => {...state, ditherStrength: strength}
+  | SetQualityTarget(target) => {...state, qualityTarget: target}
+  | SetZopfliIterations(iterations) => {...state, zopfliIterations: iterations}
   | RemoveItem(id) => {
       let itemToRemove = state.items->Array.find(item => item.id == id)
       switch itemToRemove {
@@ -139,6 +146,16 @@ let reducer = (state: appState, action: action): appState => {
 
 @react.component
 let make = () => {
+  // #region agent log
+  React.useEffect0(() => {
+    Log.info(
+      ~hypothesisId="A",
+      ~location="App.res:mount",
+      ~message="App mounted",
+    )
+    None
+  })
+  // #endregion
   let (state, dispatch) = React.useReducer(
     reducer,
     {
@@ -150,6 +167,9 @@ let make = () => {
       lossless: true,
       quantization: Lossless,
       dithering: false,
+      ditherStrength: 0.5,
+      qualityTarget: 75,
+      zopfliIterations: 0,
     },
   )
   
@@ -277,13 +297,16 @@ let make = () => {
           let lossy = !state.lossless
           let maxColors = quantizationToInt(state.quantization)
           let ditheringEnabled = state.dithering
-          let postCompress: ('a, string, 'a, int, int, int, int, bool, int, bool) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, preset, lossy, maxColors, dithering) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy, maxColors, dithering }); }"
+          let ditherStrength = state.ditherStrength
+          let qualityTarget = state.qualityTarget
+          let zopfliIterations = state.zopfliIterations
+          let postCompress: ('a, string, 'a, int, int, int, int, bool, int, bool, float, int, int) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy, maxColors, ditheringEnabled)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy, maxColors, ditheringEnabled, ditherStrength, qualityTarget, zopfliIterations)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
@@ -512,10 +535,16 @@ let make = () => {
       lossless={state.lossless}
       quantization={state.quantization}
       dithering={state.dithering}
+      ditherStrength={state.ditherStrength}
+      qualityTarget={state.qualityTarget}
+      zopfliIterations={state.zopfliIterations}
       onPresetChange={preset => dispatch(SetPreset(preset))}
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
       onQuantizationChange={quantization => dispatch(SetQuantization(quantization))}
       onDitheringChange={dithering => dispatch(SetDithering(dithering))}
+      onDitheringStrengthChange={strength => dispatch(SetDitherStrength(strength))}
+      onQualityTargetChange={target => dispatch(SetQualityTarget(target))}
+      onZopfliIterationsChange={iterations => dispatch(SetZopfliIterations(iterations))}
       onDownload=handleDownload
       onDownloadAll=handleDownloadAll
       hasCompletedItems

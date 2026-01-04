@@ -84,13 +84,29 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 
 // EncodeOptimal compresses data using optimal DEFLATE with iterative refinement.
 // This produces better compression at the cost of slower encoding.
+// Uses Zopfli-style iteration to find better literal/length and distance pairs,
+// optimal block splitting, and optimized Huffman table configurations.
 func (enc *DeflateEncoder) EncodeOptimal(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return enc.Encode(data, false)
 	}
 
-	// For now, use multiple passes with increasing compression level
-	// A full Zopfli implementation would use optimal parsing with cost model
+	// Use Zopfli-style iterative compression for best results
+	zopfliConfig := DefaultZopfliConfig()
+	zopfliConfig.Iterations = 15
+	zopfliConfig.BlockSplitting = true
+
+	result, err := ZopfliEncode(data, zopfliConfig)
+	if err != nil {
+		// Fallback to simple iterative approach if Zopfli fails
+		return enc.encodeOptimalFallback(data)
+	}
+
+	return result, nil
+}
+
+// encodeOptimalFallback is the original iterative approach used when Zopfli is unavailable.
+func (enc *DeflateEncoder) encodeOptimalFallback(data []byte) ([]byte, error) {
 	bestResult := data
 	bestSize := len(data)
 
@@ -119,6 +135,26 @@ func (enc *DeflateEncoder) EncodeOptimal(data []byte) ([]byte, error) {
 	return bestResult, nil
 }
 
+// EncodeOptimalWithConfig compresses data using optimal DEFLATE with configurable options.
+func (enc *DeflateEncoder) EncodeOptimalWithConfig(data []byte, iterations int, blockSplitting bool) ([]byte, error) {
+	if len(data) == 0 {
+		return enc.Encode(data, false)
+	}
+
+	zopfliConfig := ZopfliConfig{
+		Iterations:     iterations,
+		BlockSplitting: blockSplitting,
+		MaxBlockSize:   65535,
+	}
+
+	result, err := ZopfliEncode(data, zopfliConfig)
+	if err != nil {
+		return enc.encodeOptimalFallback(data)
+	}
+
+	return result, nil
+}
+
 // EncodeTo writes compressed DEFLATE data directly to the writer.
 func (enc *DeflateEncoder) EncodeTo(w io.Writer, data []byte, useDynamic bool) error {
 	compressed, err := enc.Encode(data, useDynamic)
@@ -127,4 +163,34 @@ func (enc *DeflateEncoder) EncodeTo(w io.Writer, data []byte, useDynamic bool) e
 	}
 	_, err = w.Write(compressed)
 	return err
+}
+
+// EncodeStored encodes data using DEFLATE stored blocks (no compression).
+// This is used as a fallback when DEFLATE compression doesn't reduce size.
+// Stored blocks have minimal overhead: header (1 byte) + LEN/NLEN (4 bytes) + data.
+func (enc *DeflateEncoder) EncodeStored(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := WriteStoredBlockDeflate(&buf, true, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// EncodeWithFallback tries DEFLATE compression first. If the result is not
+// smaller than the input, it falls back to stored blocks (no compression).
+// This ensures the output is never larger than the input.
+func (enc *DeflateEncoder) EncodeWithFallback(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return enc.EncodeStored(data)
+	}
+
+	compressed, err := enc.EncodeAuto(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(compressed) >= len(data) {
+		return enc.EncodeStored(data)
+	}
+	return compressed, nil
 }

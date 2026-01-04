@@ -98,3 +98,178 @@ func TestSelectAll(t *testing.T) {
 		}
 	}
 }
+
+func TestCalculateEntropy(t *testing.T) {
+	tests := []struct {
+		name       string
+		data       []byte
+		wantErr    bool
+		minEntropy float64
+		maxEntropy float64
+	}{
+		{
+			name:       "empty data",
+			data:       []byte{},
+			wantErr:    false,
+			minEntropy: 0,
+			maxEntropy: 0,
+		},
+		{
+			name:       "single byte repeated",
+			data:       []byte{100, 100, 100, 100},
+			wantErr:    false,
+			minEntropy: 0,
+			maxEntropy: 0.1,
+		},
+		{
+			name:       "all different bytes",
+			data:       []byte{0, 1, 2, 3, 4, 5, 6, 7},
+			wantErr:    false,
+			minEntropy: 2.5,
+			maxEntropy: 8.0,
+		},
+		{
+			name:       "random data high entropy",
+			data:       []byte{0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A},
+			wantErr:    false,
+			minEntropy: 2.5,
+			maxEntropy: 8.0,
+		},
+		{
+			name:       "two values alternating",
+			data:       []byte{0, 255, 0, 255, 0, 255, 0, 255},
+			wantErr:    false,
+			minEntropy: 0.9,
+			maxEntropy: 1.1,
+		},
+		{
+			name:       "pattern data medium entropy",
+			data:       []byte{0, 0, 1, 1, 2, 2, 3, 3, 4, 4},
+			wantErr:    false,
+			minEntropy: 1.5,
+			maxEntropy: 4.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CalculateEntropy(tt.data)
+			if tt.wantErr && got == 0 && len(tt.data) > 0 {
+				t.Errorf("CalculateEntropy() = %v, want error", got)
+			}
+			if got < tt.minEntropy || got > tt.maxEntropy {
+				t.Errorf("CalculateEntropy() = %v, want between %v and %v", got, tt.minEntropy, tt.maxEntropy)
+			}
+		})
+	}
+}
+
+func TestEntropyScore(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{
+			name: "empty data",
+			data: []byte{},
+		},
+		{
+			name: "uniform data low score",
+			data: []byte{50, 50, 50, 50, 50},
+		},
+		{
+			name: "random data high score",
+			data: []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			score := EntropyScore(tt.data)
+			entropy := CalculateEntropy(tt.data)
+			expected := entropy * float64(len(tt.data))
+			if score != expected {
+				t.Errorf("EntropyScore() = %v, expected %v", score, expected)
+			}
+		})
+	}
+}
+
+func TestSelectFilterWithEntropy(t *testing.T) {
+	tests := []struct {
+		name string
+		row  []byte
+		prev []byte
+		bpp  int
+	}{
+		{
+			name: "simple grayscale row",
+			row:  []byte{100, 100, 100, 100},
+			prev: []byte{100, 100, 100, 100},
+			bpp:  1,
+		},
+		{
+			name: "RGB row",
+			row:  []byte{100, 150, 200, 110, 160, 210},
+			prev: []byte{50, 100, 150, 60, 110, 160},
+			bpp:  3,
+		},
+		{
+			name: "RGBA row",
+			row:  []byte{100, 150, 200, 255, 110, 160, 210, 255},
+			prev: []byte{50, 100, 150, 255, 60, 110, 160, 255},
+			bpp:  4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filterType, filtered := SelectFilterWithEntropy(tt.row, tt.prev, tt.bpp)
+			if filterType < FilterNone || filterType > FilterPaeth {
+				t.Errorf("filter type %d out of valid range [0-4]", filterType)
+			}
+			if len(filtered) != len(tt.row) {
+				t.Errorf("filtered length %d != row length %d", len(filtered), len(tt.row))
+			}
+		})
+	}
+}
+
+func TestSelectFilterWithStrategyEntropy(t *testing.T) {
+	row := []byte{100, 150, 200, 250, 100, 150, 200, 250}
+	prev := []byte{50, 100, 150, 200, 60, 110, 160, 210}
+	bpp := 4
+
+	filterType, filtered := SelectFilterWithStrategy(row, prev, bpp, FilterStrategyEntropy)
+
+	if filterType < FilterNone || filterType > FilterPaeth {
+		t.Errorf("filter type %d out of valid range [0-4]", filterType)
+	}
+	if len(filtered) != len(row) {
+		t.Errorf("filtered length %d != row length %d", len(filtered), len(row))
+	}
+}
+
+func TestEntropyFilterStrategyVsMinSum(t *testing.T) {
+	width, height, bpp := 8, 8, 4
+	pixels := make([]byte, width*height*bpp)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			offset := (y*width + x) * bpp
+			pixels[offset] = byte(x * 16)
+			pixels[offset+1] = byte(y * 16)
+			pixels[offset+2] = byte((x + y) * 8)
+			pixels[offset+3] = 255
+		}
+	}
+
+	filtersMinSum := SelectAllWithStrategy(pixels, width, height, bpp, FilterStrategyMinSum)
+	filtersEntropy := SelectAllWithStrategy(pixels, width, height, bpp, FilterStrategyEntropy)
+
+	if len(filtersMinSum) != height || len(filtersEntropy) != height {
+		t.Errorf("filter count mismatch")
+	}
+
+	t.Logf("MinSum filters: %v", filtersMinSum)
+	t.Logf("Entropy filters: %v", filtersEntropy)
+}

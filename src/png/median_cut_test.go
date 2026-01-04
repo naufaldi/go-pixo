@@ -235,3 +235,195 @@ func TestAverageColorsSingle(t *testing.T) {
 		t.Errorf("averageColors() single = %v, want (100, 150, 200)", avg)
 	}
 }
+
+func TestMedianCutWithQuality(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+		{Color{0, 255, 0}, 10},
+		{Color{0, 0, 255}, 10},
+	}
+
+	resultHigh := MedianCutWithQuality(colors, 2, 1.0)
+	resultLow := MedianCutWithQuality(colors, 2, 0.1)
+
+	if len(resultHigh) != 2 {
+		t.Errorf("MedianCutWithQuality(high) = %v colors, want 2", len(resultHigh))
+	}
+	if len(resultLow) != 2 {
+		t.Errorf("MedianCutWithQuality(low) = %v colors, want 2", len(resultLow))
+	}
+}
+
+func TestMedianCutWithQualityFewerColors(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+	}
+
+	result := MedianCutWithQuality(colors, 4, 0.5)
+
+	if len(result) != 2 {
+		t.Errorf("MedianCutWithQuality() with fewer input colors = %v, want 2", len(result))
+	}
+}
+
+func TestMedianCutWithQualityEmpty(t *testing.T) {
+	result := MedianCutWithQuality([]ColorWithCount{}, 4, 0.5)
+
+	if len(result) != 0 {
+		t.Errorf("MedianCutWithQuality() on empty = %v, want 0", len(result))
+	}
+}
+
+func TestMedianCutWithAlpha(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+		{Color{0, 255, 0}, 10},
+		{Color{0, 0, 255}, 10},
+	}
+
+	result := MedianCutWithAlpha(colors, 4)
+
+	if len(result) != 4 {
+		t.Errorf("MedianCutWithAlpha() = %v colors, want 4", len(result))
+	}
+}
+
+func TestMedianCutWithAlphaAndQuality(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+		{Color{0, 255, 0}, 10},
+	}
+
+	result := MedianCutWithAlphaAndQuality(colors, 2, 0.5)
+
+	if len(result) != 2 {
+		t.Errorf("MedianCutWithAlphaAndQuality() = %v colors, want 2", len(result))
+	}
+}
+
+func TestMedianCutRGBA(t *testing.T) {
+	colors := []ExtendedColorWithCount{
+		{ExtendedColor{0, 0, 0, 255}, 10},
+		{ExtendedColor{255, 0, 0, 255}, 10},
+		{ExtendedColor{0, 255, 0, 255}, 10},
+		{ExtendedColor{0, 0, 255, 255}, 10},
+	}
+
+	result := MedianCutRGBA(colors, 4)
+
+	if len(result) != 4 {
+		t.Errorf("MedianCutRGBA() = %v colors, want 4", len(result))
+	}
+}
+
+func TestMedianCutRGBAWithQuality(t *testing.T) {
+	colors := []ExtendedColorWithCount{
+		{ExtendedColor{0, 0, 0, 255}, 10},
+		{ExtendedColor{255, 0, 0, 255}, 10},
+		{ExtendedColor{0, 255, 0, 255}, 10},
+	}
+
+	result := MedianCutRGBAWithQuality(colors, 2, 0.7)
+
+	if len(result) != 2 {
+		t.Errorf("MedianCutRGBAWithQuality() = %v colors, want 2", len(result))
+	}
+}
+
+func TestCalculateQuantizationError(t *testing.T) {
+	palette := NewPalette(2)
+	palette.AddColor(Color{0, 0, 0})
+	palette.AddColor(Color{255, 255, 255})
+
+	original := []byte{0, 0, 0, 255, 255, 255}
+	quantized := []byte{0, 1}
+
+	err := CalculateQuantizationError(original, quantized, *palette, 2)
+
+	if err.MaxError < 0 {
+		t.Errorf("CalculateQuantizationError() MaxError = %v, want >= 0", err.MaxError)
+	}
+	if err.AvgError < 0 {
+		t.Errorf("CalculateQuantizationError() AvgError = %v, want >= 0", err.AvgError)
+	}
+	if err.RMSE < 0 {
+		t.Errorf("CalculateQuantizationError() RMSE = %v, want >= 0", err.RMSE)
+	}
+}
+
+func TestCalculateQuantizationErrorEmpty(t *testing.T) {
+	palette := NewPalette(2)
+	palette.AddColor(Color{0, 0, 0})
+	palette.AddColor(Color{255, 255, 255})
+
+	err := CalculateQuantizationError([]byte{}, []byte{}, *palette, 2)
+
+	if err.MaxError != 0 || err.AvgError != 0 || err.RMSE != 0 {
+		t.Errorf("CalculateQuantizationError() on empty = %v, want all zeros", err)
+	}
+}
+
+func TestSplitBucketWithQuality(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{64, 0, 0}, 10},
+		{Color{128, 0, 0}, 10},
+		{Color{192, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+	}
+
+	left, right := splitBucketWithQuality(colors, 1.0)
+
+	if len(left) == 0 || len(right) == 0 {
+		t.Errorf("splitBucketWithQuality() returned empty split")
+	}
+
+	if len(left)+len(right) != len(colors) {
+		t.Errorf("splitBucketWithQuality() total = %v, want %v", len(left)+len(right), len(colors))
+	}
+}
+
+func TestSplitBucketWithQualityLow(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 10},
+		{Color{64, 0, 0}, 10},
+		{Color{128, 0, 0}, 10},
+		{Color{192, 0, 0}, 10},
+		{Color{255, 0, 0}, 10},
+	}
+
+	left, right := splitBucketWithQuality(colors, 0.1)
+
+	if len(left) == 0 || len(right) == 0 {
+		t.Errorf("splitBucketWithQuality(low) returned empty split")
+	}
+
+	if len(left)+len(right) != len(colors) {
+		t.Errorf("splitBucketWithQuality(low) total = %v, want %v", len(left)+len(right), len(colors))
+	}
+}
+
+func TestCalculateColorVariance(t *testing.T) {
+	colors := []ColorWithCount{
+		{Color{0, 0, 0}, 1},
+		{Color{255, 255, 255}, 1},
+	}
+
+	variance := calculateColorVariance(colors)
+
+	if variance <= 0 {
+		t.Errorf("calculateColorVariance() = %v, want > 0", variance)
+	}
+}
+
+func TestCalculateColorVarianceEmpty(t *testing.T) {
+	variance := calculateColorVariance([]ColorWithCount{})
+
+	if variance != 0 {
+		t.Errorf("calculateColorVariance() on empty = %v, want 0", variance)
+	}
+}

@@ -22,6 +22,10 @@ func SelectFilterWithStrategy(row []byte, prevRow []byte, bpp int, strategy Filt
 		return selectAdaptive(row, prevRow, bpp)
 	case FilterStrategyAdaptiveFast:
 		return selectAdaptiveFast(row, prevRow, bpp)
+	case FilterStrategyEntropy:
+		return selectEntropy(row, prevRow, bpp)
+	case FilterStrategyBruteForce:
+		return selectBruteForce(row, prevRow, bpp)
 	default:
 		return selectAdaptive(row, prevRow, bpp)
 	}
@@ -108,6 +112,68 @@ func selectAdaptiveFast(row []byte, prevRow []byte, bpp int) (FilterType, []byte
 	return bestFilter, bestFiltered
 }
 
+func selectEntropy(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+	var bestFilter FilterType
+	var bestFiltered []byte
+	bestEntropy := -1.0
+
+	filters := []struct {
+		typ FilterType
+		fn  func() []byte
+	}{
+		{FilterNone, func() []byte { return ApplyFilterNone(row) }},
+		{FilterSub, func() []byte { return ApplyFilterSub(row, bpp) }},
+		{FilterUp, func() []byte { return ApplyFilterUp(row, prevRow) }},
+		{FilterAverage, func() []byte { return ApplyFilterAverage(row, prevRow, bpp) }},
+		{FilterPaeth, func() []byte { return ApplyFilterPaeth(row, prevRow, bpp) }},
+	}
+
+	for _, f := range filters {
+		filtered := f.fn()
+		entropy := CalculateEntropy(filtered)
+		if bestEntropy < 0 || entropy < bestEntropy {
+			bestEntropy = entropy
+			bestFilter = f.typ
+			bestFiltered = filtered
+		}
+	}
+
+	return bestFilter, bestFiltered
+}
+
+func SelectFilterWithEntropy(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+	return selectEntropy(row, prevRow, bpp)
+}
+
+func selectBruteForce(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+	var bestFilter FilterType
+	var bestFiltered []byte
+	bestSize := -1
+
+	filters := []struct {
+		typ FilterType
+		fn  func() []byte
+	}{
+		{FilterNone, func() []byte { return ApplyFilterNone(row) }},
+		{FilterSub, func() []byte { return ApplyFilterSub(row, bpp) }},
+		{FilterUp, func() []byte { return ApplyFilterUp(row, prevRow) }},
+		{FilterAverage, func() []byte { return ApplyFilterAverage(row, prevRow, bpp) }},
+		{FilterPaeth, func() []byte { return ApplyFilterPaeth(row, prevRow, bpp) }},
+	}
+
+	for _, f := range filters {
+		filtered := f.fn()
+		size := len(filtered)
+		if bestSize < 0 || size < bestSize {
+			bestSize = size
+			bestFilter = f.typ
+			bestFiltered = filtered
+		}
+	}
+
+	return bestFilter, bestFiltered
+}
+
 func SelectAll(pixels []byte, width, height, bpp int) []FilterType {
 	filters := make([]FilterType, height)
 	var prevRow []byte
@@ -138,4 +204,9 @@ func SelectAllWithStrategy(pixels []byte, width, height, bpp int, strategy Filte
 	}
 
 	return filters
+}
+
+// SelectAllWithBruteForce applies brute force filter selection to all rows.
+func SelectAllWithBruteForce(pixels []byte, width, height, bpp int) []FilterType {
+	return BruteForceFilters(pixels, width, height, bpp)
 }

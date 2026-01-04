@@ -10,12 +10,25 @@ interface CompressionRequest {
   lossy: boolean;
   maxColors: number;
   dithering: boolean;
+  ditherStrength?: number;
+  qualityTarget?: number;
+  zopfliIterations?: number;
 }
 
 interface CompressionResponse {
   id: string;
   compressedBytes: Uint8Array;
+  originalBytes: number;
+  compressedBytesCount: number;
+  ratio: number;
   error?: string;
+}
+
+interface ProgressMessage {
+  type: 'progress';
+  id: string;
+  phase: string;
+  progress: number;
 }
 
 // Store pending requests
@@ -71,7 +84,7 @@ async function initWasm(): Promise<void> {
   });
 }
 
-// Encode PNG using WASM
+// Encode PNG using WASM with basic parameters
 function encodePng(
   pixels: Uint8Array,
   width: number,
@@ -92,6 +105,60 @@ function encodePng(
 
   if (typeof result === 'string' && result.startsWith('error:')) {
     throw new Error(result);
+  }
+
+  return result as Uint8Array;
+}
+
+// Encode PNG using WASM with advanced parameters
+function encodePngAdvanced(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  colorType: number = 6,
+  preset: number = 1,
+  lossy: boolean = false,
+  maxColors: number = 0,
+  dithering: boolean = false,
+  ditherStrength: number = 0.5,
+  qualityTarget: number = 75,
+  zopfliIterations: number = 0,
+  onProgress?: (phase: string, progress: number) => void
+): Uint8Array {
+  // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
+  if (!(self as any).encodePngAdvanced) {
+    // Fallback to basic encodePng if advanced not available
+    console.debug('[worker] encodePngAdvanced not available, falling back to encodePng');
+    return encodePng(pixels, width, height, colorType, preset, lossy, maxColors, dithering);
+  }
+
+  // Report progress for slow operations
+  if (zopfliIterations > 5 && onProgress) {
+    onProgress('deflate', 0);
+  }
+
+  // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
+  const result = (self as any).encodePngAdvanced(
+    pixels,
+    width,
+    height,
+    colorType,
+    preset,
+    lossy,
+    maxColors,
+    dithering,
+    ditherStrength,
+    qualityTarget,
+    zopfliIterations
+  );
+
+  if (typeof result === 'string' && result.startsWith('error:')) {
+    throw new Error(result);
+  }
+
+  // Report progress completion
+  if (zopfliIterations > 5 && onProgress) {
+    onProgress('deflate', 100);
   }
 
   return result as Uint8Array;
@@ -148,24 +215,67 @@ self.onmessage = async (event: MessageEvent<{
       try {
         console.debug('[worker] compress start', req.id);
         const startTime = Date.now();
-        const compressedBytes = encodePng(
-          req.pixels,
-          req.width,
-          req.height,
-          req.colorType,
-          req.preset,
-          req.lossy,
-          req.maxColors,
-          req.dithering
-        );
+        const originalBytes = req.pixels.length;
+
+        // Determine if we should use advanced encoding
+        const useAdvanced = req.zopfliIterations !== undefined && req.zopfliIterations > 0 ||
+                           req.ditherStrength !== undefined ||
+                           req.qualityTarget !== undefined;
+
+        let compressedBytes: Uint8Array;
+
+        if (useAdvanced) {
+          // Use advanced encoding with progress reporting
+          const sendProgress = (phase: string, progress: number) => {
+            self.postMessage({
+              type: 'progress',
+              id: req.id,
+              phase,
+              progress
+            } as ProgressMessage);
+          };
+
+          compressedBytes = encodePngAdvanced(
+            req.pixels,
+            req.width,
+            req.height,
+            req.colorType,
+            req.preset,
+            req.lossy,
+            req.maxColors,
+            req.dithering,
+            req.ditherStrength ?? 0.5,
+            req.qualityTarget ?? 75,
+            req.zopfliIterations ?? 0,
+            sendProgress
+          );
+        } else {
+          // Use basic encoding
+          compressedBytes = encodePng(
+            req.pixels,
+            req.width,
+            req.height,
+            req.colorType,
+            req.preset,
+            req.lossy,
+            req.maxColors,
+            req.dithering
+          );
+        }
+
         const duration = Date.now() - startTime;
+        const ratio = originalBytes > 0 ? (compressedBytes.length / originalBytes * 100) : 0;
+
+        console.debug('[worker] compress done', req.id, compressedBytes?.length ?? null, duration + 'ms');
 
         self.postMessage({
           type: 'compressed',
           id: req.id,
-          compressedBytes: compressedBytes
-        });
-        console.debug('[worker] compress done', req.id, compressedBytes?.byteLength ?? null);
+          compressedBytes: compressedBytes,
+          originalBytes,
+          compressedBytesCount: compressedBytes.length,
+          ratio
+        } as CompressionResponse);
       } catch (err) {
         console.error('[worker] compress failed', req.id, err);
         self.postMessage({
