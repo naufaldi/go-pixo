@@ -59,6 +59,7 @@ func (i *IHDRData) Validate() error {
 		ColorGrayscale: {1, 2, 4, 8, 16},
 		ColorRGB:       {8, 16},
 		ColorRGBA:      {8, 16},
+		ColorIndexed:   {1, 2, 4, 8},
 	}
 
 	allowedDepths, ok := validBitDepths[i.ColorType]

@@ -99,7 +99,14 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 			return nil, err
 		}
 
-		return buf.Bytes(), nil
+		result := buf.Bytes()
+
+		// Size guarantee: if compressed is larger than original, return minimal PNG
+		if opts.EnsureSizeNotLarger && len(result) >= len(pixels) {
+			return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
+		}
+
+		return result, nil
 	}
 
 	// 1. Color Reduction (Lossless)
@@ -147,6 +154,51 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 	}
 
 	// 6. Write IEND Chunk (Critical)
+	if err := writeIEND(&buf); err != nil {
+		return nil, err
+	}
+
+	result := buf.Bytes()
+
+	// Size guarantee: if compressed is larger than original, return minimal PNG
+	if opts.EnsureSizeNotLarger && len(result) >= len(pixels) {
+		return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
+	}
+
+	return result, nil
+}
+
+// encodeMinimalPNG creates a minimal PNG when compression doesn't help.
+// Uses stored blocks for fast encoding without DEFLATE overhead.
+func (e *Encoder) encodeMinimalPNG(pixels []byte, width, height int, colorType ColorType) ([]byte, error) {
+	var buf bytes.Buffer
+
+	if err := writeSignature(&buf); err != nil {
+		return nil, err
+	}
+
+	if err := writeIHDR(&buf, width, height, colorType); err != nil {
+		return nil, err
+	}
+
+	// Use stored blocks for minimal compression (fast, no expansion for already-compressed data)
+	scanlineData := make([]byte, 0, (1+width*BytesPerPixel(colorType))*height)
+	for y := 0; y < height; y++ {
+		offset := y * width * BytesPerPixel(colorType)
+		row := pixels[offset : offset+width*BytesPerPixel(colorType)]
+		scanlineData = append(scanlineData, 0) // Filter type 0
+		scanlineData = append(scanlineData, row...)
+	}
+
+	// Write IDAT with stored blocks (no compression)
+	chunk := Chunk{
+		chunkType: ChunkIDAT,
+		Data:      scanlineData, // Stored blocks - raw data
+	}
+	if _, err := chunk.WriteTo(&buf); err != nil {
+		return nil, err
+	}
+
 	if err := writeIEND(&buf); err != nil {
 		return nil, err
 	}

@@ -23,33 +23,25 @@ let quantizationLabel = (quantization: quantizationLevel): string => {
 
 @react.component
 let make = (
-  ~format,
+  ~format: string,
   ~preset,
-  ~lossless,
+  ~lossless: bool,
   ~quantization,
-  ~dithering,
+  ~dithering: bool,
+  ~ditherStrength: float,
+  ~qualityTarget: int,
+  ~zopfliIterations: int,
   ~onPresetChange,
   ~onLosslessChange,
   ~onQuantizationChange,
   ~onDitheringChange,
+  ~onDitheringStrengthChange,
+  ~onQualityTargetChange,
+  ~onZopfliIterationsChange,
   ~onDownload,
   ~onDownloadAll,
-  ~hasCompletedItems,
+  ~hasCompletedItems: bool,
 ) => {
-  // #region agent log
-  let _ = React.useEffect1(() => {
-    Log.info(
-      ~hypothesisId="A",
-      ~location="BottomBar.res:render",
-      ~message="BottomBar rendered",
-      ~data={
-        "format": format,
-        "lossless": lossless,
-        "quantization": quantization,
-      },
-    )
-    None
-  }, [lossless])
   // #endregion
   let handleSliderChange = (e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
@@ -123,6 +115,61 @@ let make = (
             <span className="text-sm text-neutral-300">{React.string("Dithering")}</span>
           </label>
         : React.null}
+
+      {!isLosslessMode && dithering
+        ? <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500">{React.string("0%")}</span>
+            <input
+              type_="range"
+              min="0"
+              max="100"
+              step=1.0
+              value={Int.toString(Float.toInt(ditherStrength *. 100.0))}
+              onChange={e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+                onDitheringStrengthChange(Float.fromInt(value) /. 100.0)
+              }}
+              className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+            <span className="text-xs text-neutral-500">{React.string("100%")}</span>
+          </div>
+        : React.null}
+
+      {!isLosslessMode
+        ? <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-500">{React.string("Q:")}</span>
+            <input
+              type_="range"
+              min="0"
+              max="100"
+              step=1.0
+              value={Int.toString(qualityTarget)}
+              onChange={e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+                onQualityTargetChange(value)
+              }}
+              className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
+            />
+            <span className="text-xs text-neutral-400">{React.string(Int.toString(qualityTarget))}</span>
+          </div>
+        : React.null}
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-neutral-500">{React.string("Z:")}</span>
+        <input
+          type_="number"
+          min="0"
+          max="50"
+          value={Int.toString(zopfliIterations)}
+          onChange={e => {
+            let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+            if value >= 0 && value <= 50 {
+              onZopfliIterationsChange(value)
+            }
+          }}
+          className="w-16 bg-neutral-800 text-neutral-300 text-sm px-2 py-1 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+        />
+      </div>
 
       <label className="flex items-center gap-2 cursor-pointer">
         <input

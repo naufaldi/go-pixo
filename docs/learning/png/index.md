@@ -48,6 +48,7 @@ Detailed documentation of the DEFLATE encoder.
 Reducing colors for smaller file sizes.
 
 - [Quantization](quantization.md) - Color quantization overview
+- [Palette Quantization and Dithering](quantization-dithering.md) - Lossy compression guide
 - [Median Cut Algorithm](quantization.md#median-cut) - Palette generation algorithm
 
 ---

@@ -870,8 +870,9 @@ Goal: Improve PNG compression to match or beat existing tools like OxiPNG and Op
 - `docs/learning/png/advanced-compression.md` - Advanced compression techniques overview
 - `docs/learning/png/compression-regression.md` - Compression regression case study
 - `docs/learning/png/index.md` - Updated index with new docs
+- `docs/learning/png/quantization-dithering.md` - Lossy compression guide
 
-### Phase 9 Progress: ✅ 3 complete, 3 in progress, 1 pending
+### Phase 9 Progress: ✅ 7 of 7 Tasks Complete
 
 ### 9.1 Entropy-Based Filter Scoring ✅ COMPLETED
 
@@ -943,68 +944,83 @@ Goal: Improve PNG compression to match or beat existing tools like OxiPNG and Op
   - Measure: compare output size with current implementation
   - Tests: 11 new tests for Zopfli functionality
 
-### 9.4 Enhanced Palette Quantization 🔄 IN PROGRESS
+### 9.4 Enhanced Palette Quantization ✅ COMPLETED
 
-- **[Task 9.4.1]** 🔄 Update `src/png/median_cut.go`
+- **[Task 9.4.1]** ✅ Update `src/png/median_cut.go`
 
   - Improve median cut algorithm for better color selection
   - Add quality parameter for color accuracy vs size trade-off
   - Support alpha channel in quantization
-  - Status: `median_cut.go` and `median_cut_test.go` modified
+  - Status: `median_cut.go` and `median_cut_test.go` modified with MedianCutWithQuality, MedianCutWithAlpha, MedianCutRGBA functions
 
-- **[Task 9.4.2]** 🔄 Add dithering support in `src/png/dither.go`
+- **[Task 9.4.2]** ✅ Add dithering support in `src/png/dither.go`
 
-  - Implement Floyd-Steinberg dithering
-  - Add `DitherLevel` parameter (0-10) for control
+  - Implement Floyd-Steinberg dithering with configurable strength
+  - Add Jarvis-Judice-Ninke, Sierra 2-Row, Stucki methods
+  - Add `DitherStrength` type (0.0-1.0) for control
   - Output: `src/png/dither.go` (updated), `src/png/dither_test.go` (updated)
 
-- **[Task 9.4.3]** Update quantization options in `src/png/options.go`
+- **[Task 9.4.3]** ✅ Update quantization options in `src/png/options.go`
 
   - Add `DitheringStrength` option
   - Add `QualityTarget` option for lossy compression
+  - Add `ApplyLossy()` method for configuring lossy compression
+  - Bug fix: Added `ColorIndexed` to valid bit depths in `src/png/ihdr.go`
 
-### 9.5 CLI Enhancement for Testing 🔄 IN PROGRESS
+### 9.5 CLI Enhancement for Testing ✅ COMPLETED
 
-- **[Task 9.5.1]** 🔄 Update `src/cmd/cli/main.go`
+- **[Task 9.5.1]** ✅ Update `src/cmd/cli/main.go`
 
   - Add `-preset` flag (fast, balanced, max, extreme)
   - Add `-lossy` flag for palette quantization
   - Add `-quality` flag (0-100) for lossy compression level
   - Add `-compare` flag to show original vs compressed size
   - Add `-verbose` flag for detailed output
-  - Status: `main.go` modified
+  - Add `-iterations` flag for Zopfli iterations
+  - Add `-dither` flag for dithering strength
+  - Add `-max-colors` flag for palette size
+  - Add `-benchmark` mode with `-benchmark-runs`
+  - Status: All flags working, tested with images/
 
-- **[Task 9.5.2]** Add benchmark mode
+- **[Task 9.5.2]** ✅ Add benchmark mode
 
   - Compress multiple times and report average
   - Compare against original file size
   - Output compression ratio percentage
+  - Report min/max/avg size and time
 
 - **[Task 9.5.3]** ✅ Create test script for `cursor-meetup.png`
 
-  - Script: `scripts/test-advanced-compression.sh`
+  - Script: `scripts/test-compression.sh`
   - Test all presets and configurations
   - Report which achieves best compression
   - Target: achieve <= 727 KB (original size)
 
-### 9.6 WASM Integration 🔄 IN PROGRESS
+### 9.6 WASM Integration ✅ COMPLETED
 
-- **[Task 9.6.1]** 🔄 Update `src/wasm/bridge.go`
+- **[Task 9.6.1]** ✅ Update `src/wasm/bridge.go`
 
   - Expose new compression options (Zopfli, entropy filters, lossy)
   - Add `EncodePngAdvanced()` function with full options
-  - Update `EncodePng()` to use best available settings
-  - Status: `bridge.go` modified
+  - Update `EncodePng()` to use new preset mappings
+  - Map presets: Smaller→SmallerOptions, Faster→FasterOptions, Balanced→BalancedOptions
+  - Added size guarantee logic for Faster preset
 
-- **[Task 9.6.2]** Update `web/src/worker.ts`
+- **[Task 9.6.2]** ✅ Update `web/src/worker.ts`
 
   - Support new compression options from UI
   - Add progress indication for slow operations (Zopfli iteration)
+  - CompressionRequest includes dithering, ditherStrength, qualityTarget, zopfliIterations
 
-- **[Task 9.6.3]** Update `web/src/App.res`
+- **[Task 9.6.3]** ✅ Update `web/src/App.res` and `BottomBar.res`
 
-  - Add UI controls for advanced options
+  - UI controls for all advanced options
   - Display compression ratio and savings
+  - Slider for preset (Smaller/Balanced/Faster)
+  - Lossless toggle with quantization dropdown
+  - Dithering toggle with strength slider
+  - Quality target slider
+  - Zopfli iterations input
 
 ### 9.7 Problem Documentation ✅ 4 of 4 Tasks Complete
 
@@ -1141,13 +1157,13 @@ Phase 8 (Web Polish) ✅ PARTIAL
   ├─ 8.7-8.8 Architecture (Worker, Memory) ✅
   └─ 8.9 Image Management (Delete/Clear) ✅
 
-Phase 9 (Advanced PNG Compression) ✅ PARTIAL
+Phase 9 (Advanced PNG Compression) ✅ COMPLETE
   ├─ 9.1 Entropy-Based Filter Scoring ✅
   ├─ 9.2 Brute Force Filter Optimization ✅
   ├─ 9.3 Zopfli-Style DEFLATE Iteration ✅
-  ├─ 9.4 Enhanced Palette Quantization 🔄
-  ├─ 9.5 CLI Enhancement 🔄
-  ├─ 9.6 WASM Integration 🔄
+  ├─ 9.4 Enhanced Palette Quantization ✅
+  ├─ 9.5 CLI Enhancement ✅
+  ├─ 9.6 WASM Integration ✅
   └─ 9.7 Problem Documentation ✅ (4/4 done)
 ```
 
@@ -1155,18 +1171,18 @@ Phase 9 (Advanced PNG Compression) ✅ PARTIAL
 
 ## Quick Reference
 
-| Phase | Tasks | Status      | Primary Output                           |
-| ----- | ----- | ----------- | ---------------------------------------- |
-| 1     | 11    | ✅ Complete | Valid PNG encoder                        |
-| 2     | 8     | ✅ Complete | DEFLATE compression                      |
-| 3     | 5     | ✅ Complete | Filter selection                         |
-| 4     | 8     | ✅ Complete | Preset system                            |
-| 5     | 6     | ✅ Complete | Lossy PNG with quantization              |
-| 6     | 11    | Pending     | JPEG encoder                             |
-| 7     | 4     | Pending     | JPEG features                            |
-| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)                |
-| 9     | 7     | ✅ Partial  | Advanced PNG compression (3✅, 3🔄, 1⏳) |
-| Infra | 4     | ✅ Partial  | Build/test/docs                          |
+| Phase | Tasks | Status      | Primary Output                      |
+| ----- | ----- | ----------- | ----------------------------------- |
+| 1     | 11    | ✅ Complete | Valid PNG encoder                   |
+| 2     | 8     | ✅ Complete | DEFLATE compression                 |
+| 3     | 5     | ✅ Complete | Filter selection                    |
+| 4     | 8     | ✅ Complete | Preset system                       |
+| 5     | 6     | ✅ Complete | Lossy PNG with quantization         |
+| 6     | 11    | Pending     | JPEG encoder                        |
+| 7     | 4     | Pending     | JPEG features                       |
+| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)           |
+| 9     | 7     | ✅ Complete | Advanced PNG compression (all done) |
+| Infra | 4     | ✅ Partial  | Build/test/docs                     |
 
 ---
 
@@ -1180,5 +1196,5 @@ For fastest path to working product:
 4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Privacy, etc.)
 5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
 6. **Phase 5** (all 6 tasks) ✅ Complete - Lossy PNG with palette quantization
-7. **Phase 9** (tasks 9.1-9.3) ✅ Partial - Advanced PNG compression (entropy, brute force, Zopfli)
+7. **Phase 9** (all 7 tasks) ✅ Complete - Advanced PNG compression, CLI, WASM, lossy mode
 8. **Phase 6-7** (JPEG) - Later phase

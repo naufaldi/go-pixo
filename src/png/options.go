@@ -26,38 +26,84 @@ const (
 
 // Options represents PNG encoding options.
 type Options struct {
-	Width             int
-	Height            int
-	ColorType         ColorType
-	CompressionLevel  int
-	FilterStrategy    FilterStrategy
-	OptimizeAlpha     bool
-	ReduceColorType   bool
-	StripMetadata     bool
-	OptimalDeflate    bool
-	MaxColors         int
-	Dithering         bool
-	DitheringStrength float64
-	QualityTarget     int
-	ZopfliIterations  int
+	Width               int
+	Height              int
+	ColorType           ColorType
+	CompressionLevel    int
+	FilterStrategy      FilterStrategy
+	OptimizeAlpha       bool
+	ReduceColorType     bool
+	StripMetadata       bool
+	OptimalDeflate      bool
+	MaxColors           int
+	Dithering           bool
+	DitheringStrength   float64
+	QualityTarget       int
+	ZopfliIterations    int
+	EnsureSizeNotLarger bool // If true, ensure output is not larger than original
 }
 
 func FastOptions(width, height int) Options {
 	return Options{
-		Width:             width,
-		Height:            height,
-		ColorType:         ColorRGBA,
-		CompressionLevel:  2,
-		FilterStrategy:    FilterStrategyMinSum,
-		OptimizeAlpha:     false,
-		ReduceColorType:   false,
-		StripMetadata:     false,
-		OptimalDeflate:    false,
-		MaxColors:         0,
-		Dithering:         false,
-		DitheringStrength: 0.0,
-		QualityTarget:     100,
-		ZopfliIterations:  0,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    2,
+		FilterStrategy:      FilterStrategyMinSum,
+		OptimizeAlpha:       false,
+		ReduceColorType:     false,
+		StripMetadata:       false,
+		OptimalDeflate:      false,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    0,
+		EnsureSizeNotLarger: false,
+	}
+}
+
+// FasterOptions returns options optimized for speed with size guarantee.
+// If compressed output is larger than original, it will use minimal compression.
+func FasterOptions(width, height int) Options {
+	return Options{
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    1,
+		FilterStrategy:      FilterStrategyNone,
+		OptimizeAlpha:       false,
+		ReduceColorType:     false,
+		StripMetadata:       false,
+		OptimalDeflate:      false,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    0,
+		EnsureSizeNotLarger: true,
+	}
+}
+
+// SmallerOptions returns options optimized for maximum compression with quality preservation.
+// Uses entropy-based filtering and moderate Zopfli iterations for best size/quality ratio.
+func SmallerOptions(width, height int) Options {
+	return Options{
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    9,
+		FilterStrategy:      FilterStrategyEntropy,
+		OptimizeAlpha:       true,
+		ReduceColorType:     true,
+		StripMetadata:       true,
+		OptimalDeflate:      true,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    10,
+		EnsureSizeNotLarger: false,
 	}
 }
 

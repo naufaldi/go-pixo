@@ -1,5 +1,4 @@
 open React
-open Types
 
 
 
@@ -7,16 +6,18 @@ open Types
 type action =
   | SetWasmReady(bool)
   | SetDragActive(bool)
-  | AddItems(array<queueItem>)
-  | UpdateItem(string, queueItem => queueItem)
+  | AddItems(array<Types.queueItem>)
+  | UpdateItem(string, Types.queueItem => Types.queueItem)
   | SelectItem(option<string>)
-  | SetPreset(preset)
+  | SetPreset(Types.preset)
   | SetLossless(bool)
-  | SetQuantization(quantizationLevel)
+  | SetQuantization(Types.quantizationLevel)
   | SetDithering(bool)
   | SetDitherStrength(float)
   | SetQualityTarget(int)
   | SetZopfliIterations(int)
+  | SetCompressionProgress(option<Types.compressionProgress>)
+  | SetCompressionTime(option<int>)
   | RemoveItem(string)
   | ClearAll
 
@@ -24,23 +25,23 @@ let generateId = (): string => {
   %raw("Math.random().toString(36).substring(2, 9)")
 }
 
-let createQueueItem = (file: Types.Web.File.t): queueItem => {
-  let kind = fileKindFromMime(Web.File.type_(file), Web.File.name(file))
+let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
+  let kind = Types.fileKindFromMime(Types.Web.File.type_(file), Types.Web.File.name(file))
   {
     id: generateId(),
     file,
     kind,
-    status: Pending,
+    status: Types.Pending,
     originalUrl: None,
     compressedUrl: None,
-    originalBytes: Web.File.size(file),
+    originalBytes: Types.Web.File.size(file),
     compressedBytes: None,
     width: None,
     height: None,
   }
 }
 
-let reducer = (state: appState, action: action): appState => {
+let reducer = (state: Types.appState, action: action): Types.appState => {
   switch action {
   | SetWasmReady(ready) => {...state, wasmReady: ready}
   | SetDragActive(active) => {...state, dragActive: active}
@@ -90,6 +91,8 @@ let reducer = (state: appState, action: action): appState => {
   | SetDitherStrength(strength) => {...state, ditherStrength: strength}
   | SetQualityTarget(target) => {...state, qualityTarget: target}
   | SetZopfliIterations(iterations) => {...state, zopfliIterations: iterations}
+  | SetCompressionProgress(progress) => {...state, compressionProgress: progress}
+  | SetCompressionTime(time) => {...state, compressionTime: time}
   | RemoveItem(id) => {
       let itemToRemove = state.items->Array.find(item => item.id == id)
       switch itemToRemove {
@@ -146,16 +149,6 @@ let reducer = (state: appState, action: action): appState => {
 
 @react.component
 let make = () => {
-  // #region agent log
-  React.useEffect0(() => {
-    Log.info(
-      ~hypothesisId="A",
-      ~location="App.res:mount",
-      ~message="App mounted",
-    )
-    None
-  })
-  // #endregion
   let (state, dispatch) = React.useReducer(
     reducer,
     {
@@ -163,13 +156,15 @@ let make = () => {
       dragActive: false,
       items: [],
       selectedId: None,
-      preset: Balanced,
+      preset: Types.Balanced,
       lossless: true,
-      quantization: Lossless,
+      quantization: Types.Lossless,
       dithering: false,
       ditherStrength: 0.5,
       qualityTarget: 75,
       zopfliIterations: 0,
+      compressionProgress: None,
+      compressionTime: None,
     },
   )
   
@@ -198,8 +193,29 @@ let make = () => {
       | "ready" =>
         logWasmReady()
         dispatch(SetWasmReady(true))
+      | "progress" =>
+        let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
+        let phase: option<string> = %raw("typeof data.phase === 'string' ? data.phase : undefined");
+        let progressValue: option<int> = %raw("typeof data.progress === 'number' ? Math.round(data.progress) : undefined");
+        switch (id, phase, progressValue) {
+        | (Some(id), Some(phase), Some(progressValue)) =>
+          let fileSize = switch state.items->Array.find(item => item.id == id) {
+          | Some(item) => item.originalBytes
+          | None => 0
+          };
+          dispatch(SetCompressionProgress(Some({
+            isActive: true,
+            itemId: id,
+            phase,
+            progress: progressValue,
+            startTime: %raw("performance.now()"),
+            fileSize,
+          })))
+        | _ => ()
+        }
       | "compressed" =>
         let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
+        let startTime = %raw("performance.now()");
         switch id {
         | Some(id) =>
           let compressedBytes = %raw("new Uint8Array(data.compressedBytes)");
@@ -213,10 +229,12 @@ let make = () => {
           logCompressed(id, compressedSize)
           dispatch(UpdateItem(id, item => {
             ...item,
-            status: Done,
+            status: Types.Done,
             compressedUrl: Some(compressedUrl),
             compressedBytes: Some(compressedSize),
           }))
+          dispatch(SetCompressionProgress(None))
+          dispatch(SetCompressionTime(Some(Int.fromFloat(startTime))))
         | None =>
           logMissingId("[app] compressed message missing id", data)
         }
@@ -228,8 +246,9 @@ let make = () => {
           logWorkerError(id, errorMsg)
           dispatch(UpdateItem(id, item => {
             ...item,
-            status: Error(errorMsg),
+            status: Types.Error(errorMsg),
           }))
+          dispatch(SetCompressionProgress(None))
         | None =>
           logMissingId("Worker error (no id):", errorMsg)
         }
@@ -242,7 +261,7 @@ let make = () => {
     
     Some(() => {
       switch workerRef.current->Nullable.toOption {
-      | Some(w) => %raw("w.terminate()")
+      | Some(_w) => %raw("w.terminate()")
       | None => ()
       }
     })
@@ -278,24 +297,24 @@ let make = () => {
     dispatch(AddItems(items))
   }
   
-  let processItem = (item: queueItem): Promise.t<unit> => {
+  let processItem = (item: Types.queueItem): Promise.t<unit> => {
     switch item.kind {
-    | Png =>
-      dispatch(UpdateItem(item.id, item => {...item, status: Decoding}))
+    | Types.Png =>
+      dispatch(UpdateItem(item.id, item => {...item, status: Types.Decoding}))
       ImageDecode.decodeFile(item.file)
         ->Promise.then(result => {
           dispatch(UpdateItem(item.id, item => {
             ...item,
-            status: Compressing,
+            status: Types.Compressing,
             originalUrl: Some(result.previewUrl),
             width: Some(result.width),
             height: Some(result.height),
           }))
           
           let pixels: 'a = %raw("new Uint8Array(result.pixels)")
-          let presetInt = presetToInt(state.preset)
+          let presetInt = Types.presetToInt(state.preset)
           let lossy = !state.lossless
-          let maxColors = quantizationToInt(state.quantization)
+          let maxColors = Types.quantizationToInt(state.quantization)
           let ditheringEnabled = state.dithering
           let ditherStrength = state.ditherStrength
           let qualityTarget = state.qualityTarget
@@ -310,26 +329,26 @@ let make = () => {
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
-              status: Error("Worker not available"),
+              status: Types.Error("Worker not available"),
             }))
           }
           
           Promise.resolve()
         })
-        ->Promise.catch(err => {
+        ->Promise.catch(_err => {
           let errorMsg = %raw("err.message || 'Failed to process image'")
           dispatch(UpdateItem(item.id, item => {
             ...item,
-            status: Error(errorMsg),
+            status: Types.Error(errorMsg),
           }))
           Promise.resolve()
         })
-    | Jpeg =>
+    | Types.Jpeg =>
       ImageDecode.decodeFile(item.file)
         ->Promise.then(result => {
           dispatch(UpdateItem(item.id, item => {
             ...item,
-            status: Error("JPEG compression not supported yet"),
+            status: Types.Error("JPEG compression not supported yet"),
             originalUrl: Some(result.previewUrl),
             width: Some(result.width),
             height: Some(result.height),
@@ -339,14 +358,14 @@ let make = () => {
         ->Promise.catch(_ => {
           dispatch(UpdateItem(item.id, item => {
             ...item,
-            status: Error("Failed to decode JPEG"),
+            status: Types.Error("Failed to decode JPEG"),
           }))
           Promise.resolve()
         })
-    | Unknown =>
+    | Types.Unknown =>
       dispatch(UpdateItem(item.id, item => {
         ...item,
-        status: Error("Unsupported file type"),
+        status: Types.Error("Unsupported file type"),
       }))
       Promise.resolve()
     }
@@ -359,8 +378,8 @@ let make = () => {
       processingRef.current = true
       let pendingItems = state.items->Array.filter(item => {
         switch item.status {
-        | Pending => true
-        | _ => false
+        | Types.Pending => true
+        | Types.Decoding | Types.Compressing | Types.Done | Types.Error(_) => false
         }
       })
       
@@ -388,8 +407,8 @@ let make = () => {
     let hasPending =
       state.items->Array.some(item =>
         switch item.status {
-        | Pending => true
-        | _ => false
+        | Types.Pending => true
+        | Types.Decoding | Types.Compressing | Types.Done | Types.Error(_) => false
         }
       )
 
@@ -419,7 +438,7 @@ let make = () => {
       }
     }
     handlePasteRef.current = Nullable.make(handlePaste)
-    %raw("window.addEventListener('paste', handlePaste)")
+    let _ = %raw("window.addEventListener('paste', handlePaste)")
 
     Some(() => {
       %raw("window.removeEventListener('paste', handlePaste)")
@@ -451,8 +470,8 @@ let make = () => {
     let found = ref(false)
     state.items->Array.forEach(item => {
       switch item.status {
-      | Done => found := true
-      | _ => ()
+      | Types.Done => found := true
+      | Types.Pending | Types.Decoding | Types.Compressing | Types.Error(_) => ()
       }
     })
     found.contents
@@ -549,5 +568,10 @@ let make = () => {
       onDownloadAll=handleDownloadAll
       hasCompletedItems
     />
+
+    {switch state.compressionProgress {
+    | Some(progress) => <CompressionProgress progress />
+    | None => React.null
+    }}
   </div>
 }

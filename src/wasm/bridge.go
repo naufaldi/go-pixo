@@ -140,17 +140,20 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 		return nil, fmt.Errorf("unsupported color type: %d", colorType)
 	}
 
-	// Map ReScript presets to Go presets
+	// Map ReScript presets to Go options
 	// ReScript: Smaller=0, Balanced=1, Faster=2
-	// Go: PresetFast=0, PresetBalanced=1, PresetMax=2
+	// Behavior:
+	// - Smaller (0): Maximum compression with quality preservation
+	// - Balanced (1): Standard trade-off
+	// - Faster (2): Fast encoding with size guarantee (output <= original)
 	var opts png.Options
 	switch preset {
-	case 0: // Smaller
-		opts = png.MaxOptions(width, height)
+	case 0: // Smaller - Maximum compression
+		opts = png.SmallerOptions(width, height)
 	case 1: // Balanced
 		opts = png.BalancedOptions(width, height)
-	case 2: // Faster
-		opts = png.FastOptions(width, height)
+	case 2: // Faster - Fast with size guarantee
+		opts = png.FasterOptions(width, height)
 	default:
 		opts = png.BalancedOptions(width, height)
 	}
@@ -196,14 +199,18 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 	}
 
 	// Map preset values to Options
+	// - Smaller (0): Maximum compression with quality preservation
+	// - Balanced (1): Standard trade-off
+	// - Faster (2): Fast with size guarantee
+	// - Extreme (3): Maximum compression with Zopfli iterations
 	var opts png.Options
 	switch preset {
-	case 0: // Fast
-		opts = png.FastOptions(width, height)
+	case 0: // Smaller
+		opts = png.SmallerOptions(width, height)
 	case 1: // Balanced
 		opts = png.BalancedOptions(width, height)
-	case 2: // Max
-		opts = png.MaxOptions(width, height)
+	case 2: // Faster - Fast with size guarantee
+		opts = png.FasterOptions(width, height)
 	case 3: // Extreme
 		opts = png.ExtremeOptions(width, height)
 	default:

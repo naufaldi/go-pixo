@@ -23,14 +23,14 @@ let quantizationLabel = (quantization: quantizationLevel): string => {
 
 @react.component
 let make = (
-  ~format,
+  ~format: string,
   ~preset,
-  ~lossless,
+  ~lossless: bool,
   ~quantization,
-  ~dithering,
-  ~ditherStrength,
-  ~qualityTarget,
-  ~zopfliIterations,
+  ~dithering: bool,
+  ~ditherStrength: float,
+  ~qualityTarget: int,
+  ~zopfliIterations: int,
   ~onPresetChange,
   ~onLosslessChange,
   ~onQuantizationChange,
@@ -40,26 +40,8 @@ let make = (
   ~onZopfliIterationsChange,
   ~onDownload,
   ~onDownloadAll,
-  ~hasCompletedItems,
+  ~hasCompletedItems: bool,
 ) => {
-  // #region agent log
-  let _ = React.useEffect1(() => {
-    Log.info(
-      ~hypothesisId="A",
-      ~location="BottomBar.res:render",
-      ~message="BottomBar rendered",
-      ~data={
-        "format": format,
-        "lossless": lossless,
-        "quantization": quantization,
-        "dithering": dithering,
-        "ditherStrength": ditherStrength,
-        "qualityTarget": qualityTarget,
-        "zopfliIterations": zopfliIterations,
-      },
-    )
-    None
-  }, [lossless, dithering, ditherStrength, qualityTarget, zopfliIterations])
   // #endregion
   let handleSliderChange = (e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
@@ -142,10 +124,10 @@ let make = (
               min="0"
               max="100"
               step=1.0
-              value={Int.toString(int_of_float(ditherStrength *. 100.0))}
+              value={Int.toString(Float.toInt(ditherStrength *. 100.0))}
               onChange={e => {
                 let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
-                onDitheringStrengthChange(float_of_int(value) /. 100.0)
+                onDitheringStrengthChange(Float.fromInt(value) /. 100.0)
               }}
               className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
             />

@@ -48,6 +48,15 @@ type queueItem = {
   height: option<int>,
 }
 
+type compressionProgress = {
+  isActive: bool,
+  itemId: string,
+  phase: string,
+  progress: int,
+  startTime: float,
+  fileSize: int,
+}
+
 type appState = {
   wasmReady: bool,
   dragActive: bool,
@@ -57,9 +66,11 @@ type appState = {
   lossless: bool,
   quantization: quantizationLevel,
   dithering: bool,
-  ditherStrength: float,  // 0.0 to 1.0
-  qualityTarget: int,      // 0 to 100
-  zopfliIterations: int,   // 0 to 50
+  ditherStrength: float,
+  qualityTarget: int,
+  zopfliIterations: int,
+  compressionProgress: option<compressionProgress>,
+  compressionTime: option<int>,
 }
 
 let presetToInt = (preset: preset): int => {
