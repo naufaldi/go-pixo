@@ -134,8 +134,12 @@ func TestFloydSteinbergValidByteRange(t *testing.T) {
 
 	indexed := FloydSteinberg(pixels, *palette, DitherMedium)
 
-	// Returned indices are bytes by type; this mainly asserts the function runs end-to-end.
-	_ = indexed
+	// All values should be valid bytes
+	for i, idx := range indexed {
+		if int(idx) >= palette.NumColors {
+			t.Errorf("FloydSteinberg()[%v] = %v, want < %d", i, idx, palette.NumColors)
+		}
+	}
 }
 
 func TestFloydSteinbergRow(t *testing.T) {

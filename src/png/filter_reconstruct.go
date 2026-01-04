@@ -1,11 +1,13 @@
 package png
 
+// ReconstructNone reconstructs an unfiltered scanline.
 func ReconstructNone(filtered []byte) []byte {
 	result := make([]byte, len(filtered))
 	copy(result, filtered)
 	return result
 }
 
+// ReconstructSub reconstructs a scanline filtered with Sub.
 func ReconstructSub(filtered []byte, bpp int) []byte {
 	result := make([]byte, len(filtered))
 	for i := 0; i < len(filtered); i++ {
@@ -18,6 +20,7 @@ func ReconstructSub(filtered []byte, bpp int) []byte {
 	return result
 }
 
+// ReconstructUp reconstructs a scanline filtered with Up.
 func ReconstructUp(filtered []byte, prev []byte) []byte {
 	result := make([]byte, len(filtered))
 	for i := 0; i < len(filtered); i++ {
@@ -30,6 +33,7 @@ func ReconstructUp(filtered []byte, prev []byte) []byte {
 	return result
 }
 
+// ReconstructAverage reconstructs a scanline filtered with Average.
 func ReconstructAverage(filtered []byte, prev []byte, bpp int) []byte {
 	result := make([]byte, len(filtered))
 	for i := 0; i < len(filtered); i++ {
@@ -47,6 +51,7 @@ func ReconstructAverage(filtered []byte, prev []byte, bpp int) []byte {
 	return result
 }
 
+// ReconstructPaeth reconstructs a scanline filtered with Paeth.
 func ReconstructPaeth(filtered []byte, prev []byte, bpp int) []byte {
 	result := make([]byte, len(filtered))
 	for i := 0; i < len(filtered); i++ {

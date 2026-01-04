@@ -421,10 +421,15 @@ func StuckiWithStrength(pixels []byte, palette Palette, strength float64) []byte
 type DitherMethod int
 
 const (
+	// DitherMethodNone disables dithering (simple thresholding).
 	DitherMethodNone DitherMethod = iota
+	// DitherMethodFloydSteinberg uses Floyd–Steinberg error diffusion.
 	DitherMethodFloydSteinberg
+	// DitherMethodJarvisJudiceNinke uses Jarvis–Judice–Ninke error diffusion.
 	DitherMethodJarvisJudiceNinke
+	// DitherMethodSierra2Row uses Sierra 2-row error diffusion.
 	DitherMethodSierra2Row
+	// DitherMethodStucki uses Stucki error diffusion.
 	DitherMethodStucki
 )
 

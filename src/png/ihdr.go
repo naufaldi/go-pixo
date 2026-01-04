@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// IHDRData is the parsed/encoded data payload for the IHDR chunk.
 type IHDRData struct {
 	Width       uint32
 	Height      uint32
@@ -16,6 +17,7 @@ type IHDRData struct {
 	Interlace   uint8
 }
 
+// NewIHDRData creates a validated IHDRData for the given image dimensions and format.
 func NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error) {
 	ihdr := &IHDRData{
 		Width:       uint32(width),
@@ -34,6 +36,7 @@ func NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error
 	return ihdr, nil
 }
 
+// Bytes returns the IHDR chunk data bytes.
 func (i *IHDRData) Bytes() []byte {
 	result := make([]byte, 13)
 	binary.BigEndian.PutUint32(result[0:4], i.Width)
@@ -46,6 +49,7 @@ func (i *IHDRData) Bytes() []byte {
 	return result
 }
 
+// Validate validates IHDR fields according to the PNG specification.
 func (i *IHDRData) Validate() error {
 	if i.Width == 0 || i.Height == 0 {
 		return ErrInvalidDimensions
@@ -94,6 +98,7 @@ func (i *IHDRData) Validate() error {
 	return nil
 }
 
+// WriteIHDR writes an IHDR chunk to w.
 func WriteIHDR(w io.Writer, data *IHDRData) error {
 	chunk := &Chunk{
 		chunkType: ChunkIHDR,

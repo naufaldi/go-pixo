@@ -87,12 +87,12 @@ let make = (
       {items
        ->Array.map((item: Types.queueItem) => {
          let isSelected = switch selectedId {
-         | Some(id) => id == item.id
+         | Some(id) => id == item.Types.id
          | None => false
          }
          <div
-           key=item.id
-           onClick={_ => onSelect(item.id)}
+           key=item.Types.id
+           onClick={_ => onSelect(item.Types.id)}
            className={if isSelected {
              "p-4 border border-neutral-600 rounded-lg cursor-pointer bg-neutral-900 transition-colors group relative"
            } else {
@@ -104,7 +104,7 @@ let make = (
              let key = ReactEvent.Keyboard.key(e)
              if key == "Enter" || key == " " {
                ReactEvent.Keyboard.preventDefault(e)
-               onSelect(item.id)
+               onSelect(item.Types.id)
              }
            }}>
            <div className="flex items-center justify-between">

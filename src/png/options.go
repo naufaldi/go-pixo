@@ -1,141 +1,83 @@
 package png
 
-import "github.com/mac/go-pixo/src/compress"
-
-type FilterSelectionConfig struct {
-	EarlyTerminationEnabled   bool
-	EarlyTerminationThreshold float64
-	MinFiltersToTry           int
-	FilterSelectionThreshold  float64
-}
-
-const (
-	DefaultMinSumThreshold  = 256.0
-	DefaultEntropyThreshold = 0.5
-	DefaultMinFiltersToTry  = 2
-)
-
+// Preset selects a predefined set of encoding options.
 type Preset int
 
 const (
+	// PresetFast favors speed over size.
 	PresetFast Preset = iota
+	// PresetBalanced balances speed and size.
 	PresetBalanced
+	// PresetMax favors size over speed.
 	PresetMax
+	// PresetExtreme favors maximum size reduction.
 	PresetExtreme
 )
 
+// FilterStrategy selects the scanline filter strategy.
 type FilterStrategy int
 
 const (
+	// FilterStrategyNone selects the None filter.
 	FilterStrategyNone FilterStrategy = iota
+	// FilterStrategySub selects the Sub filter.
 	FilterStrategySub
+	// FilterStrategyUp selects the Up filter.
 	FilterStrategyUp
+	// FilterStrategyAverage selects the Average filter.
 	FilterStrategyAverage
+	// FilterStrategyPaeth selects the Paeth filter.
 	FilterStrategyPaeth
+	// FilterStrategyMinSum selects the filter with minimum sum of absolute values.
 	FilterStrategyMinSum
+	// FilterStrategyAdaptive is the default adaptive strategy.
 	FilterStrategyAdaptive
+	// FilterStrategyAdaptiveFast is an adaptive strategy optimized for speed.
 	FilterStrategyAdaptiveFast
+	// FilterStrategyEntropy selects the filter with minimum entropy.
 	FilterStrategyEntropy
+	// FilterStrategyBruteForce tries all filters for each row.
 	FilterStrategyBruteForce
-	FilterStrategyBigrams
-	FilterStrategyParallel
 )
 
-type DistanceMetricType string
-
-const (
-	DistanceMetricEuclidean DistanceMetricType = "euclidean"
-	DistanceMetricRedmean   DistanceMetricType = "redmean"
-)
-
-// ZopfliIterations controls the number of iterations for Zopfli compression.
-// More iterations generally yield better compression but increase processing time.
-// The tradeoff is approximately logarithmic: 5 iterations provides good results,
-// 10 iterations offers a good balance, and 15+ iterations provides marginal gains
-// for significantly increased computation time. Each iteration may add 2-5 seconds
-// depending on image size. Memory usage scales linearly with iterations.
-// Recommended values: 5 for speed-focused, 10 for balanced, 15+ for maximum compression.
-//
-// ZopfliEnabled enables Zopfli DEFLATE compression algorithm for PNG encoding.
-// Zopfli produces smaller DEFLATE streams than standard zlib by performing
-// extensive searches for optimal encodings. It is significantly slower than
-// standard compression but can reduce file size by 5-15%.
-// When disabled (default), standard zlib compression is used.
-// Recommended for: archival storage, assets where size matters over encoding time.
-//
-// ZopfliBlockSplitting controls whether Zopfli uses block splitting optimization.
-// Block splitting divides the data into smaller blocks, each with its own optimal
-// encoding method. This typically improves compression by 1-5% for typical images.
-// Disable this only if you have specific compatibility requirements or are
-// experiencing issues with certain decoders. Default is enabled.
-//
-// ZopfliSplitThreshold sets the threshold for block splitting decisions.
-// Values closer to 0 enable more aggressive splitting, while higher values
-// (up to 1.0) reduce splitting. The default of 0.001 provides good compression
-// without excessive fragmentation. This parameter has minimal effect when
-// ZopfliBlockSplitting is disabled.
-// Memory and time requirements increase linearly with the number of blocks.
+// Options represents PNG encoding options.
 type Options struct {
-	Width                    int
-	Height                   int
-	ColorType                ColorType
-	CompressionLevel         int
-	FilterStrategy           FilterStrategy
-	FilterEarlyTermination   bool
-	FilterSelectionThreshold float64
-	FilterSelectionConfig    FilterSelectionConfig
-	OptimizeAlpha            bool
-	ReduceColorType          bool
-	StripMetadata            bool
-	PreserveChunks           []Chunk
-	OptimalDeflate           bool
-	OptimalConfig            compress.OptimalConfig
-	MaxColors                int
-	Dithering                bool
-	DitheringStrength        float64
-	QualityTarget            int
-	ZopfliIterations         int
-	ZopfliEnabled            bool
-	ZopfliBlockSplitting     bool
-	ZopfliSplitThreshold     float64
-	EnsureSizeNotLarger      bool
-	OriginalFileSize         int
-	ProgressCallback         func(phase string, progress int)
-	UsePerceptualDistance    bool
-	DistanceMetric           DistanceMetricType
+	Width               int
+	Height              int
+	ColorType           ColorType
+	CompressionLevel    int
+	FilterStrategy      FilterStrategy
+	OptimizeAlpha       bool
+	ReduceColorType     bool
+	StripMetadata       bool
+	OptimalDeflate      bool
+	MaxColors           int
+	Dithering           bool
+	DitheringStrength   float64
+	QualityTarget       int
+	ZopfliIterations    int
+	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
+	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
 }
 
+// FastOptions returns options optimized for speed.
 func FastOptions(width, height int) Options {
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         2,
-		FilterStrategy:           FilterStrategyMinSum,
-		FilterEarlyTermination:   true,
-		FilterSelectionThreshold: DefaultMinSumThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   true,
-			EarlyTerminationThreshold: 0.1,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultMinSumThreshold,
-		},
-		OptimizeAlpha:         false,
-		ReduceColorType:       false,
-		StripMetadata:         false,
-		OptimalDeflate:        false,
-		OptimalConfig:         compress.OptimalConfigForLevel(2),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      0,
-		ZopfliEnabled:         false,
-		ZopfliBlockSplitting:  false,
-		ZopfliSplitThreshold:  0.001,
-		EnsureSizeNotLarger:   false,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    2,
+		FilterStrategy:      FilterStrategyMinSum,
+		OptimizeAlpha:       false,
+		ReduceColorType:     false,
+		StripMetadata:       false,
+		OptimalDeflate:      false,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    0,
+		EnsureSizeNotLarger: false,
 	}
 }
 
@@ -143,27 +85,21 @@ func FastOptions(width, height int) Options {
 // If compressed output is larger than original, it will use minimal compression.
 func FasterOptions(width, height int) Options {
 	return Options{
-		Width:                 width,
-		Height:                height,
-		ColorType:             ColorRGBA,
-		CompressionLevel:      1,
-		FilterStrategy:        FilterStrategyNone,
-		OptimizeAlpha:         false,
-		ReduceColorType:       false,
-		StripMetadata:         false,
-		OptimalDeflate:        false,
-		OptimalConfig:         compress.OptimalConfigForLevel(1),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      0,
-		ZopfliEnabled:         false,
-		ZopfliBlockSplitting:  false,
-		ZopfliSplitThreshold:  0.001,
-		EnsureSizeNotLarger:   true,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    1,
+		FilterStrategy:      FilterStrategyNone,
+		OptimizeAlpha:       false,
+		ReduceColorType:     false,
+		StripMetadata:       false,
+		OptimalDeflate:      false,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    0,
+		EnsureSizeNotLarger: true,
 	}
 }
 
@@ -171,137 +107,85 @@ func FasterOptions(width, height int) Options {
 // Uses entropy-based filtering and moderate Zopfli iterations for best size/quality ratio.
 func SmallerOptions(width, height int) Options {
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         9,
-		FilterStrategy:           FilterStrategyEntropy,
-		FilterEarlyTermination:   false,
-		FilterSelectionThreshold: DefaultEntropyThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   false,
-			EarlyTerminationThreshold: 0.05,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultEntropyThreshold,
-		},
-		OptimizeAlpha:         true,
-		ReduceColorType:       true,
-		StripMetadata:         true,
-		OptimalDeflate:        true,
-		OptimalConfig:         compress.OptimalConfigForLevel(9),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      10,
-		ZopfliEnabled:         true,
-		ZopfliBlockSplitting:  true,
-		ZopfliSplitThreshold:  0.001,
-		EnsureSizeNotLarger:   false,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    9,
+		FilterStrategy:      FilterStrategyEntropy,
+		OptimizeAlpha:       true,
+		ReduceColorType:     true,
+		StripMetadata:       true,
+		OptimalDeflate:      true,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    10,
+		EnsureSizeNotLarger: false,
 	}
 }
 
+// BalancedOptions returns a reasonable default Options preset.
 func BalancedOptions(width, height int) Options {
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         6,
-		FilterStrategy:           FilterStrategyAdaptive,
-		FilterEarlyTermination:   true,
-		FilterSelectionThreshold: DefaultMinSumThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   true,
-			EarlyTerminationThreshold: 0.1,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultMinSumThreshold,
-		},
-		OptimizeAlpha:         true,
-		ReduceColorType:       true,
-		StripMetadata:         true,
-		OptimalDeflate:        false,
-		OptimalConfig:         compress.OptimalConfigForLevel(6),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      0,
-		ZopfliEnabled:         false,
-		ZopfliBlockSplitting:  true,
-		ZopfliSplitThreshold:  0.001,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGBA,
+		CompressionLevel:  6,
+		FilterStrategy:    FilterStrategyAdaptive,
+		OptimizeAlpha:     true,
+		ReduceColorType:   true,
+		StripMetadata:     true,
+		OptimalDeflate:    false,
+		MaxColors:         0,
+		Dithering:         false,
+		DitheringStrength: 0.0,
+		QualityTarget:     100,
+		ZopfliIterations:  0,
 	}
 }
 
+// MaxOptions returns options tuned for maximum compression.
 func MaxOptions(width, height int) Options {
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         9,
-		FilterStrategy:           FilterStrategyMinSum,
-		FilterEarlyTermination:   false,
-		FilterSelectionThreshold: DefaultMinSumThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   false,
-			EarlyTerminationThreshold: 0.05,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultMinSumThreshold,
-		},
-		OptimizeAlpha:         true,
-		ReduceColorType:       true,
-		StripMetadata:         true,
-		OptimalDeflate:        true,
-		OptimalConfig:         compress.OptimalConfigForLevel(9),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      12,
-		ZopfliEnabled:         true,
-		ZopfliBlockSplitting:  true,
-		ZopfliSplitThreshold:  0.001,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGBA,
+		CompressionLevel:  9,
+		FilterStrategy:    FilterStrategyMinSum,
+		OptimizeAlpha:     true,
+		ReduceColorType:   true,
+		StripMetadata:     true,
+		OptimalDeflate:    true,
+		MaxColors:         0,
+		Dithering:         false,
+		DitheringStrength: 0.0,
+		QualityTarget:     100,
+		ZopfliIterations:  5,
 	}
 }
 
+// ExtremeOptions returns options tuned for extreme compression.
 func ExtremeOptions(width, height int) Options {
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         10,
-		FilterStrategy:           FilterStrategyEntropy,
-		FilterEarlyTermination:   false,
-		FilterSelectionThreshold: DefaultEntropyThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   false,
-			EarlyTerminationThreshold: 0.01,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultEntropyThreshold,
-		},
-		OptimizeAlpha:         true,
-		ReduceColorType:       true,
-		StripMetadata:         true,
-		OptimalDeflate:        true,
-		OptimalConfig:         compress.OptimalConfigForLevel(9),
-		MaxColors:             0,
-		Dithering:             false,
-		DitheringStrength:     0.0,
-		QualityTarget:         100,
-		ZopfliIterations:      15,
-		ZopfliEnabled:         true,
-		ZopfliBlockSplitting:  true,
-		ZopfliSplitThreshold:  0.001,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGBA,
+		CompressionLevel:  10,
+		FilterStrategy:    FilterStrategyEntropy,
+		OptimizeAlpha:     true,
+		ReduceColorType:   true,
+		StripMetadata:     true,
+		OptimalDeflate:    true,
+		MaxColors:         0,
+		Dithering:         false,
+		DitheringStrength: 0.0,
+		QualityTarget:     100,
+		ZopfliIterations:  15,
 	}
 }
 
+// LossyOptions returns options configured for palette-based lossy compression.
 func LossyOptions(width, height int, maxColors int) Options {
 	if maxColors <= 0 {
 		maxColors = 256
@@ -310,44 +194,21 @@ func LossyOptions(width, height int, maxColors int) Options {
 		maxColors = 256
 	}
 	return Options{
-		Width:                    width,
-		Height:                   height,
-		ColorType:                ColorRGBA,
-		CompressionLevel:         9,
-		FilterStrategy:           FilterStrategyMinSum,
-		FilterEarlyTermination:   true,
-		FilterSelectionThreshold: DefaultMinSumThreshold,
-		FilterSelectionConfig: FilterSelectionConfig{
-			EarlyTerminationEnabled:   true,
-			EarlyTerminationThreshold: 0.1,
-			MinFiltersToTry:           DefaultMinFiltersToTry,
-			FilterSelectionThreshold:  DefaultMinSumThreshold,
-		},
-		OptimizeAlpha:         true,
-		ReduceColorType:       false,
-		StripMetadata:         true,
-		OptimalDeflate:        true,
-		OptimalConfig:         compress.OptimalConfigForLevel(9),
-		MaxColors:             maxColors,
-		Dithering:             true,
-		DitheringStrength:     0.5,
-		QualityTarget:         75,
-		ZopfliIterations:      0,
-		ZopfliEnabled:         false,
-		ZopfliBlockSplitting:  true,
-		ZopfliSplitThreshold:  0.001,
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGBA,
+		CompressionLevel:  9,
+		FilterStrategy:    FilterStrategyMinSum,
+		OptimizeAlpha:     true,
+		ReduceColorType:   false,
+		StripMetadata:     true,
+		OptimalDeflate:    true,
+		MaxColors:         maxColors,
+		Dithering:         true,
+		DitheringStrength: 0.5,
+		QualityTarget:     75,
+		ZopfliIterations:  0,
 	}
-}
-
-// QualityPresets for lossy compression with different quality targets.
-// Note: This function requires width and height to be passed.
-// Use lossyWithQuality(width, height, maxColors, quality) directly.
-func QualityPresets() map[string]Options {
-	// Return a map of preset names to configuration functions
-	// This is a placeholder - actual usage requires width/height
-	return map[string]Options{}
 }
 
 // ApplyLossy applies lossy compression settings to an Options struct.
@@ -405,30 +266,4 @@ func (o *Options) CompressionRatio() float64 {
 // IsLossy returns true if the options enable lossy compression.
 func (o *Options) IsLossy() bool {
 	return o.MaxColors > 0 && o.MaxColors < 256
-}
-
-// WithZopfliIterations sets the number of Zopfli iterations for compression.
-// More iterations yield better compression but increase processing time.
-// The tradeoff is approximately logarithmic: 5 iterations provides good results,
-// 10 iterations offers a balance, and 15+ iterations provides marginal gains.
-// Each iteration adds 2-5 seconds depending on image size.
-func (o *Options) WithZopfliIterations(n int) *Options {
-	o.ZopfliIterations = n
-	return o
-}
-
-// WithZopfliEnabled enables or disables Zopfli DEFLATE compression.
-// Zopfli produces 5-15% smaller files but is significantly slower.
-// Default is false (standard zlib compression).
-func (o *Options) WithZopfliEnabled(b bool) *Options {
-	o.ZopfliEnabled = b
-	return o
-}
-
-// WithZopfliBlockSplitting enables or disables Zopfli block splitting optimization.
-// Block splitting typically improves compression by 1-5% for typical images.
-// Default is true.
-func (o *Options) WithZopfliBlockSplitting(b bool) *Options {
-	o.ZopfliBlockSplitting = b
-	return o
 }

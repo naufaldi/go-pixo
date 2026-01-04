@@ -1,5 +1,6 @@
 package png
 
+// PaethPredictor computes the Paeth predictor used by the Paeth filter.
 func PaethPredictor(a, b, c int) int {
 	p := a + b - c
 	pa := abs(p - a)

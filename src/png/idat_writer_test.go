@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/mac/go-pixo/src/compress"
 )
@@ -177,7 +176,11 @@ func TestIDATDataBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer func() { _ = zlibReader.Close() }()
+	t.Cleanup(func() {
+		if closeErr := zlibReader.Close(); closeErr != nil {
+			t.Errorf("zlib reader close error: %v", closeErr)
+		}
+	})
 
 	decompressed := make([]byte, 100)
 	n, err := zlibReader.Read(decompressed)
@@ -282,7 +285,11 @@ func TestWriteIDAT_CompressionReducesSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer func() { _ = zlibReader.Close() }()
+	t.Cleanup(func() {
+		if closeErr := zlibReader.Close(); closeErr != nil {
+			t.Errorf("zlib reader close error: %v", closeErr)
+		}
+	})
 
 	decompressed := make([]byte, uncompressedSize+100)
 	n, err := zlibReader.Read(decompressed)
@@ -378,7 +385,11 @@ func TestSizeComparisonFallback_StoredBlockForRandomData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer func() { _ = zlibReader.Close() }()
+	t.Cleanup(func() {
+		if closeErr := zlibReader.Close(); closeErr != nil {
+			t.Errorf("zlib reader close error: %v", closeErr)
+		}
+	})
 
 	decompressed := make([]byte, len(scanlineData)+100)
 	n, err := zlibReader.Read(decompressed)
@@ -493,7 +504,11 @@ func TestSizeComparisonFallback_NeverIncreasesSize(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create zlib reader: %v", err)
 			}
-			defer func() { _ = zlibReader.Close() }()
+			t.Cleanup(func() {
+				if closeErr := zlibReader.Close(); closeErr != nil {
+					t.Errorf("zlib reader close error: %v", closeErr)
+				}
+			})
 
 			decompressed := make([]byte, len(tc.data)+tc.width*tc.height+100)
 			n, err := zlibReader.Read(decompressed)
@@ -650,15 +665,16 @@ func TestRealImageCompression(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := os.Stat(tc.filename); os.IsNotExist(err) {
-				t.Skipf("fixture not found: %s", tc.filename)
-			}
 			// Load original PNG
 			originalFile, err := os.Open(tc.filename)
 			if err != nil {
 				t.Fatalf("failed to open %s: %v", tc.filename, err)
 			}
-			defer func() { _ = originalFile.Close() }()
+			t.Cleanup(func() {
+				if closeErr := originalFile.Close(); closeErr != nil {
+					t.Errorf("failed to close %s: %v", tc.filename, closeErr)
+				}
+			})
 
 			img, err := stdpng.Decode(originalFile)
 			if err != nil {
@@ -681,9 +697,15 @@ func TestRealImageCompression(t *testing.T) {
 			pixels := extractPixels(t, img)
 
 			// Determine color type
-			colorType := ColorRGBA
-			if img.ColorModel() == color.GrayModel {
+			var colorType ColorType
+			switch img.ColorModel() {
+			case color.RGBAModel, color.NRGBAModel:
+				colorType = ColorRGBA
+			case color.GrayModel:
 				colorType = ColorGrayscale
+			default:
+				// For other color models, assume RGBA
+				colorType = ColorRGBA
 			}
 
 			// Compress using our encoder
@@ -772,276 +794,4 @@ func extractPixels(t *testing.T, img image.Image) []byte {
 	}
 
 	return pixels
-}
-
-func TestBuildZlibDataWithZopfli(t *testing.T) {
-	tests := []struct {
-		name       string
-		pixels     []byte
-		iterations int
-		blockSplit bool
-		wantErr    bool
-	}{
-		{
-			name:       "empty data",
-			pixels:     []byte{},
-			iterations: 5,
-			blockSplit: true,
-			wantErr:    false,
-		},
-		{
-			name:       "small data with iterations",
-			pixels:     []byte{0x01, 0x02, 0x03, 0x04, 0x05},
-			iterations: 3,
-			blockSplit: true,
-			wantErr:    false,
-		},
-		{
-			name:       "repetitive data compresses well",
-			pixels:     bytes.Repeat([]byte{0xAA, 0xBB, 0xCC}, 100),
-			iterations: 5,
-			blockSplit: true,
-			wantErr:    false,
-		},
-		{
-			name:       "random data",
-			pixels:     generateRandomData(50, 50, 3),
-			iterations: 3,
-			blockSplit: true,
-			wantErr:    false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := Options{
-				ZopfliIterations:     tt.iterations,
-				ZopfliBlockSplitting: tt.blockSplit,
-				ZopfliSplitThreshold: 0.001,
-			}
-
-			result, err := buildZlibDataWithZopfli(tt.pixels, opts)
-
-			if tt.wantErr && err == nil {
-				t.Errorf("buildZlibDataWithZopfli() expected error, got nil")
-				return
-			}
-
-			if !tt.wantErr && err != nil {
-				t.Errorf("buildZlibDataWithZopfli() unexpected error: %v", err)
-				return
-			}
-
-			if !tt.wantErr && len(result) == 0 && len(tt.pixels) > 0 {
-				t.Error("buildZlibDataWithZopfli() returned empty result for non-empty input")
-			}
-
-			if !tt.wantErr && len(tt.pixels) > 0 {
-				if len(result) >= len(tt.pixels) {
-					t.Logf("Note: Zopfli result (%d bytes) is not smaller than input (%d bytes)", len(result), len(tt.pixels))
-				} else {
-					t.Logf("Zopfli compressed %d bytes to %d bytes (%.1f%%)", len(tt.pixels), len(result), float64(len(result))/float64(len(tt.pixels))*100)
-				}
-			}
-		})
-	}
-}
-
-func TestBuildZlibDataWithZopfliProgressCallback(t *testing.T) {
-	var callbackIterations []float64
-
-	opts := Options{
-		ZopfliIterations:     5,
-		ZopfliBlockSplitting: true,
-		ZopfliSplitThreshold: 0.001,
-		ProgressCallback: func(phase string, progress int) {
-			if phase == "deflate" {
-				callbackIterations = append(callbackIterations, float64(progress))
-			}
-		},
-	}
-
-	pixels := bytes.Repeat([]byte{0xAA, 0xBB, 0xCC}, 50)
-
-	_, err := buildZlibDataWithZopfli(pixels, opts)
-	if err != nil {
-		t.Fatalf("buildZlibDataWithZopfli() error = %v", err)
-	}
-
-	if len(callbackIterations) == 0 {
-		t.Error("Progress callback was not called during Zopfli compression")
-	}
-
-	t.Logf("Progress callback called %d times during Zopfli compression", len(callbackIterations))
-}
-
-func TestBuildZlibDataWithZopfli_EmptyData(t *testing.T) {
-	opts := Options{
-		ZopfliIterations:     5,
-		ZopfliBlockSplitting: true,
-	}
-
-	result, err := buildZlibDataWithZopfli([]byte{}, opts)
-	if err != nil {
-		t.Fatalf("buildZlibDataWithZopfli() error = %v", err)
-	}
-
-	if len(result) != 0 {
-		t.Errorf("buildZlibDataWithZopfli() empty input = %v, want empty", result)
-	}
-}
-
-func TestZopfliCompressionImprovement(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping Zopfli improvement test in short mode")
-	}
-
-	repetitivePixels := bytes.Repeat([]byte{0xAA, 0xBB, 0xCC}, 200)
-
-	optsNoZopfli := Options{
-		CompressionLevel: 9,
-		OptimalDeflate:   true,
-		OptimalConfig:    compress.OptimalConfigForLevel(9),
-	}
-
-	optsWithZopfli := Options{
-		CompressionLevel:     9,
-		OptimalDeflate:       false,
-		ZopfliEnabled:        true,
-		ZopfliIterations:     10,
-		ZopfliBlockSplitting: true,
-	}
-
-	resultNoZopfli, err := buildZlibData(repetitivePixels, optsNoZopfli)
-	if err != nil {
-		t.Fatalf("buildZlibData() without Zopfli error: %v", err)
-	}
-
-	resultWithZopfli, err := buildZlibData(repetitivePixels, optsWithZopfli)
-	if err != nil {
-		t.Fatalf("buildZlibData() with Zopfli error: %v", err)
-	}
-
-	improvement := compress.CalculateZopfliImprovement(resultNoZopfli, resultWithZopfli)
-	t.Logf("Zopfli compression improvement: %.2f%%", improvement)
-	t.Logf("Without Zopfli: %d bytes", len(resultNoZopfli))
-	t.Logf("With Zopfli: %d bytes", len(resultWithZopfli))
-
-	if improvement < 0 {
-		t.Logf("Note: Zopfli did not improve compression for this data (improvement=%.2f%%)", improvement)
-	}
-}
-
-func TestZopfliDifferentIterationCounts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping Zopfli iteration count test in short mode")
-	}
-
-	testCases := []struct {
-		name       string
-		iterations int
-	}{
-		{"5 iterations", 5},
-		{"10 iterations", 10},
-		{"15 iterations", 15},
-	}
-
-	pixels := bytes.Repeat([]byte{0xAA, 0xBB, 0xCC, 0xDD}, 100)
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := Options{
-				ZopfliIterations:     tc.iterations,
-				ZopfliBlockSplitting: true,
-				ZopfliSplitThreshold: 0.001,
-			}
-
-			startTime := time.Now()
-			result, err := buildZlibDataWithZopfli(pixels, opts)
-			elapsed := time.Since(startTime)
-
-			if err != nil {
-				t.Fatalf("buildZlibDataWithZopfli() error: %v", err)
-			}
-
-			if len(result) >= len(pixels) {
-				t.Logf("%s: result (%d bytes) not smaller than input (%d bytes)", tc.name, len(result), len(pixels))
-			} else {
-				t.Logf("%s: compressed %d bytes to %d bytes (%.1f%%), took %v", tc.name, len(pixels), len(result), float64(len(result))/float64(len(pixels))*100, elapsed)
-			}
-		})
-	}
-}
-
-func TestBuildZlibDataWithZopfli_ExtremePreset(t *testing.T) {
-	pixels := bytes.Repeat([]byte{0x01, 0x02, 0x03}, 50)
-
-	opts := ExtremeOptions(10, 15)
-	opts.ColorType = ColorRGB
-
-	result, err := buildZlibData(pixels, opts)
-	if err != nil {
-		t.Fatalf("buildZlibData() with ExtremeOptions error: %v", err)
-	}
-
-	if len(result) == 0 {
-		t.Error("buildZlibData() returned empty result for Extreme preset")
-	}
-
-	decompressed := decompressZlib(t, result)
-	if !bytes.Equal(decompressed, pixels) {
-		t.Error("Extreme preset output doesn't roundtrip correctly")
-	}
-
-	t.Logf("Extreme preset: %d bytes for %d input bytes", len(result), len(pixels))
-}
-
-func TestBuildZlibDataWithZopfli_MaxPreset(t *testing.T) {
-	pixels := bytes.Repeat([]byte{0xFF, 0x00, 0xFF, 0x00}, 50)
-
-	opts := MaxOptions(10, 20)
-	opts.ColorType = ColorRGBA
-
-	result, err := buildZlibData(pixels, opts)
-	if err != nil {
-		t.Fatalf("buildZlibData() with MaxOptions error: %v", err)
-	}
-
-	if len(result) == 0 {
-		t.Error("buildZlibData() returned empty result for Max preset")
-	}
-
-	decompressed := decompressZlib(t, result)
-	if !bytes.Equal(decompressed, pixels) {
-		t.Error("Max preset output doesn't roundtrip correctly")
-	}
-
-	t.Logf("Max preset: %d bytes for %d input bytes", len(result), len(pixels))
-}
-
-func decompressZlib(t *testing.T, data []byte) []byte {
-	t.Helper()
-
-	zlibReader, err := zlib.NewReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("failed to create zlib reader: %v", err)
-	}
-	defer func() { _ = zlibReader.Close() }()
-
-	decompressed := make([]byte, 0, 4096)
-	buf := make([]byte, 4096)
-	for {
-		n, err := zlibReader.Read(buf)
-		if n > 0 {
-			decompressed = append(decompressed, buf[:n]...)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatalf("decompression failed: %v", err)
-		}
-	}
-
-	return decompressed
 }

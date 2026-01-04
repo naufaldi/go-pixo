@@ -1,5 +1,6 @@
 package png
 
+// ApplyFilterNone returns an unfiltered copy of row.
 func ApplyFilterNone(row []byte) []byte {
 	result := make([]byte, len(row))
 	copy(result, row)

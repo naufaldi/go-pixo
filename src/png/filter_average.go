@@ -1,5 +1,6 @@
 package png
 
+// ApplyFilterAverage applies the "Average" PNG filter to a scanline.
 func ApplyFilterAverage(row []byte, prev []byte, bpp int) []byte {
 	result := make([]byte, len(row))
 	for i := 0; i < len(row); i++ {

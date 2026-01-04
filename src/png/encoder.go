@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// Encoder writes PNG images with configurable compression and preprocessing options.
 type Encoder struct {
 	width     int
 	height    int
@@ -13,6 +14,7 @@ type Encoder struct {
 	opts      Options
 }
 
+// NewEncoder creates a PNG encoder for an image of the given size and color type.
 func NewEncoder(width, height int, colorType ColorType) (*Encoder, error) {
 	if width <= 0 || height <= 0 {
 		return nil, ErrInvalidDimensions
@@ -34,6 +36,7 @@ func NewEncoder(width, height int, colorType ColorType) (*Encoder, error) {
 	}, nil
 }
 
+// NewEncoderWithOptions creates a PNG encoder using the provided Options.
 func NewEncoderWithOptions(opts Options) (*Encoder, error) {
 	if opts.Width <= 0 || opts.Height <= 0 {
 		return nil, ErrInvalidDimensions
@@ -52,10 +55,12 @@ func NewEncoderWithOptions(opts Options) (*Encoder, error) {
 	}, nil
 }
 
+// Encode encodes pixels into a PNG using the encoder's default options.
 func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 	return e.EncodeWithOptions(pixels, e.opts)
 }
 
+// EncodeWithOptions encodes pixels into a PNG using opts.
 func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error) {
 	if opts.ProgressCallback != nil {
 		opts.ProgressCallback("preprocess", 0)

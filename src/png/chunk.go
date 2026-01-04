@@ -7,27 +7,32 @@ import (
 	"github.com/mac/go-pixo/src/compress"
 )
 
+// Chunk represents a PNG chunk.
 type Chunk struct {
 	chunkType ChunkType
 	Data      []byte
 }
 
+// Len returns the length of the chunk data.
 func (c *Chunk) Len() int {
 	return len(c.Data)
 }
 
+// Type returns the chunk type as a string.
 func (c *Chunk) Type() string {
 	return string(c.chunkType)
 }
 
+// CRC computes the chunk CRC over the type and data bytes.
 func (c *Chunk) CRC() uint32 {
 	typeBytes := []byte(c.chunkType)
-	combined := make([]byte, 0, len(typeBytes)+len(c.Data))
-	combined = append(combined, typeBytes...)
-	combined = append(combined, c.Data...)
+	combined := make([]byte, len(typeBytes)+len(c.Data))
+	copy(combined, typeBytes)
+	copy(combined[len(typeBytes):], c.Data)
 	return compress.CRC32(combined)
 }
 
+// Bytes returns the serialized chunk bytes (length + type + data + CRC).
 func (c *Chunk) Bytes() []byte {
 	length := uint32(len(c.Data))
 	typeBytes := []byte(c.chunkType)
@@ -42,6 +47,7 @@ func (c *Chunk) Bytes() []byte {
 	return result
 }
 
+// WriteTo writes the serialized chunk to w.
 func (c *Chunk) WriteTo(w io.Writer) (int64, error) {
 	bytes := c.Bytes()
 	n, err := w.Write(bytes)

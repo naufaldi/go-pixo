@@ -1,5 +1,6 @@
 package png
 
+// ApplyFilterUp applies the "Up" PNG filter to a scanline.
 func ApplyFilterUp(row []byte, prev []byte) []byte {
 	result := make([]byte, len(row))
 	for i := 0; i < len(row); i++ {

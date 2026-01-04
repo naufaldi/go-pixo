@@ -1,3 +1,4 @@
+// Package compress contains DEFLATE and zlib primitives used by the PNG encoder.
 package compress
 
 import "hash"

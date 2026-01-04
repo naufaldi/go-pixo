@@ -8,12 +8,18 @@ func (e DeflateError) Error() string {
 }
 
 const (
-	ErrInvalidSymbol   DeflateError = "invalid symbol"
-	ErrInvalidLength   DeflateError = "invalid length"
+	// ErrInvalidSymbol indicates an invalid literal/length or distance symbol.
+	ErrInvalidSymbol DeflateError = "invalid symbol"
+	// ErrInvalidLength indicates an invalid match length.
+	ErrInvalidLength DeflateError = "invalid length"
+	// ErrInvalidDistance indicates an invalid match distance.
 	ErrInvalidDistance DeflateError = "invalid distance"
-	ErrInvalidHLIT     DeflateError = "invalid HLIT"
-	ErrInvalidHDIST    DeflateError = "invalid HDIST"
-	ErrInvalidHCLEN    DeflateError = "invalid HCLEN"
+	// ErrInvalidHLIT indicates an invalid HLIT value in a dynamic Huffman header.
+	ErrInvalidHLIT DeflateError = "invalid HLIT"
+	// ErrInvalidHDIST indicates an invalid HDIST value in a dynamic Huffman header.
+	ErrInvalidHDIST DeflateError = "invalid HDIST"
+	// ErrInvalidHCLEN indicates an invalid HCLEN value in a dynamic Huffman header.
+	ErrInvalidHCLEN DeflateError = "invalid HCLEN"
 )
 
 // EncodeLiteral writes a literal symbol (0-255) or end-of-block (256) to the bit writer.

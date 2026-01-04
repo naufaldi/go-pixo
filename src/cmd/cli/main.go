@@ -1,7 +1,7 @@
+// Command pixo compresses images into optimized PNGs.
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -10,85 +10,70 @@ import (
 	"os"
 	"time"
 
-	"github.com/mac/go-pixo/src/jpeg"
 	"github.com/mac/go-pixo/src/png"
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	var (
-		inputFile        = flag.String("input", "", "Input image file (PNG or JPEG)")
-		outputFile       = flag.String("output", "", "Output file (default: input with format extension)")
-		format           = flag.String("format", "png", "Output format: png or jpeg")
-		preset           = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
-		lossy            = flag.Bool("lossy", false, "Enable lossy compression with palette quantization (PNG only)")
-		quality          = flag.Int("quality", 75, "Quality level (PNG: 0-100 for lossy, JPEG: 1-100)")
-		compare          = flag.Bool("compare", false, "Show original vs compressed size comparison")
-		verbose          = flag.Bool("verbose", false, "Enable detailed output")
-		zopfliEnabled    = flag.Bool("zopfli", false, "Enable Zopfli DEFLATE compression for smaller files (PNG only, slower)")
-		zopfliIterations = flag.Int("zopfli-iterations", 10, "Number of Zopfli iterations (1-100): more iterations = smaller files, significantly slower (PNG only)")
-		zopfliNoSplit    = flag.Bool("zopfli-no-split", false, "Disable Zopfli block splitting optimization (PNG only)")
-		extreme          = flag.Bool("extreme", false, "Shortcut for maximum compression: enables Zopfli with 15 iterations (PNG only)")
-		ditherStrength   = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
-		maxColors        = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
-		benchmark        = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
-		benchmarkRuns    = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
-		optimal          = flag.Bool("optimal", false, "Enable optimal DEFLATE parsing for better compression (3-8% improvement, slower)")
-
-		// JPEG-specific flags
-		progressive     = flag.Bool("progressive", false, "Enable progressive JPEG encoding")
-		subsampling     = flag.String("subsampling", "420", "Chroma subsampling: 420 or 444 (JPEG only)")
-		trellis         = flag.Bool("trellis", false, "Enable trellis quantization (JPEG only)")
-		optimizeHuffman = flag.Bool("optimize-huffman", false, "Enable optimized Huffman tables (JPEG only)")
-
-		// Phase 11 advanced flags
-		filterStrategyArg = flag.String("filter-strategy", "", "PNG Filter strategy: none, sub, up, average, paeth, minsum, adaptive, adaptivefast, entropy, bruteforce, bigrams, parallel")
-		distanceMetricArg = flag.String("distance-metric", "euclidean", "Distance metric for quantization: euclidean, redmean")
-		perceptual        = flag.Bool("perceptual", false, "Enable perceptual distance for better visual quality")
-		earlyTerm         = flag.Bool("early-term", true, "Enable early termination in filter selection for speed")
+		inputFile      = flag.String("input", "", "Input image file (PNG or JPEG)")
+		outputFile     = flag.String("output", "", "Output PNG file (default: input with .png extension)")
+		preset         = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
+		lossy          = flag.Bool("lossy", false, "Enable lossy compression with palette quantization")
+		quality        = flag.Int("quality", 75, "Quality level for lossy compression (0-100)")
+		compare        = flag.Bool("compare", false, "Show original vs compressed size comparison")
+		verbose        = flag.Bool("verbose", false, "Enable detailed output")
+		iterations     = flag.Int("iterations", 0, "Number of Zopfli iterations (0-100)")
+		ditherStrength = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
+		maxColors      = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
+		benchmark      = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
+		benchmarkRuns  = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
 	)
 	flag.Parse()
 
 	if *inputFile == "" {
 		fmt.Fprintf(os.Stderr, "Error: -input is required\n")
 		flag.Usage()
-		os.Exit(1)
-	}
-
-	if *format != "png" && *format != "jpeg" {
-		fmt.Fprintf(os.Stderr, "Error: -format must be 'png' or 'jpeg'\n")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	if *format == "jpeg" && (*lossy || *zopfliEnabled || *extreme) {
-		fmt.Fprintf(os.Stderr, "Error: -lossy, -zopfli, and -extreme are only valid for PNG format\n")
-		flag.Usage()
-		os.Exit(1)
+		return 2
 	}
 
 	if *outputFile == "" {
-		ext := ".png"
-		if *format == "jpeg" {
-			ext = ".jpeg"
+		ext := getExt(*inputFile)
+		if ext == "" {
+			*outputFile = *inputFile + ".png"
+		} else {
+			*outputFile = (*inputFile)[:len(*inputFile)-len(ext)] + ".png"
 		}
-		*outputFile = (*inputFile)[:len(*inputFile)-len(getExt(*inputFile))] + ext
 	}
 
-	inputBytes, err := os.ReadFile(*inputFile)
+	file, err := os.Open(*inputFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input file: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing input file: %v\n", closeErr)
+		}
+	}()
+
+	// Get input file size for comparison
+	fileInfo, err := file.Stat()
+	inputFileSize := int64(0)
+	if err == nil {
+		inputFileSize = fileInfo.Size()
 	}
 
-	inputFileSize := int64(len(inputBytes))
-
-	img, formatName, err := image.Decode(bytes.NewReader(inputBytes))
+	img, format, err := image.Decode(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding image: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	fmt.Printf("Decoded %s image: %dx%d\n", formatName, img.Bounds().Dx(), img.Bounds().Dy())
+	fmt.Printf("Decoded %s image: %dx%d\n", format, img.Bounds().Dx(), img.Bounds().Dy())
 	if inputFileSize > 0 {
 		fmt.Printf("Input file size: %d bytes\n", inputFileSize)
 	}
@@ -99,17 +84,16 @@ func main() {
 
 	var pixels []byte
 
-	switch m := img.(type) {
+	switch typed := img.(type) {
 	case *image.RGBA:
-		pixels = m.Pix
+		pixels = typed.Pix
 	case *image.NRGBA:
-		nrgba := m
 		pixels = make([]byte, width*height*4)
-		for i := 0; i < len(nrgba.Pix); i += 4 {
-			pixels[i] = nrgba.Pix[i]
-			pixels[i+1] = nrgba.Pix[i+1]
-			pixels[i+2] = nrgba.Pix[i+2]
-			pixels[i+3] = nrgba.Pix[i+3]
+		for i := 0; i < len(typed.Pix); i += 4 {
+			pixels[i] = typed.Pix[i]
+			pixels[i+1] = typed.Pix[i+1]
+			pixels[i+2] = typed.Pix[i+2]
+			pixels[i+3] = typed.Pix[i+3]
 		}
 	default:
 		rgba := image.NewRGBA(bounds)
@@ -121,7 +105,6 @@ func main() {
 		pixels = rgba.Pix
 	}
 
-	_ = png.ColorRGBA // Suppress unused import warning
 	originalSize := len(pixels)
 
 	var encoder *png.Encoder
@@ -130,23 +113,13 @@ func main() {
 	if *verbose {
 		fmt.Printf("Input pixel data size: %d bytes\n", originalSize)
 		fmt.Printf("Preset: %s\n", *preset)
-		if *extreme {
-			fmt.Printf("Extreme Mode: enabled (Zopfli with 15 iterations)\n")
-		}
 		fmt.Printf("Lossy: %v\n", *lossy)
 		if *lossy {
 			fmt.Printf("Quality: %d\n", *quality)
 			fmt.Printf("Max Colors: %d\n", *maxColors)
 			fmt.Printf("Dither Strength: %.2f\n", *ditherStrength)
 		}
-		fmt.Printf("Zopfli Enabled: %v\n", *zopfliEnabled)
-		fmt.Printf("Zopfli Iterations: %d\n", *zopfliIterations)
-		if *zopfliNoSplit {
-			fmt.Printf("Zopfli Block Splitting: disabled\n")
-		}
-		if *optimal {
-			fmt.Printf("Optimal DEFLATE: enabled (3-8%% better compression, slower)\n")
-		}
+		fmt.Printf("Zopfli Iterations: %d\n", *iterations)
 	}
 
 	if *benchmark {
@@ -159,25 +132,18 @@ func main() {
 			startTime := time.Now()
 
 			var opts png.Options
-			if *extreme {
+			switch *preset {
+			case "fast":
+				opts = png.FastOptions(width, height)
+			case "max":
+				opts = png.MaxOptions(width, height)
+			case "extreme":
 				opts = png.ExtremeOptions(width, height)
-			} else {
-				switch *preset {
-				case "fast":
-					opts = png.FastOptions(width, height)
-				case "max":
-					opts = png.MaxOptions(width, height)
-				case "extreme":
-					opts = png.ExtremeOptions(width, height)
-				default:
-					opts = png.BalancedOptions(width, height)
-				}
+			default:
+				opts = png.BalancedOptions(width, height)
 			}
 
-			opts.ZopfliIterations = *zopfliIterations
-			opts.ZopfliEnabled = *zopfliEnabled
-			opts.ZopfliBlockSplitting = !*zopfliNoSplit
-			opts.OptimalDeflate = *optimal
+			opts.ZopfliIterations = *iterations
 
 			if *lossy {
 				if *maxColors < 2 {
@@ -189,24 +155,16 @@ func main() {
 				opts.ApplyLossy(*maxColors, *quality, *ditherStrength)
 			}
 
-			if *format == "png" && !*lossy {
-				pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error recompressing PNG: %v\n", err)
-					os.Exit(1)
-				}
-			} else {
-				encoder, err = png.NewEncoderWithOptions(opts)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
-					os.Exit(1)
-				}
+			encoder, err = png.NewEncoderWithOptions(opts)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+				return 1
+			}
 
-				pngData, err = encoder.Encode(pixels)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
-					os.Exit(1)
-				}
+			pngData, err = encoder.Encode(pixels)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
+				return 1
 			}
 
 			elapsed := time.Since(startTime).Milliseconds()
@@ -249,62 +207,18 @@ func main() {
 		}
 	} else {
 		var opts png.Options
-		if *extreme {
+		switch *preset {
+		case "fast":
+			opts = png.FastOptions(width, height)
+		case "max":
+			opts = png.MaxOptions(width, height)
+		case "extreme":
 			opts = png.ExtremeOptions(width, height)
-		} else {
-			switch *preset {
-			case "fast":
-				opts = png.FastOptions(width, height)
-			case "max":
-				opts = png.MaxOptions(width, height)
-			case "extreme":
-				opts = png.ExtremeOptions(width, height)
-			default:
-				opts = png.BalancedOptions(width, height)
-			}
+		default:
+			opts = png.BalancedOptions(width, height)
 		}
 
-		opts.ZopfliIterations = *zopfliIterations
-		opts.ZopfliEnabled = *zopfliEnabled
-		opts.ZopfliBlockSplitting = !*zopfliNoSplit
-		opts.OptimalDeflate = *optimal
-		opts.FilterEarlyTermination = *earlyTerm
-		opts.UsePerceptualDistance = *perceptual
-
-		if *filterStrategyArg != "" {
-			switch *filterStrategyArg {
-			case "none":
-				opts.FilterStrategy = png.FilterStrategyNone
-			case "sub":
-				opts.FilterStrategy = png.FilterStrategySub
-			case "up":
-				opts.FilterStrategy = png.FilterStrategyUp
-			case "average":
-				opts.FilterStrategy = png.FilterStrategyAverage
-			case "paeth":
-				opts.FilterStrategy = png.FilterStrategyPaeth
-			case "minsum":
-				opts.FilterStrategy = png.FilterStrategyMinSum
-			case "adaptive":
-				opts.FilterStrategy = png.FilterStrategyAdaptive
-			case "adaptivefast":
-				opts.FilterStrategy = png.FilterStrategyAdaptiveFast
-			case "entropy":
-				opts.FilterStrategy = png.FilterStrategyEntropy
-			case "bruteforce":
-				opts.FilterStrategy = png.FilterStrategyBruteForce
-			case "bigrams":
-				opts.FilterStrategy = png.FilterStrategyBigrams
-			case "parallel":
-				opts.FilterStrategy = png.FilterStrategyParallel
-			}
-		}
-
-		if *distanceMetricArg == "redmean" {
-			opts.DistanceMetric = png.DistanceMetricRedmean
-		} else {
-			opts.DistanceMetric = png.DistanceMetricEuclidean
-		}
+		opts.ZopfliIterations = *iterations
 
 		if *lossy {
 			if *maxColors < 2 {
@@ -316,94 +230,19 @@ func main() {
 			opts.ApplyLossy(*maxColors, *quality, *ditherStrength)
 		}
 
-		startTime := time.Now()
-
-		if *format == "png" {
-			if !*lossy && formatName == "png" {
-				pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
-			} else {
-				encoder, err = png.NewEncoderWithOptions(opts)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
-					os.Exit(1)
-				}
-				pngData, err = encoder.Encode(pixels)
-			}
-		} else {
-			// JPEG encoding
-			// Convert RGBA to RGB if needed
-			var jpegPixels []byte
-			var jpegColorType jpeg.ColorType
-
-			if len(pixels) == width*height*4 {
-				// RGBA -> RGB conversion
-				jpegPixels = make([]byte, width*height*3)
-				for i := 0; i < width*height; i++ {
-					jpegPixels[i*3] = pixels[i*4]
-					jpegPixels[i*3+1] = pixels[i*4+1]
-					jpegPixels[i*3+2] = pixels[i*4+2]
-				}
-				jpegColorType = jpeg.ColorRGB
-			} else if len(pixels) == width*height*3 {
-				// Already RGB
-				jpegPixels = pixels
-				jpegColorType = jpeg.ColorRGB
-			} else if len(pixels) == width*height {
-				// Grayscale
-				jpegPixels = pixels
-				jpegColorType = jpeg.ColorGrayscale
-			} else {
-				fmt.Fprintf(os.Stderr, "Error: unsupported pixel format for JPEG (length: %d, expected: %d or %d or %d)\n",
-					len(pixels), width*height, width*height*3, width*height*4)
-				os.Exit(1)
-			}
-
-			var jpegOpts jpeg.Options
-			switch *preset {
-			case "fast":
-				jpegOpts = jpeg.FastOptions(width, height, uint8(*quality))
-			case "max":
-				jpegOpts = jpeg.MaxOptions(width, height, uint8(*quality))
-			default:
-				jpegOpts = jpeg.BalancedOptions(width, height, uint8(*quality))
-			}
-
-			// Apply JPEG-specific options
-			jpegOpts.ColorType = jpegColorType
-			if *progressive {
-				jpegOpts.Progressive = true
-			}
-			if *trellis {
-				jpegOpts.TrellisQuant = true
-			}
-			if *optimizeHuffman {
-				jpegOpts.OptimizeHuffman = true
-			}
-			if *subsampling == "444" {
-				jpegOpts.Subsampling = jpeg.Subsampling444
-			}
-
-			if *verbose {
-				fmt.Printf("JPEG encoding with color type: %v\n", jpegColorType)
-				fmt.Printf("JPEG pixel data size: %d bytes\n", len(jpegPixels))
-			}
-
-			jpegEncoder, err := jpeg.NewEncoder(jpegOpts)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error creating JPEG encoder: %v\n", err)
-				os.Exit(1)
-			}
-			pngData, err = jpegEncoder.Encode(jpegPixels)
+		encoder, err = png.NewEncoderWithOptions(opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+			return 1
 		}
+
+		startTime := time.Now()
+		pngData, err = encoder.Encode(pixels)
 		elapsed := time.Since(startTime).Milliseconds()
 
 		if err != nil {
-			if *format == "png" {
-				fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
-			} else {
-				fmt.Fprintf(os.Stderr, "Error encoding JPEG: %v\n", err)
-			}
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
+			return 1
 		}
 
 		fmt.Printf("Encoding time: %d ms\n", elapsed)
@@ -422,21 +261,22 @@ func main() {
 	outFile, err := os.Create(*outputFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer func() {
+		if closeErr := outFile.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing output file: %v\n", closeErr)
+		}
+	}()
 
-	if _, err := outFile.Write(pngData); err != nil {
-		_ = outFile.Close()
+	_, err = outFile.Write(pngData)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing output file: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := outFile.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error closing output file: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	fmt.Printf("Successfully compressed to %s (%d bytes)\n", *outputFile, len(pngData))
+	return 0
 }
 
 func getExt(filename string) string {

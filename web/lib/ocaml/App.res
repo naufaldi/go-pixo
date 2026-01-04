@@ -16,10 +16,6 @@ type action =
   | SetDitherStrength(float)
   | SetQualityTarget(int)
   | SetZopfliIterations(int)
-  | SetProgressive(bool)
-  | SetSubsampling(string)
-  | SetTrellis(bool)
-  | SetOptimizeHuffman(bool)
   | SetCompressionProgress(option<Types.compressionProgress>)
   | SetCompressionTime(option<int>)
   | RemoveItem(string)
@@ -42,7 +38,6 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
     compressedBytes: None,
     width: None,
     height: None,
-    compressionTime: None,
   }
 }
 
@@ -106,10 +101,6 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
   | SetDitherStrength(strength) => {...state, ditherStrength: strength}
   | SetQualityTarget(target) => {...state, qualityTarget: target}
   | SetZopfliIterations(iterations) => {...state, zopfliIterations: iterations}
-  | SetProgressive(progressive) => {...state, progressive}
-  | SetSubsampling(subsampling) => {...state, subsampling}
-  | SetTrellis(trellis) => {...state, trellis}
-  | SetOptimizeHuffman(optimize) => {...state, optimizeHuffman: optimize}
   | SetCompressionProgress(progress) => {
       let newProgress = switch (state.compressionProgress, progress) {
       | (Some(old), Some(new)) if old.itemId == new.itemId =>
@@ -189,10 +180,6 @@ let make = () => {
       ditherStrength: 0.5,
       qualityTarget: 75,
       zopfliIterations: 0,
-      progressive: false,
-      subsampling: "420",
-      trellis: false,
-      optimizeHuffman: false,
       compressionProgress: None,
       compressionTime: None,
     },
@@ -201,17 +188,11 @@ let make = () => {
   let workerRef = React.useRef(Nullable.null)
   let processingRef = React.useRef(false)
   let itemsRef = React.useRef(state.items)
-  let compressionProgressRef = React.useRef(state.compressionProgress)
   
   React.useEffect1(() => {
     itemsRef.current = state.items
     None
   }, [state.items])
-  
-  React.useEffect1(() => {
-    compressionProgressRef.current = state.compressionProgress
-    None
-  }, [state.compressionProgress])
   
   React.useEffect0(() => {
     let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
@@ -258,38 +239,26 @@ let make = () => {
         }
       | "compressed" =>
         let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
+        let startTime = %raw("performance.now()");
         switch id {
         | Some(id) =>
           let compressedBytes = %raw("new Uint8Array(data.compressedBytes)");
-          let mimeType = switch itemsRef.current->Array.find(item => item.id == id) {
-          | Some(item) => switch item.kind {
-            | Types.Jpeg => "image/jpeg"
-            | Types.Png | Types.Unknown => "image/png"
-            }
-          | None => "image/png"
-          }
-          let compressedUrl = %raw("(mimeType, compressedBytes) => { const blob = new Blob([compressedBytes], { type: mimeType }); return URL.createObjectURL(blob); }")(mimeType, compressedBytes);
+          let compressedUrl = %raw(`
+            (() => {
+              const blob = new Blob([new Uint8Array(compressedBytes)], { type: 'image/png' });
+              return URL.createObjectURL(blob);
+            })()
+          `);
           let compressedSize = compressedBytes->Array.length;
           logCompressed(id, compressedSize)
           
-          // Check if image is already optimized (compressed size equals original size)
-          // Note: The worker already handles the case where compressed > original by reverting to original.
-          // So if compressedSize == originalBytes here, it means the image is already optimized
-          // and our compression couldn't reduce it further (not a regression, just a limitation).
-          let isAlreadyOptimized = switch itemsRef.current->Array.find(item => item.id == id) {
+          // Check if it was reverted to original
+          let wasReverted = switch itemsRef.current->Array.find(item => item.id == id) {
           | Some(item) => compressedSize == item.originalBytes
           | None => false
           }
-          if (isAlreadyOptimized) {
-            %raw("console.debug('[app] image already optimized, no size reduction possible')")
-          }
-
-          // Calculate compression time
-          let compressionTime = switch compressionProgressRef.current {
-          | Some(progress) when progress.itemId == id =>
-            let elapsed = %raw("performance.now()") -. progress.startTime
-            Some(Int.fromFloat(elapsed))
-          | _ => None
+          if (wasReverted) {
+            %raw("console.debug('[app] compression was larger than original, reverted to original file')")
           }
 
           dispatch(UpdateItem(id, item => {
@@ -297,9 +266,9 @@ let make = () => {
             status: Types.Done,
             compressedUrl: Some(compressedUrl),
             compressedBytes: Some(compressedSize),
-            compressionTime,
           }))
           dispatch(SetCompressionProgress(None))
+          dispatch(SetCompressionTime(Some(Int.fromFloat(startTime))))
         | None =>
           logMissingId("[app] compressed message missing id", data)
         }
@@ -380,18 +349,18 @@ let make = () => {
           let presetInt = Types.presetToInt(state.preset)
           let lossy = !state.lossless
           let maxColors = Types.quantizationToInt(state.quantization)
-          let dithering = state.dithering
+          let ditheringEnabled = state.dithering
           let ditherStrength = state.ditherStrength
           let qualityTarget = state.qualityTarget
           let zopfliIterations = state.zopfliIterations
           let originalFileBytes = %raw("new Uint8Array(result.originalFileBytes)")
-          let postCompress: ('a, string, 'a, int, int, int, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
+          let postCompress: ('a, string, 'a, int, int, int, int, bool, int, bool, float, int, int, 'a) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "png", presetInt, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, false, false, "420", false, originalFileBytes)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy, maxColors, ditheringEnabled, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
@@ -410,39 +379,15 @@ let make = () => {
           Promise.resolve()
         })
     | Types.Jpeg =>
-      dispatch(UpdateItem(item.id, item => {...item, status: Types.Decoding}))
       ImageDecode.decodeFile(item.file)
         ->Promise.then(result => {
           dispatch(UpdateItem(item.id, item => {
             ...item,
-            status: Types.Compressing,
+            status: Types.Error("JPEG compression not supported yet"),
             originalUrl: Some(result.previewUrl),
             width: Some(result.width),
             height: Some(result.height),
           }))
-          
-          let pixels: 'a = %raw("new Uint8Array(result.pixels)")
-          let presetInt = Types.presetToInt(state.preset)
-          let lossy = !state.lossless
-          let maxColors = Types.quantizationToInt(state.quantization)
-          let progressive = state.progressive
-          let subsampling = state.subsampling
-          let trellis = state.trellis
-          let optimizeHuffman = state.optimizeHuffman
-          let postCompress: ('a, string, 'a, int, int, int, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
-          )
-
-          switch workerRef.current->Nullable.toOption {
-          | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, %raw("null"))
-          | None =>
-            dispatch(UpdateItem(item.id, item => {
-              ...item,
-              status: Types.Error("Worker not available"),
-            }))
-          }
-          
           Promise.resolve()
         })
         ->Promise.catch(_ => {
@@ -566,51 +511,6 @@ let make = () => {
     })
     found.contents
   }
-
-  let getAppliedOptimizations = (): option<array<string>> => {
-    if !hasCompletedItems {
-      None
-    } else {
-      let optimizations = switch state.preset {
-      | Types.Smaller => 
-        let base = ["Maximum compression"]
-        let withTrellis = if state.trellis {
-          base->Array.concat(["Smart quality balance"])
-        } else {
-          base
-        }
-        let withHuffman = if state.optimizeHuffman {
-          withTrellis->Array.concat(["Optimized file structure"])
-        } else {
-          withTrellis
-        }
-        withHuffman
-      | Types.Faster =>
-        let base = ["Fast compression", "Quality preservation"]
-        let withSubsampling = if state.subsampling == "420" {
-          base->Array.concat(["Speed optimization"])
-        } else {
-          base
-        }
-        withSubsampling
-      | Types.Balanced => ["Balanced compression"]
-      }
-      
-      let withProgressive = if state.progressive && formatText == "JPEG" {
-        optimizations->Array.concat(["Progressive loading"])
-      } else {
-        optimizations
-      }
-      
-      let final = if state.lossless {
-        withProgressive->Array.concat(["Perfect quality preserved"])
-      } else {
-        withProgressive->Array.concat(["Size optimized"])
-      }
-      
-      Some(final)
-    }
-  }
   
   let handleDownload = () => {
     switch selectedItem {
@@ -656,17 +556,11 @@ let make = () => {
     <main className="flex-1 px-6 pb-6">
       {switch selectedItem {
       | Some(item) =>
-        let itemProgress = switch state.compressionProgress {
-        | Some(progress) when progress.itemId == item.id => Some(progress)
-        | _ => None
-        }
         <CompareView
           originalUrl={item.originalUrl}
           compressedUrl={item.compressedUrl}
           originalBytes={item.originalBytes}
           compressedBytes={item.compressedBytes}
-          compressionTime={item.compressionTime}
-          compressionProgress={itemProgress}
           onRemove={() => dispatch(RemoveItem(item.id))}
         />
       | None =>
@@ -683,7 +577,6 @@ let make = () => {
       <FileQueue
         items={state.items}
         selectedId={state.selectedId}
-        compressionProgress={state.compressionProgress}
         onSelect={id => dispatch(SelectItem(Some(id)))}
         onRemove={id => dispatch(RemoveItem(id))}
         onClearAll={() => dispatch(ClearAll)}
@@ -691,15 +584,29 @@ let make = () => {
     </main>
     
     <BottomBar
-      format={formatText}
+      format=formatText
       preset={state.preset}
       lossless={state.lossless}
+      quantization={state.quantization}
+      dithering={state.dithering}
+      ditherStrength={state.ditherStrength}
+      qualityTarget={state.qualityTarget}
+      zopfliIterations={state.zopfliIterations}
       onPresetChange={preset => dispatch(SetPreset(preset))}
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
-      onDownload={handleDownload}
-      onDownloadAll={handleDownloadAll}
-      hasCompletedItems={hasCompletedItems}
-      appliedOptimizations={getAppliedOptimizations()}
+      onQuantizationChange={quantization => dispatch(SetQuantization(quantization))}
+      onDitheringChange={dithering => dispatch(SetDithering(dithering))}
+      onDitheringStrengthChange={strength => dispatch(SetDitherStrength(strength))}
+      onQualityTargetChange={target => dispatch(SetQualityTarget(target))}
+      onZopfliIterationsChange={iterations => dispatch(SetZopfliIterations(iterations))}
+      onDownload=handleDownload
+      onDownloadAll=handleDownloadAll
+      hasCompletedItems
     />
+
+    {switch state.compressionProgress {
+    | Some(progress) => <CompressionProgress progress />
+    | None => React.null
+    }}
   </div>
 }

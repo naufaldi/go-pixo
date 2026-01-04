@@ -178,11 +178,12 @@ func TestEncodeSignature(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pngData := encodeTestImage(t, tt.width, tt.height, tt.colorType, tt.pixels)
-			if len(pngData) < len(PngSignature) {
-				t.Fatalf("encoded PNG too short: got %d bytes, want at least %d", len(pngData), len(PngSignature))
+			sig := Signature()
+			if len(pngData) < len(sig) {
+				t.Fatalf("encoded PNG too short: got %d bytes, want at least %d", len(pngData), len(sig))
 			}
-			if !bytes.Equal(pngData[:8], PngSignature[:]) {
-				t.Fatalf("signature = % x, want % x", pngData[:8], PngSignature[:])
+			if !bytes.Equal(pngData[:8], sig) {
+				t.Fatalf("signature = % x, want % x", pngData[:8], sig)
 			}
 		})
 	}
@@ -442,7 +443,11 @@ func assertIDATZlibScanlines(t *testing.T, pngData []byte, width, height int, co
 	if err != nil {
 		t.Fatalf("IDAT zlib.NewReader() error = %v", err)
 	}
-	defer func() { _ = zr.Close() }()
+	t.Cleanup(func() {
+		if closeErr := zr.Close(); closeErr != nil {
+			t.Errorf("IDAT zlib reader close error: %v", closeErr)
+		}
+	})
 
 	raw, err := io.ReadAll(zr)
 	if err != nil {
@@ -515,8 +520,9 @@ func parsePNGChunks(t *testing.T, pngData []byte) []parsedChunk {
 	if len(pngData) < 8 {
 		t.Fatalf("PNG too short: got %d bytes", len(pngData))
 	}
-	if !bytes.Equal(pngData[:8], PngSignature[:]) {
-		t.Fatalf("PNG signature mismatch: got % x, want % x", pngData[:8], PngSignature[:])
+	sig := Signature()
+	if !bytes.Equal(pngData[:8], sig) {
+		t.Fatalf("PNG signature mismatch: got % x, want % x", pngData[:8], sig)
 	}
 
 	off := 8

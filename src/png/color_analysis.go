@@ -1,5 +1,6 @@
 package png
 
+// IsGrayscale reports whether pixels represent a grayscale image for the given color type.
 func IsGrayscale(pixels []byte, colorType ColorType) bool {
 	switch colorType {
 	case ColorGrayscale:
@@ -39,6 +40,7 @@ func isGrayscaleRGBA(pixels []byte) bool {
 	return true
 }
 
+// CanReduceToGrayscale reports whether pixels can be losslessly reduced to grayscale.
 func CanReduceToGrayscale(pixels []byte, width, height int, colorType ColorType) bool {
 	bpp := BytesPerPixel(colorType)
 	expectedLen := width * height * bpp
@@ -49,6 +51,7 @@ func CanReduceToGrayscale(pixels []byte, width, height int, colorType ColorType)
 	return IsGrayscale(pixels, colorType)
 }
 
+// CanReduceToRGB reports whether pixels can be losslessly reduced from RGBA to RGB.
 func CanReduceToRGB(pixels []byte, width, height int) bool {
 	if len(pixels) != width*height*4 {
 		return false

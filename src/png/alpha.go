@@ -1,5 +1,6 @@
 package png
 
+// HasAlpha reports whether any pixel has an alpha value other than 255.
 func HasAlpha(pixels []byte, colorType ColorType) bool {
 	if colorType != ColorRGBA {
 		return false
@@ -13,6 +14,7 @@ func HasAlpha(pixels []byte, colorType ColorType) bool {
 	return false
 }
 
+// OptimizeAlpha sets RGB to 0 for fully transparent pixels.
 func OptimizeAlpha(pixels []byte, colorType ColorType) []byte {
 	if colorType != ColorRGBA {
 		return pixels

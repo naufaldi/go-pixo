@@ -1,5 +1,6 @@
 package png
 
+// ApplyFilterSub applies the "Sub" PNG filter to a scanline.
 func ApplyFilterSub(row []byte, bpp int) []byte {
 	result := make([]byte, len(row))
 	for i := 0; i < len(row); i++ {

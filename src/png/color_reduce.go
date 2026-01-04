@@ -4,8 +4,10 @@ import (
 	"errors"
 )
 
+// ErrCannotReduceColorType is returned when the pixel data cannot be reduced to the requested color type.
 var ErrCannotReduceColorType = errors.New("png: cannot reduce color type for given pixels")
 
+// ReduceToGrayscale reduces RGB/RGBA pixels to grayscale when possible.
 func ReduceToGrayscale(pixels []byte, width, height int, colorType ColorType) ([]byte, ColorType, error) {
 	if !CanReduceToGrayscale(pixels, width, height, colorType) {
 		return nil, colorType, ErrCannotReduceColorType
@@ -41,6 +43,7 @@ func reduceRGBAToGrayscale(pixels []byte, width, height int) []byte {
 	return result
 }
 
+// ReduceToRGB reduces RGBA pixels to RGB when possible.
 func ReduceToRGB(pixels []byte, width, height int) ([]byte, ColorType, error) {
 	if !CanReduceToRGB(pixels, width, height) {
 		return nil, ColorRGBA, ErrCannotReduceColorType

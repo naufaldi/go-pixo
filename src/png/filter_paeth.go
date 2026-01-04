@@ -1,5 +1,6 @@
 package png
 
+// ApplyFilterPaeth applies the "Paeth" PNG filter to a scanline.
 func ApplyFilterPaeth(row []byte, prev []byte, bpp int) []byte {
 	result := make([]byte, len(row))
 	for i := 0; i < len(row); i++ {

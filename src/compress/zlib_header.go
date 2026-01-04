@@ -6,14 +6,18 @@ import (
 	"math/bits"
 )
 
+// ZlibHeaderError represents an error related to building or writing zlib headers.
 type ZlibHeaderError string
 
+// Error implements error.
 func (e ZlibHeaderError) Error() string {
 	return string(e)
 }
 
 const (
-	ErrInvalidWindowSize       ZlibHeaderError = "invalid window size for zlib"
+	// ErrInvalidWindowSize is returned when the zlib window size is invalid.
+	ErrInvalidWindowSize ZlibHeaderError = "invalid window size for zlib"
+	// ErrInvalidCompressionLevel is returned when the zlib compression level is invalid.
 	ErrInvalidCompressionLevel ZlibHeaderError = "invalid compression level for zlib"
 )
 
@@ -32,6 +36,7 @@ func cmfByte(windowSize int) (byte, error) {
 	return byte((cm & 0x0F) | ((cinfo & 0x0F) << 4)), nil
 }
 
+// WriteCMF writes the zlib CMF byte for a given window size.
 func WriteCMF(w io.Writer, windowSize int) error {
 	cmf, err := cmfByte(windowSize)
 	if err != nil {
@@ -44,6 +49,7 @@ func WriteCMF(w io.Writer, windowSize int) error {
 	return err
 }
 
+// WriteFLG writes the zlib FLG byte based on CMF and compression level.
 func WriteFLG(w io.Writer, cmf byte, level uint8) error {
 	if level > 3 {
 		return ErrInvalidCompressionLevel
@@ -65,6 +71,7 @@ func WriteFLG(w io.Writer, cmf byte, level uint8) error {
 	return err
 }
 
+// WriteZlibHeader writes a complete zlib header (CMF + FLG).
 func WriteZlibHeader(w io.Writer, windowSize int, level uint8) error {
 	cmf, err := cmfByte(windowSize)
 	if err != nil {
@@ -76,6 +83,7 @@ func WriteZlibHeader(w io.Writer, windowSize int, level uint8) error {
 	return WriteFLG(w, cmf, level)
 }
 
+// ZlibHeaderBytes returns the zlib header (CMF + FLG) bytes for a given window size and level.
 func ZlibHeaderBytes(windowSize int, level uint8) ([]byte, error) {
 	if level > 3 {
 		return nil, ErrInvalidCompressionLevel
@@ -101,6 +109,7 @@ func ZlibHeaderBytes(windowSize int, level uint8) ([]byte, error) {
 	return buf[:], nil
 }
 
+// ZlibFooterBytes returns the zlib footer bytes (big-endian Adler-32 checksum).
 func ZlibFooterBytes(checksum uint32) [4]byte {
 	var buf [4]byte
 	binary.BigEndian.PutUint32(buf[:], checksum)

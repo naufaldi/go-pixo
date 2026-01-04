@@ -32,7 +32,7 @@ func TestIsValidSignature_EmptyBuffer(t *testing.T) {
 
 func TestSignature(t *testing.T) {
 	sig := Signature()
-	expected := PngSignature[:]
+	expected := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 	if len(sig) != len(expected) {
 		t.Errorf("Signature() length = %d, want %d", len(sig), len(expected))
 	}

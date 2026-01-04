@@ -1,5 +1,6 @@
 package png
 
+// SumAbsoluteValues returns the sum of the absolute values of the bytes in filtered (treating bytes as signed).
 func SumAbsoluteValues(filtered []byte) int {
 	sum := 0
 	for _, b := range filtered {

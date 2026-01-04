@@ -18,7 +18,7 @@ const (
 	ErrInvalidBlockSize StoredBlockError = "stored block data size exceeds maximum (65535 bytes)"
 )
 
-// storedBlockHeader writes the DEFLATE stored block header.
+// WriteStoredBlockHeader writes the DEFLATE stored block header.
 // The header format is:
 //   - Bits 0-2: Block type = 000 (stored/uncompressed)
 //   - Bit 3: BFINAL (1 if this is the last block, 0 otherwise)
