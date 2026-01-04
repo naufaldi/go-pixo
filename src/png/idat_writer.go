@@ -86,6 +86,13 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts O
 	encoder := compress.NewDeflateEncoder()
 	encoder.SetCompressionLevel(opts.CompressionLevel)
 
+	if opts.ProgressCallback != nil {
+		encoder.ProgressCallback = func(iteration, total int) {
+			percent := int(float64(iteration) / float64(total) * 100)
+			opts.ProgressCallback("deflate", percent)
+		}
+	}
+
 	var deflateData []byte
 	if opts.OptimalDeflate {
 		// EncodeOptimal already tries multiple passes, use it directly

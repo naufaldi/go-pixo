@@ -7,8 +7,10 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
   
   let handleClick = _ => {
     switch fileInputRef.current->Nullable.toOption {
-    | Some(_input) => 
-      %raw("input.click()")
+    | Some(input) => {
+        let _ = input
+        %raw("input.click()")
+      }
     | None => ()
     }
   }

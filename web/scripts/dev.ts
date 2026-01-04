@@ -1,6 +1,9 @@
+import path from "path"
+
 type Child = ReturnType<typeof Bun.spawn>
 
-const webRoot = new URL("..", import.meta.url).pathname
+const webRoot = path.join(import.meta.dir, "..")
+const projectRoot = path.join(webRoot, "..")
 
 const logPrefix = (label: string) => `[dev:${label}]`
 
@@ -55,8 +58,8 @@ const isAlreadyRunningMessage = (text: string) =>
 // Rebuild WASM before starting dev
 console.log(`${logPrefix("wasm")} building...`)
 try {
-  const wasmResult = Bun.spawnSync(["bash", "../../scripts/build-wasm.sh"], {
-    cwd: webRoot,
+  const wasmResult = Bun.spawnSync(["bash", "scripts/build-wasm.sh"], {
+    cwd: projectRoot,
     stdout: "inherit",
     stderr: "inherit",
   })

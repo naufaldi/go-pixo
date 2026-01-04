@@ -9,6 +9,7 @@ import (
 type DeflateEncoder struct {
 	lz77             *LZ77Encoder
 	compressionLevel int
+	ProgressCallback func(iteration, total int)
 }
 
 // NewDeflateEncoder creates a new DEFLATE encoder.
@@ -95,6 +96,7 @@ func (enc *DeflateEncoder) EncodeOptimal(data []byte) ([]byte, error) {
 	zopfliConfig := DefaultZopfliConfig()
 	zopfliConfig.Iterations = 15
 	zopfliConfig.BlockSplitting = true
+	zopfliConfig.ProgressCallback = enc.ProgressCallback
 
 	result, err := ZopfliEncode(data, zopfliConfig)
 	if err != nil {
@@ -142,9 +144,10 @@ func (enc *DeflateEncoder) EncodeOptimalWithConfig(data []byte, iterations int, 
 	}
 
 	zopfliConfig := ZopfliConfig{
-		Iterations:     iterations,
-		BlockSplitting: blockSplitting,
-		MaxBlockSize:   65535,
+		Iterations:       iterations,
+		BlockSplitting:   blockSplitting,
+		MaxBlockSize:     65535,
+		ProgressCallback: enc.ProgressCallback,
 	}
 
 	result, err := ZopfliEncode(data, zopfliConfig)

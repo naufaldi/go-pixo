@@ -15,7 +15,7 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
       try {
         const buffer = e.target?.result;
         if (!(buffer instanceof ArrayBuffer)) {
-          reject(new Error("Failed to read file"));
+          reject(new Error('Failed to read file'));
           return;
         }
 
@@ -25,19 +25,19 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
 
         const img = new Image();
         img.onload = () => {
-          const canvas = document.createElement("canvas");
+          const canvas = document.createElement('canvas');
           canvas.width = img.width;
           canvas.height = img.height;
-          const ctx = canvas.getContext("2d");
+          const ctx = canvas.getContext('2d');
           if (!ctx) {
             URL.revokeObjectURL(url);
-            reject(new Error("Failed to create canvas context"));
+            reject(new Error('Failed to create canvas context'));
             return;
           }
 
           ctx.drawImage(img, 0, 0);
           const imageData = ctx.getImageData(0, 0, img.width, img.height);
-          const pixels = imageData.data; // Keep as Uint8ClampedArray for WASM
+          const pixels = new Uint8Array(imageData.data.buffer); // Convert to Uint8Array for WASM
 
           // PNG color types: 6 = RGBA, 2 = RGB
           const colorType = 6;
@@ -54,7 +54,7 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
 
         img.onerror = () => {
           URL.revokeObjectURL(url);
-          reject(new Error("Failed to load image"));
+          reject(new Error('Failed to load image'));
         };
 
         img.src = url;
@@ -63,7 +63,6 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
       }
     };
 
-    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsArrayBuffer(file);
   });
-

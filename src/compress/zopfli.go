@@ -16,6 +16,9 @@ type ZopfliConfig struct {
 	// MaxBlockSize is the maximum size of each DEFLATE block.
 	// Default: 65535 (maximum allowed by DEFLATE)
 	MaxBlockSize int
+
+	// ProgressCallback is an optional function called after each iteration.
+	ProgressCallback func(iteration, total int)
 }
 
 // DefaultZopfliConfig returns the default Zopfli configuration.
@@ -81,6 +84,10 @@ func ZopfliEncode(data []byte, config ZopfliConfig) ([]byte, error) {
 		if encodeErr == nil && len(dynamicResult) < bestSize {
 			bestResult = dynamicResult
 			bestSize = len(dynamicResult)
+		}
+
+		if config.ProgressCallback != nil {
+			config.ProgressCallback(iteration+1, config.Iterations)
 		}
 	}
 

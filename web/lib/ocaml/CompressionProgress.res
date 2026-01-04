@@ -73,12 +73,9 @@ let make = (~progress: Types.compressionProgress) => {
         />
       </div>
 
-      <div className="flex items-center justify-between w-full text-xs mt-2">
+      <div className="flex items-center justify-center w-full text-xs mt-2">
         <span className="text-neutral-300 font-medium">
-          {React.string("Time: " ++ formatTime(elapsed))}
-        </span>
-        <span className="text-neutral-500">
-          {React.string("0s")}
+          {React.string("Time Elapsed: " ++ formatTime(elapsed))}
         </span>
       </div>
     </div>

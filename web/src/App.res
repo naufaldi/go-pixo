@@ -41,6 +41,16 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
   }
 }
 
+let calculateGlobalProgress = (phase: string, subProgress: int): int => {
+  switch phase {
+  | "preprocess" => 0 + subProgress * 10 / 100
+  | "filtering" => 10 + subProgress * 40 / 100
+  | "deflate" => 50 + subProgress * 45 / 100
+  | "finalize" => 95 + subProgress * 5 / 100
+  | _ => subProgress
+  }
+}
+
 let reducer = (state: Types.appState, action: action): Types.appState => {
   switch action {
   | SetWasmReady(ready) => {...state, wasmReady: ready}
@@ -91,7 +101,14 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
   | SetDitherStrength(strength) => {...state, ditherStrength: strength}
   | SetQualityTarget(target) => {...state, qualityTarget: target}
   | SetZopfliIterations(iterations) => {...state, zopfliIterations: iterations}
-  | SetCompressionProgress(progress) => {...state, compressionProgress: progress}
+  | SetCompressionProgress(progress) => {
+      let newProgress = switch (state.compressionProgress, progress) {
+      | (Some(old), Some(new)) if old.itemId == new.itemId =>
+        Some({...new, startTime: old.startTime})
+      | (_, next) => next
+      }
+      {...state, compressionProgress: newProgress}
+    }
   | SetCompressionTime(time) => {...state, compressionTime: time}
   | RemoveItem(id) => {
       let itemToRemove = state.items->Array.find(item => item.id == id)
@@ -170,6 +187,12 @@ let make = () => {
   
   let workerRef = React.useRef(Nullable.null)
   let processingRef = React.useRef(false)
+  let itemsRef = React.useRef(state.items)
+  
+  React.useEffect1(() => {
+    itemsRef.current = state.items
+    None
+  }, [state.items])
   
   React.useEffect0(() => {
     let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
@@ -196,18 +219,19 @@ let make = () => {
       | "progress" =>
         let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
         let phase: option<string> = %raw("typeof data.phase === 'string' ? data.phase : undefined");
-        let progressValue: option<int> = %raw("typeof data.progress === 'number' ? Math.round(data.progress) : undefined");
-        switch (id, phase, progressValue) {
-        | (Some(id), Some(phase), Some(progressValue)) =>
-          let fileSize = switch state.items->Array.find(item => item.id == id) {
+        let subProgress: option<int> = %raw("typeof data.progress === 'number' ? Math.round(data.progress) : undefined");
+        switch (id, phase, subProgress) {
+        | (Some(id), Some(phase), Some(subProgress)) =>
+          let fileSize = switch itemsRef.current->Array.find(item => item.id == id) {
           | Some(item) => item.originalBytes
           | None => 0
           };
+          let globalProgress = calculateGlobalProgress(phase, subProgress)
           dispatch(SetCompressionProgress(Some({
             isActive: true,
             itemId: id,
             phase,
-            progress: progressValue,
+            progress: globalProgress,
             startTime: %raw("performance.now()"),
             fileSize,
           })))
@@ -227,6 +251,16 @@ let make = () => {
           `);
           let compressedSize = compressedBytes->Array.length;
           logCompressed(id, compressedSize)
+          
+          // Check if it was reverted to original
+          let wasReverted = switch itemsRef.current->Array.find(item => item.id == id) {
+          | Some(item) => compressedSize == item.originalBytes
+          | None => false
+          }
+          if (wasReverted) {
+            %raw("console.debug('[app] compression was larger than original, reverted to original file')")
+          }
+
           dispatch(UpdateItem(id, item => {
             ...item,
             status: Types.Done,
@@ -267,22 +301,22 @@ let make = () => {
     })
   })
   
-  let handleDragEnter = (e: ReactEvent.Mouse.t) => {
-    ReactEvent.Mouse.preventDefault(e)
+  let handleDragEnter = (e: ReactEvent.Synthetic.t) => {
+    ReactEvent.Synthetic.preventDefault(e)
     dispatch(SetDragActive(true))
   }
   
-  let handleDragOver = (e: ReactEvent.Mouse.t) => {
-    ReactEvent.Mouse.preventDefault(e)
+  let handleDragOver = (e: ReactEvent.Synthetic.t) => {
+    ReactEvent.Synthetic.preventDefault(e)
   }
   
-  let handleDragLeave = (e: ReactEvent.Mouse.t) => {
-    ReactEvent.Mouse.preventDefault(e)
+  let handleDragLeave = (e: ReactEvent.Synthetic.t) => {
+    ReactEvent.Synthetic.preventDefault(e)
     dispatch(SetDragActive(false))
   }
   
-  let handleDrop = (e: ReactEvent.Mouse.t) => {
-    ReactEvent.Mouse.preventDefault(e)
+  let handleDrop = (e: ReactEvent.Synthetic.t) => {
+    ReactEvent.Synthetic.preventDefault(e)
     dispatch(SetDragActive(false))
     let files = %raw("e.nativeEvent.dataTransfer?.files")
     if files->Nullable.isNullable == false {
