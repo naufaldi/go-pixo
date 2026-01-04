@@ -1,5 +1,4 @@
 open React
-open Types
 
 
 @react.component
@@ -8,7 +7,7 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
   
   let handleClick = _ => {
     switch fileInputRef.current->Nullable.toOption {
-    | Some(input) => 
+    | Some(_input) => 
       %raw("input.click()")
     | None => ()
     }
@@ -24,7 +23,7 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
   
   let handleFileChange = (e: ReactEvent.Form.t) => {
     let files = ReactEvent.Form.target(e)["files"]
-    if files->Js.Nullable.isNullable == false {
+    if files->Nullable.isNullable == false {
       let fileArray = %raw("Array.from(files)")
       onFileSelect(fileArray)
     }

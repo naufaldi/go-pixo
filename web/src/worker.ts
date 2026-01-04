@@ -13,6 +13,7 @@ interface CompressionRequest {
   ditherStrength?: number;
   qualityTarget?: number;
   zopfliIterations?: number;
+  originalFileBytes?: Uint8Array; // Original PNG file bytes for "never larger" guard
 }
 
 interface CompressionResponse {
@@ -132,11 +133,6 @@ function encodePngAdvanced(
     return encodePng(pixels, width, height, colorType, preset, lossy, maxColors, dithering);
   }
 
-  // Report progress for slow operations
-  if (zopfliIterations > 5 && onProgress) {
-    onProgress('deflate', 0);
-  }
-
   // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
   const result = (self as any).encodePngAdvanced(
     pixels,
@@ -149,16 +145,12 @@ function encodePngAdvanced(
     dithering,
     ditherStrength,
     qualityTarget,
-    zopfliIterations
+    zopfliIterations,
+    onProgress
   );
 
   if (typeof result === 'string' && result.startsWith('error:')) {
     throw new Error(result);
-  }
-
-  // Report progress completion
-  if (zopfliIterations > 5 && onProgress) {
-    onProgress('deflate', 100);
   }
 
   return result as Uint8Array;
@@ -264,6 +256,13 @@ self.onmessage = async (event: MessageEvent<{
         }
 
         const duration = Date.now() - startTime;
+
+        // Size guard: if compressed is larger than original PNG, return original bytes
+        if (req.originalFileBytes && req.originalFileBytes.length > 0 && compressedBytes.length > req.originalFileBytes.length) {
+          console.debug('[worker] compression resulted in larger file, returning original bytes', req.id, compressedBytes.length, '>', req.originalFileBytes.length);
+          compressedBytes = req.originalFileBytes;
+        }
+
         const ratio = originalBytes > 0 ? (compressedBytes.length / originalBytes * 100) : 0;
 
         console.debug('[worker] compress done', req.id, compressedBytes?.length ?? null, duration + 'ms');

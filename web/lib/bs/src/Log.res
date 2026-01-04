@@ -11,7 +11,7 @@ let info = (~hypothesisId, ~location, ~message, ~data=?) => {
     "timestamp": Date.now(),
   }
   
-  let fetchWithBody = %raw(`
+  let fetchWithBody: (string, 'a) => unit = %raw(`
     (url, payload) => {
       fetch(url, {
         method: 'POST',

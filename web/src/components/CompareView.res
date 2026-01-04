@@ -1,5 +1,4 @@
 open React
-open Types
 
 @send external getBoundingClientRect: Dom.element => {..} = "getBoundingClientRect"
 

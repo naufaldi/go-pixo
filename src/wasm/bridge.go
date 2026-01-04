@@ -45,7 +45,7 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 
 /**
  * HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number)
+ * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, progressCallback: function)
  */
 func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	if len(args) < 11 {
@@ -64,12 +64,20 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	qualityTarget := args[9].Int()
 	zopfliIterations := args[10].Int()
 
+	var progressFunc func(phase string, progress int)
+	if len(args) > 11 && args[11].Type() == js.TypeFunction {
+		cb := args[11]
+		progressFunc = func(phase string, progress int) {
+			cb.Invoke(phase, progress)
+		}
+	}
+
 	// Copy JS buffer to Go slice
 	pixels := make([]byte, pixelsJS.Get("length").Int())
 	js.CopyBytesToGo(pixels, pixelsJS)
 
 	// Call the advanced implementation
-	output, err := EncodePngAdvanced(pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations)
+	output, err := EncodePngAdvanced(pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressFunc)
 	if err != nil {
 		return js.ValueOf(fmt.Sprintf("error: %v", err))
 	}
@@ -185,7 +193,7 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
  * - Configurable dithering strength
  * - Quality target for lossy compression
  */
-func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int) ([]byte, error) {
+func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
 	case 0:
@@ -217,6 +225,11 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		opts = png.BalancedOptions(width, height)
 	}
 	opts.ColorType = pngColorType
+
+	// Apply progress callback
+	if progressFunc != nil {
+		opts.ProgressCallback = progressFunc
+	}
 
 	// Apply advanced options
 	if zopfliIterations > 0 {

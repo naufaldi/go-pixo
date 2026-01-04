@@ -52,6 +52,24 @@ const pipeStream = async (label: string, stream: ReadableStream | null, capture:
 const isAlreadyRunningMessage = (text: string) =>
   text.includes("already running") || text.includes("A ReScript build is already running")
 
+// Rebuild WASM before starting dev
+console.log(`${logPrefix("wasm")} building...`)
+try {
+  const wasmResult = Bun.spawnSync(["bash", "../../scripts/build-wasm.sh"], {
+    cwd: webRoot,
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  if (wasmResult.exitCode !== 0) {
+    console.error(`${logPrefix("wasm")} build failed with code ${wasmResult.exitCode}`)
+    process.exit(1)
+  }
+  console.log(`${logPrefix("wasm")} build successful`)
+} catch (err) {
+  console.error(`${logPrefix("wasm")} build failed:`, err)
+  process.exit(1)
+}
+
 const vite = spawn("vite", ["bun", "x", "vite"])
 
 // ReScript can only have one watcher; if your editor already runs it, keep Vite up.

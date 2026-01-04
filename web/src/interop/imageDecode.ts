@@ -4,6 +4,7 @@ export type DecodeResult = {
   height: number;
   colorType: number;
   previewUrl: string;
+  originalFileBytes: Uint8Array;
 };
 
 export const decodeFile = (file: File): Promise<DecodeResult> =>
@@ -18,6 +19,7 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
           return;
         }
 
+        const originalFileBytes = new Uint8Array(buffer);
         const blob = new Blob([buffer], { type: file.type });
         const url = URL.createObjectURL(blob);
 
@@ -46,6 +48,7 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
             height: img.height,
             colorType,
             previewUrl: url,
+            originalFileBytes,
           });
         };
 

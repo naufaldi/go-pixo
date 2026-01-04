@@ -6,6 +6,7 @@ type decodeResult = {
   height: int,
   colorType: int,
   previewUrl: string,
+  originalFileBytes: array<int>,
 }
 
 @module("../interop/imageDecode")

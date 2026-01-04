@@ -46,6 +46,13 @@ func main() {
 	}
 	defer file.Close()
 
+	// Get input file size for comparison
+	fileInfo, err := file.Stat()
+	inputFileSize := int64(0)
+	if err == nil {
+		inputFileSize = fileInfo.Size()
+	}
+
 	img, format, err := image.Decode(file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding image: %v\n", err)
@@ -53,6 +60,9 @@ func main() {
 	}
 
 	fmt.Printf("Decoded %s image: %dx%d\n", format, img.Bounds().Dx(), img.Bounds().Dy())
+	if inputFileSize > 0 {
+		fmt.Printf("Input file size: %d bytes\n", inputFileSize)
+	}
 
 	bounds := img.Bounds()
 	width := bounds.Dx()
@@ -176,11 +186,13 @@ func main() {
 		fmt.Printf("Avg Time:  %d ms\n", totalTime/int64(*benchmarkRuns))
 
 		if *compare {
-			ratio := float64(avgSize) / float64(originalSize) * 100
-			savings := float64(originalSize-avgSize) / float64(originalSize) * 100
-			fmt.Printf("Original:  %d bytes\n", originalSize)
-			fmt.Printf("Ratio:     %.2f%%\n", ratio)
-			fmt.Printf("Savings:   %.2f%%\n", savings)
+			ratio := float64(avgSize) / float64(inputFileSize) * 100
+			savings := float64(inputFileSize-int64(avgSize)) / float64(inputFileSize) * 100
+			fmt.Printf("Original File: %d bytes\n", inputFileSize)
+			fmt.Printf("Raw Pixels:    %d bytes\n", originalSize)
+			fmt.Printf("Avg Output:    %d bytes\n", avgSize)
+			fmt.Printf("Ratio (vs File): %.2f%%\n", ratio)
+			fmt.Printf("Savings (vs File): %.2f%%\n", savings)
 		}
 	} else {
 		var opts png.Options
@@ -225,12 +237,13 @@ func main() {
 		fmt.Printf("Encoding time: %d ms\n", elapsed)
 
 		if *compare {
-			ratio := float64(len(pngData)) / float64(originalSize) * 100
-			savings := float64(originalSize-len(pngData)) / float64(originalSize) * 100
-			fmt.Printf("Original:  %d bytes\n", originalSize)
-			fmt.Printf("Compressed: %d bytes\n", len(pngData))
-			fmt.Printf("Ratio:     %.2f%%\n", ratio)
-			fmt.Printf("Savings:   %.2f%%\n", savings)
+			ratio := float64(len(pngData)) / float64(inputFileSize) * 100
+			savings := float64(inputFileSize-int64(len(pngData))) / float64(inputFileSize) * 100
+			fmt.Printf("Original File: %d bytes\n", inputFileSize)
+			fmt.Printf("Raw Pixels:    %d bytes\n", originalSize)
+			fmt.Printf("Compressed:    %d bytes\n", len(pngData))
+			fmt.Printf("Ratio (vs File): %.2f%%\n", ratio)
+			fmt.Printf("Savings (vs File): %.2f%%\n", savings)
 		}
 	}
 

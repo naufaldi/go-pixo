@@ -36,12 +36,23 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
 	var prevRow []byte
 	for y := 0; y < height; y++ {
+		// Report progress periodically for filtering
+		if opts.ProgressCallback != nil && y%100 == 0 {
+			percent := int(float64(y) / float64(height) * 100)
+			opts.ProgressCallback("filtering", percent)
+		}
+
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
 		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
 		scanlineData = append(scanlineData, byte(filterType))
 		scanlineData = append(scanlineData, filteredRow...)
 		prevRow = row
+	}
+
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("filtering", 100)
+		opts.ProgressCallback("deflate", 0)
 	}
 
 	// Build zlib-compressed data

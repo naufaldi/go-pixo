@@ -57,6 +57,10 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 }
 
 func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error) {
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("preprocess", 0)
+	}
+
 	colorType := opts.ColorType
 	bpp := BytesPerPixel(colorType)
 	expectedSize := opts.Width * opts.Height * bpp
@@ -75,6 +79,10 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 			indexedPixels, palette = QuantizeWithDithering(processedPixels, int(colorType), opts.MaxColors)
 		} else {
 			indexedPixels, palette = Quantize(processedPixels, int(colorType), opts.MaxColors)
+		}
+
+		if opts.ProgressCallback != nil {
+			opts.ProgressCallback("preprocess", 100)
 		}
 
 		var buf bytes.Buffer
@@ -128,6 +136,11 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		}
 	}
 
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("preprocess", 100)
+		opts.ProgressCallback("filtering", 0)
+	}
+
 	// 2. Alpha Optimization (RGB=0 when A=0)
 	if opts.OptimizeAlpha && colorType == ColorRGBA {
 		processedPixels = OptimizeAlpha(processedPixels, colorType)
@@ -153,9 +166,18 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		return nil, err
 	}
 
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("deflate", 100)
+		opts.ProgressCallback("finalize", 0)
+	}
+
 	// 6. Write IEND Chunk (Critical)
 	if err := writeIEND(&buf); err != nil {
 		return nil, err
+	}
+
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("finalize", 100)
 	}
 
 	result := buf.Bytes()

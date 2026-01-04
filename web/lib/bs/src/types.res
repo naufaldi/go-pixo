@@ -107,10 +107,7 @@ let intToQuantization = (value: int): quantizationLevel => {
 }
 
 let isLossless = (quantization: quantizationLevel): bool => {
-  switch quantization {
-  | Lossless => true
-  | _ => false
-  }
+  quantization == Lossless
 }
 
 let fileKindFromMime = (mime: string, name: string): fileKind => {

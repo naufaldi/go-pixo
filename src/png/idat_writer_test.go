@@ -739,17 +739,15 @@ func extractPixels(t *testing.T, img image.Image) []byte {
 	t.Helper()
 
 	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
 
 	var pixels []byte
 	switch m := img.(type) {
 	case *image.RGBA:
-		pixels = make([]byte, width*height*4)
-		for y := 0; y < height; y++ {
+		pixels = make([]byte, bounds.Dx()*bounds.Dy()*4)
+		for y := 0; y < bounds.Dy(); y++ {
 			row := m.Pix[y*m.Stride:]
-			for x := 0; x < width; x++ {
-				offset := (y*width + x) * 4
+			for x := 0; x < bounds.Dx(); x++ {
+				offset := (y*bounds.Dx() + x) * 4
 				pixels[offset] = row[x*4+0]
 				pixels[offset+1] = row[x*4+1]
 				pixels[offset+2] = row[x*4+2]
@@ -757,11 +755,11 @@ func extractPixels(t *testing.T, img image.Image) []byte {
 			}
 		}
 	case *image.NRGBA:
-		pixels = make([]byte, width*height*4)
-		for y := 0; y < height; y++ {
+		pixels = make([]byte, bounds.Dx()*bounds.Dy()*4)
+		for y := 0; y < bounds.Dy(); y++ {
 			row := m.Pix[y*m.Stride:]
-			for x := 0; x < width; x++ {
-				offset := (y*width + x) * 4
+			for x := 0; x < bounds.Dx(); x++ {
+				offset := (y*bounds.Dx() + x) * 4
 				pixels[offset] = row[x*4+0]
 				pixels[offset+1] = row[x*4+1]
 				pixels[offset+2] = row[x*4+2]
@@ -770,7 +768,7 @@ func extractPixels(t *testing.T, img image.Image) []byte {
 		}
 	default:
 		// Generic fallback - slower but works for any color model
-		pixels = make([]byte, 0, width*height*4)
+		pixels = make([]byte, 0, bounds.Dx()*bounds.Dy()*4)
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {
 				c := img.At(x, y)

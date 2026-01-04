@@ -319,13 +319,14 @@ let make = () => {
           let ditherStrength = state.ditherStrength
           let qualityTarget = state.qualityTarget
           let zopfliIterations = state.zopfliIterations
-          let postCompress: ('a, string, 'a, int, int, int, int, bool, int, bool, float, int, int) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations }); }"
+          let originalFileBytes = %raw("new Uint8Array(result.originalFileBytes)")
+          let postCompress: ('a, string, 'a, int, int, int, int, bool, int, bool, float, int, int, 'a) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy, maxColors, ditheringEnabled, ditherStrength, qualityTarget, zopfliIterations)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, presetInt, lossy, maxColors, ditheringEnabled, ditherStrength, qualityTarget, zopfliIterations, originalFileBytes)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,

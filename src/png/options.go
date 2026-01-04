@@ -40,7 +40,8 @@ type Options struct {
 	DitheringStrength   float64
 	QualityTarget       int
 	ZopfliIterations    int
-	EnsureSizeNotLarger bool // If true, ensure output is not larger than original
+	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
+	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
 }
 
 func FastOptions(width, height int) Options {

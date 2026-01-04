@@ -1,4 +1,3 @@
-open React
 open Types
 
 let presetLabel = (preset: preset): string => {
@@ -43,8 +42,8 @@ let make = (
   ~hasCompletedItems: bool,
 ) => {
   // #endregion
-  let handleSliderChange = (e: ReactEvent.Form.t) => {
-    let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+  let handleSliderChange = (_e: ReactEvent.Form.t) => {
+    let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
     switch value {
     | 0 => onPresetChange(Smaller)
     | 1 => onPresetChange(Balanced)
@@ -86,8 +85,8 @@ let make = (
       {!isLosslessMode
         ? <select
             value={quantization->quantizationToInt->Int.toString}
-            onChange={e => {
-              let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+            onChange={_e => {
+              let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
               onQuantizationChange(intToQuantization(value))
             }}
             className="bg-neutral-800 text-neutral-300 text-sm px-3 py-1.5 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
@@ -106,8 +105,8 @@ let make = (
             <input
               type_="checkbox"
               checked=dithering
-              onChange={e => {
-                let checked = %raw("ReactEvent.Form.target(e).checked")
+              onChange={_e => {
+                let checked = %raw("ReactEvent.Form.target(_e).checked")
                 onDitheringChange(checked)
               }}
               className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
@@ -125,8 +124,8 @@ let make = (
               max="100"
               step=1.0
               value={Int.toString(Float.toInt(ditherStrength *. 100.0))}
-              onChange={e => {
-                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+              onChange={_e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
                 onDitheringStrengthChange(Float.fromInt(value) /. 100.0)
               }}
               className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
@@ -144,8 +143,8 @@ let make = (
               max="100"
               step=1.0
               value={Int.toString(qualityTarget)}
-              onChange={e => {
-                let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+              onChange={_e => {
+                let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
                 onQualityTargetChange(value)
               }}
               className="w-24 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
@@ -161,8 +160,8 @@ let make = (
           min="0"
           max="50"
           value={Int.toString(zopfliIterations)}
-          onChange={e => {
-            let value = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+          onChange={_e => {
+            let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
             if value >= 0 && value <= 50 {
               onZopfliIterationsChange(value)
             }
@@ -175,8 +174,8 @@ let make = (
         <input
           type_="checkbox"
           checked=lossless
-          onChange={e => {
-            let checked = %raw("ReactEvent.Form.target(e).checked")
+          onChange={_e => {
+            let checked = %raw("ReactEvent.Form.target(_e).checked")
             onLosslessChange(checked)
           }}
           className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
