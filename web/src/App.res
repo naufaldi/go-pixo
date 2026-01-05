@@ -301,22 +301,22 @@ let make = () => {
     })
   })
   
-  let handleDragEnter = (e: ReactEvent.Synthetic.t) => {
-    ReactEvent.Synthetic.preventDefault(e)
+  let handleDragEnter = (e: ReactEvent.Mouse.t) => {
+    ReactEvent.Mouse.preventDefault(e)
     dispatch(SetDragActive(true))
   }
   
-  let handleDragOver = (e: ReactEvent.Synthetic.t) => {
-    ReactEvent.Synthetic.preventDefault(e)
+  let handleDragOver = (e: ReactEvent.Mouse.t) => {
+    ReactEvent.Mouse.preventDefault(e)
   }
   
-  let handleDragLeave = (e: ReactEvent.Synthetic.t) => {
-    ReactEvent.Synthetic.preventDefault(e)
+  let handleDragLeave = (e: ReactEvent.Mouse.t) => {
+    ReactEvent.Mouse.preventDefault(e)
     dispatch(SetDragActive(false))
   }
   
-  let handleDrop = (e: ReactEvent.Synthetic.t) => {
-    ReactEvent.Synthetic.preventDefault(e)
+  let handleDrop = (e: ReactEvent.Mouse.t) => {
+    ReactEvent.Mouse.preventDefault(e)
     dispatch(SetDragActive(false))
     let files = %raw("e.nativeEvent.dataTransfer?.files")
     if files->Nullable.isNullable == false {

@@ -16,7 +16,7 @@
   "jsx": {
     "version": 4
   },
-  "bs-dependencies": [
+  "dependencies": [
     "@rescript/react",
     "@rescript/core"
   ],

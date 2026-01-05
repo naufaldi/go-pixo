@@ -39,7 +39,13 @@ let kindText = (kind: Types.fileKind): string => {
 }
 
 @react.component
-let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
+let make = (
+  ~items: array<Types.queueItem>,
+  ~selectedId: option<string>,
+  ~onSelect: string => unit,
+  ~onRemove: string => unit,
+  ~onClearAll: unit => unit,
+) => {
   if items->Array.length == 0 {
     React.null
   } else {
@@ -55,7 +61,7 @@ let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
         </button>
       </div>
       {items
-       ->Array.map(item => {
+       ->Array.map((item: Types.queueItem) => {
          let isSelected = switch selectedId {
          | Some(id) => id == item.id
          | None => false

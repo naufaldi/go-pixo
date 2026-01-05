@@ -1,6 +1,3 @@
-open React
-open Types
-
 let formatSize = (bytes: int): string => {
   if bytes >= 1_000_000 {
     let mb = Math.round(Int.toFloat(bytes) /. 1000000.0 *. 10.0) /. 10.0
@@ -23,7 +20,7 @@ let savingsColor = (percent: float): string => {
   }
 }
 
-let statusText = (status: fileStatus): string => {
+let statusText = (status: Types.fileStatus): string => {
   switch status {
   | Pending => "Pending"
   | Decoding => "Decoding..."
@@ -33,7 +30,7 @@ let statusText = (status: fileStatus): string => {
   }
 }
 
-let kindText = (kind: fileKind): string => {
+let kindText = (kind: Types.fileKind): string => {
   switch kind {
   | Png => "PNG"
   | Jpeg => "JPEG"
@@ -42,7 +39,13 @@ let kindText = (kind: fileKind): string => {
 }
 
 @react.component
-let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
+let make = (
+  ~items: array<Types.queueItem>,
+  ~selectedId: option<string>,
+  ~onSelect: string => unit,
+  ~onRemove: string => unit,
+  ~onClearAll: unit => unit,
+) => {
   if items->Array.length == 0 {
     React.null
   } else {
@@ -58,7 +61,7 @@ let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
         </button>
       </div>
       {items
-       ->Array.map(item => {
+       ->Array.map((item: Types.queueItem) => {
          let isSelected = switch selectedId {
          | Some(id) => id == item.id
          | None => false
@@ -111,11 +114,12 @@ let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
                      </span>
                    | None => React.null
                    }
-                 | Types.Error(msg) =>
+                 | Error(msg) =>
                    <span className="text-xs text-red-400">
                      {React.string(msg)}
                    </span>
-                 | _ =>
+                 | Pending
+                 | Decoding =>
                    <span className="text-xs text-neutral-500">
                      {React.string(statusText(item.status))}
                    </span>
@@ -132,13 +136,14 @@ let make = (~items, ~selectedId, ~onSelect, ~onRemove, ~onClearAll) => {
                  </div>
                | Compressing =>
                  <div className="w-6 h-6 rounded-full border-2 border-blue-400 border-t-transparent animate-spin"></div>
-               | Types.Error(_) =>
+               | Error(_) =>
                  <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
                    <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                    </svg>
                  </div>
-               | _ => React.null
+               | Pending
+               | Decoding => React.null
                }}
                <button
                  onClick={e => {
