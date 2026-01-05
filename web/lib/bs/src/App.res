@@ -38,6 +38,7 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
     compressedBytes: None,
     width: None,
     height: None,
+    compressionTime: None,
   }
 }
 
@@ -188,11 +189,17 @@ let make = () => {
   let workerRef = React.useRef(Nullable.null)
   let processingRef = React.useRef(false)
   let itemsRef = React.useRef(state.items)
+  let compressionProgressRef = React.useRef(state.compressionProgress)
   
   React.useEffect1(() => {
     itemsRef.current = state.items
     None
   }, [state.items])
+  
+  React.useEffect1(() => {
+    compressionProgressRef.current = state.compressionProgress
+    None
+  }, [state.compressionProgress])
   
   React.useEffect0(() => {
     let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
@@ -239,7 +246,6 @@ let make = () => {
         }
       | "compressed" =>
         let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
-        let startTime = %raw("performance.now()");
         switch id {
         | Some(id) =>
           let compressedBytes = %raw("new Uint8Array(data.compressedBytes)");
@@ -261,14 +267,22 @@ let make = () => {
             %raw("console.debug('[app] compression was larger than original, reverted to original file')")
           }
 
+          // Calculate compression time
+          let compressionTime = switch compressionProgressRef.current {
+          | Some(progress) when progress.itemId == id =>
+            let elapsed = %raw("performance.now()") -. progress.startTime
+            Some(Int.fromFloat(elapsed))
+          | _ => None
+          }
+
           dispatch(UpdateItem(id, item => {
             ...item,
             status: Types.Done,
             compressedUrl: Some(compressedUrl),
             compressedBytes: Some(compressedSize),
+            compressionTime,
           }))
           dispatch(SetCompressionProgress(None))
-          dispatch(SetCompressionTime(Some(Int.fromFloat(startTime))))
         | None =>
           logMissingId("[app] compressed message missing id", data)
         }
@@ -556,11 +570,17 @@ let make = () => {
     <main className="flex-1 px-6 pb-6">
       {switch selectedItem {
       | Some(item) =>
+        let itemProgress = switch state.compressionProgress {
+        | Some(progress) when progress.itemId == item.id => Some(progress)
+        | _ => None
+        }
         <CompareView
           originalUrl={item.originalUrl}
           compressedUrl={item.compressedUrl}
           originalBytes={item.originalBytes}
           compressedBytes={item.compressedBytes}
+          compressionTime={item.compressionTime}
+          compressionProgress={itemProgress}
           onRemove={() => dispatch(RemoveItem(item.id))}
         />
       | None =>
@@ -577,6 +597,7 @@ let make = () => {
       <FileQueue
         items={state.items}
         selectedId={state.selectedId}
+        compressionProgress={state.compressionProgress}
         onSelect={id => dispatch(SelectItem(Some(id)))}
         onRemove={id => dispatch(RemoveItem(id))}
         onClearAll={() => dispatch(ClearAll)}
@@ -603,10 +624,5 @@ let make = () => {
       onDownloadAll=handleDownloadAll
       hasCompletedItems
     />
-
-    {switch state.compressionProgress {
-    | Some(progress) => <CompressionProgress progress />
-    | None => React.null
-    }}
   </div>
 }

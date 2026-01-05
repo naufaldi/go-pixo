@@ -46,6 +46,7 @@ type queueItem = {
   compressedBytes: option<int>,
   width: option<int>,
   height: option<int>,
+  compressionTime: option<int>,
 }
 
 type compressionProgress = {

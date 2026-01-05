@@ -1,3 +1,5 @@
+open React
+
 let formatSize = (bytes: int): string => {
   if bytes >= 1_000_000 {
     let mb = Math.round(Int.toFloat(bytes) /. 1000000.0 *. 10.0) /. 10.0
@@ -38,10 +40,22 @@ let kindText = (kind: Types.fileKind): string => {
   }
 }
 
+let formatTime = (milliseconds: float): string => {
+  let seconds = milliseconds /. 1000.0
+  if seconds >= 60.0 {
+    let mins = Int.toFloat(Float.toInt(seconds /. 60.0))
+    let secs = Float.toFixed(~digits=1, seconds -. mins *. 60.0)
+    `${Float.toFixed(~digits=0, mins)}m ${secs}s`
+  } else {
+    `${Float.toFixed(~digits=1, seconds)}s`
+  }
+}
+
 @react.component
 let make = (
   ~items: array<Types.queueItem>,
   ~selectedId: option<string>,
+  ~compressionProgress: option<Types.compressionProgress>,
   ~onSelect: string => unit,
   ~onRemove: string => unit,
   ~onClearAll: unit => unit,
@@ -97,9 +111,36 @@ let make = (
                  </span>
                  {switch item.status {
                  | Compressing =>
-                   <span className="text-xs text-blue-400 animate-pulse">
-                     {React.string("Compressing...")}
-                   </span>
+                   switch compressionProgress {
+                   | Some(progress) when progress.itemId == item.id =>
+                     let elapsed = %raw("performance.now()") -. progress.startTime
+                     <div className="flex flex-col gap-1">
+                       <div className="flex items-center gap-2">
+                         <span className="text-xs text-blue-400 font-medium">
+                           {React.string("Compressing " ++ Int.toString(progress.progress) ++ "%")}
+                         </span>
+                         <div className="w-16 bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+                           <div
+                             className="bg-blue-500 h-1.5 rounded-full transition-all duration-300 ease-out"
+                             style={ReactDOM.Style._dictToStyle(Dict.fromArray([("width", Int.toString(progress.progress) ++ "%")]))}
+                           />
+                         </div>
+                       </div>
+                       <div className="flex items-center gap-2 text-xs text-neutral-500">
+                         <span className="capitalize">
+                           {React.string(progress.phase)}
+                         </span>
+                         <span>{React.string(" - ")}</span>
+                         <span>
+                           {React.string(formatTime(elapsed))}
+                         </span>
+                       </div>
+                     </div>
+                   | _ =>
+                     <span className="text-xs text-blue-400 animate-pulse">
+                       {React.string("Compressing...")}
+                     </span>
+                   }
                  | Done =>
                    switch item.compressedBytes {
                    | Some(bytes) =>
