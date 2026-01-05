@@ -26,7 +26,7 @@ interface CompressionResponse {
 }
 
 interface ProgressMessage {
-  type: 'progress';
+  type: "progress";
   id: string;
   phase: string;
   progress: number;
@@ -52,12 +52,12 @@ async function initWasm(): Promise<void> {
   // Module workers do NOT support importScripts(), so we load wasm_exec.js via dynamic import.
   // wasm_exec.js attaches Go to globalThis as a side effect.
   // @ts-ignore
-  if (typeof (self as any).Go === 'undefined') {
-    console.debug('[worker] Loading /wasm_exec.js');
+  if (typeof (self as any).Go === "undefined") {
+    console.debug("[worker] Loading /wasm_exec.js");
     // wasm_exec.js is shipped as a classic script (not an ES module).
     // In a module worker we can't use importScripts(), and Vite tries to bundle `import('/wasm_exec.js')`.
     // Fetch + indirect eval loads it into the worker global scope.
-    const wasmExecJs = await fetch('/wasm_exec.js').then((r) => r.text());
+    const wasmExecJs = await fetch("/wasm_exec.js").then((r) => r.text());
     // eslint-disable-next-line no-eval
     (0, eval)(wasmExecJs);
   }
@@ -69,20 +69,20 @@ async function initWasm(): Promise<void> {
     // Set up initialization callback called from Go's main()
     (self as any).goWasmInit = () => {
       wasmReady = true;
-      console.debug('[worker] Go WASM initialized');
+      console.debug("[worker] Go WASM initialized");
       resolve();
     };
 
-    console.debug('[worker] Fetching /main.wasm');
-    fetch('/main.wasm')
+    console.debug("[worker] Fetching /main.wasm");
+    fetch("/main.wasm")
       .then((response) => response.arrayBuffer())
       .then((buffer) => WebAssembly.instantiate(buffer, go.importObject))
       .then((result) => {
-        console.debug('[worker] Running WASM instance');
+        console.debug("[worker] Running WASM instance");
         go.run(result.instance);
       })
       .catch((err) => {
-        console.error('[worker] Failed to load WASM:', err);
+        console.error("[worker] Failed to load WASM:", err);
         reject(err);
       });
   });
@@ -97,11 +97,11 @@ function encodePng(
   preset: number = 1,
   lossy: boolean = false,
   maxColors: number = 0,
-  dithering: boolean = false
+  dithering: boolean = false,
 ): Uint8Array {
   // @ts-ignore - encodePng is exposed by Go WASM on the worker global
   if (!(self as any).encodePng) {
-    throw new Error('WASM not initialized');
+    throw new Error("WASM not initialized");
   }
 
   // @ts-ignore - encodePng is exposed by Go WASM on the worker global
@@ -112,10 +112,10 @@ function encodePng(
     colorType,
     preset,
     lossy,
-    maxColors
+    maxColors,
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
+  if (typeof result === "string" && result.startsWith("error:")) {
     throw new Error(result);
   }
 
@@ -135,13 +135,13 @@ function encodePngAdvanced(
   ditherStrength: number = 0.5,
   qualityTarget: number = 75,
   zopfliIterations: number = 0,
-  onProgress?: (phase: string, progress: number) => void
+  onProgress?: (phase: string, progress: number) => void,
 ): Uint8Array {
   // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
   if (!(self as any).encodePngAdvanced) {
     // Fallback to basic encodePng if advanced not available
     console.debug(
-      '[worker] encodePngAdvanced not available, falling back to encodePng'
+      "[worker] encodePngAdvanced not available, falling back to encodePng",
     );
     return encodePng(
       pixels,
@@ -151,7 +151,7 @@ function encodePngAdvanced(
       preset,
       lossy,
       maxColors,
-      dithering
+      dithering,
     );
   }
 
@@ -168,10 +168,36 @@ function encodePngAdvanced(
     ditherStrength,
     qualityTarget,
     zopfliIterations,
-    onProgress
+    onProgress,
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
+  if (typeof result === "string" && result.startsWith("error:")) {
+    throw new Error(result);
+  }
+
+  return result as Uint8Array;
+}
+
+function recompressPngLossless(
+  pngBytes: Uint8Array,
+  preset: number,
+  zopfliIterations: number = 0,
+  onProgress?: (phase: string, progress: number) => void,
+): Uint8Array {
+  // @ts-ignore - recompressPngLossless is exposed by Go WASM on the worker global
+  if (!(self as any).recompressPngLossless) {
+    throw new Error("recompressPngLossless not available");
+  }
+
+  // @ts-ignore - recompressPngLossless is exposed by Go WASM on the worker global
+  const result = (self as any).recompressPngLossless(
+    pngBytes,
+    preset,
+    zopfliIterations,
+    onProgress,
+  );
+
+  if (typeof result === "string" && result.startsWith("error:")) {
     throw new Error(result);
   }
 
@@ -182,107 +208,132 @@ function encodePngAdvanced(
 self.onmessage = async (
   event: MessageEvent<
     | {
-        type: 'compress';
+        type: "compress";
         data?: CompressionRequest;
       }
     | ({
-        type: 'compress';
+        type: "compress";
       } & CompressionRequest)
     | {
-        type: 'init';
+        type: "init";
       }
-  >
+  >,
 ) => {
   const msg: any = event.data as any;
   const type: string = msg?.type;
-  console.debug('[worker] message', type, msg?.id ?? msg?.data?.id ?? null);
+  console.debug("[worker] message", type, msg?.id ?? msg?.data?.id ?? null);
 
   switch (type) {
-    case 'init':
+    case "init":
       try {
-        console.debug('[worker] init requested');
+        console.debug("[worker] init requested");
         await initWasm();
-        self.postMessage({ type: 'ready' });
+        self.postMessage({ type: "ready" });
       } catch (err) {
         self.postMessage({
-          type: 'error',
+          type: "error",
           error:
-            err instanceof Error ? err.message : 'Failed to initialize WASM',
+            err instanceof Error ? err.message : "Failed to initialize WASM",
         });
       }
       break;
 
-    case 'compress':
+    case "compress":
       // Support both `{type:'compress', data:{...}}` and `{type:'compress', ...fields}`
       const req: CompressionRequest | undefined = msg?.data ?? msg;
 
-      if (!req || typeof req.id !== 'string') {
+      if (!req || typeof req.id !== "string") {
         self.postMessage({
-          type: 'error',
-          error: 'Invalid compress message',
+          type: "error",
+          error: "Invalid compress message",
         });
         return;
       }
 
       if (!wasmReady) {
         self.postMessage({
-          type: 'error',
+          type: "error",
           id: req.id,
-          error: 'WASM not initialized',
+          error: "WASM not initialized",
         });
         return;
       }
 
       try {
-        console.debug('[worker] compress start', req.id);
+        console.debug("[worker] compress start", req.id);
         const startTime = Date.now();
-        const originalBytes = req.pixels.length;
-
-        // Determine if we should use advanced encoding
-        const useAdvanced =
-          (req.zopfliIterations !== undefined && req.zopfliIterations > 0) ||
-          req.ditherStrength !== undefined ||
-          req.qualityTarget !== undefined;
+        const originalFileBytesLen = req.originalFileBytes?.length ?? 0;
+        const originalBytes =
+          originalFileBytesLen > 0 ? originalFileBytesLen : req.pixels.length;
 
         let compressedBytes: Uint8Array;
 
-        if (useAdvanced) {
-          // Use advanced encoding with progress reporting
+        const useLosslessPngBytes =
+          req.lossy === false &&
+          req.originalFileBytes !== undefined &&
+          req.originalFileBytes.length > 0;
+
+        if (useLosslessPngBytes) {
           const sendProgress = (phase: string, progress: number) => {
             self.postMessage({
-              type: 'progress',
+              type: "progress",
               id: req.id,
               phase,
               progress,
             } as ProgressMessage);
           };
 
-          compressedBytes = encodePngAdvanced(
-            req.pixels,
-            req.width,
-            req.height,
-            req.colorType,
+          compressedBytes = recompressPngLossless(
+            req.originalFileBytes,
             req.preset,
-            req.lossy,
-            req.maxColors,
-            req.dithering,
-            req.ditherStrength ?? 0.5,
-            req.qualityTarget ?? 75,
             req.zopfliIterations ?? 0,
-            sendProgress
+            sendProgress,
           );
         } else {
-          // Use basic encoding
-          compressedBytes = encodePng(
-            req.pixels,
-            req.width,
-            req.height,
-            req.colorType,
-            req.preset,
-            req.lossy,
-            req.maxColors,
-            req.dithering
-          );
+          // Determine if we should use advanced encoding
+          const useAdvanced =
+            (req.zopfliIterations !== undefined && req.zopfliIterations > 0) ||
+            req.ditherStrength !== undefined ||
+            req.qualityTarget !== undefined;
+
+          if (useAdvanced) {
+            // Use advanced encoding with progress reporting
+            const sendProgress = (phase: string, progress: number) => {
+              self.postMessage({
+                type: "progress",
+                id: req.id,
+                phase,
+                progress,
+              } as ProgressMessage);
+            };
+
+            compressedBytes = encodePngAdvanced(
+              req.pixels,
+              req.width,
+              req.height,
+              req.colorType,
+              req.preset,
+              req.lossy,
+              req.maxColors,
+              req.dithering,
+              req.ditherStrength ?? 0.5,
+              req.qualityTarget ?? 75,
+              req.zopfliIterations ?? 0,
+              sendProgress,
+            );
+          } else {
+            // Use basic encoding
+            compressedBytes = encodePng(
+              req.pixels,
+              req.width,
+              req.height,
+              req.colorType,
+              req.preset,
+              req.lossy,
+              req.maxColors,
+              req.dithering,
+            );
+          }
         }
 
         const duration = Date.now() - startTime;
@@ -294,11 +345,11 @@ self.onmessage = async (
           compressedBytes.length > req.originalFileBytes.length
         ) {
           console.debug(
-            '[worker] compression resulted in larger file, returning original bytes',
+            "[worker] compression resulted in larger file, returning original bytes",
             req.id,
             compressedBytes.length,
-            '>',
-            req.originalFileBytes.length
+            ">",
+            req.originalFileBytes.length,
           );
           compressedBytes = req.originalFileBytes;
         }
@@ -309,14 +360,14 @@ self.onmessage = async (
             : 0;
 
         console.debug(
-          '[worker] compress done',
+          "[worker] compress done",
           req.id,
           compressedBytes?.length ?? null,
-          duration + 'ms'
+          duration + "ms",
         );
 
         self.postMessage({
-          type: 'compressed',
+          type: "compressed",
           id: req.id,
           compressedBytes: compressedBytes,
           originalBytes,
@@ -324,17 +375,17 @@ self.onmessage = async (
           ratio,
         } as CompressionResponse);
       } catch (err) {
-        console.error('[worker] compress failed', req.id, err);
+        console.error("[worker] compress failed", req.id, err);
         self.postMessage({
-          type: 'error',
+          type: "error",
           id: req.id,
-          error: err instanceof Error ? err.message : 'Compression failed',
+          error: err instanceof Error ? err.message : "Compression failed",
         });
       }
       break;
     default:
-      console.warn('[worker] unknown message type', type, msg);
+      console.warn("[worker] unknown message type", type, msg);
   }
 };
 
-console.log('Compression worker initialized');
+console.log("Compression worker initialized");

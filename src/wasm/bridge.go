@@ -132,6 +132,40 @@ func HandleGetPresets(this js.Value, args []js.Value) any {
 }
 
 /**
+ * HandleRecompressPngLossless recompresses an input PNG (provided as file bytes) in lossless mode.
+ * Expected arguments: (pngBytes: Uint8Array, preset: number, zopfliIterations: number, progressCallback?: function)
+ */
+func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
+	if len(args) < 3 {
+		return js.ValueOf("invalid arguments: expected 3 arguments")
+	}
+
+	pngBytesJS := args[0]
+	preset := args[1].Int()
+	zopfliIterations := args[2].Int()
+
+	var progressFunc func(phase string, progress int)
+	if len(args) > 3 && args[3].Type() == js.TypeFunction {
+		cb := args[3]
+		progressFunc = func(phase string, progress int) {
+			cb.Invoke(phase, progress)
+		}
+	}
+
+	input := make([]byte, pngBytesJS.Get("length").Int())
+	js.CopyBytesToGo(input, pngBytesJS)
+
+	output, err := RecompressPngLossless(input, preset, zopfliIterations, progressFunc)
+	if err != nil {
+		return js.ValueOf(fmt.Sprintf("error: %v", err))
+	}
+
+	dst := js.Global().Get("Uint8Array").New(len(output))
+	js.CopyBytesToJS(dst, output)
+	return dst
+}
+
+/**
  * EncodePng encodes pixels as a PNG image using the go-pixo PNG encoder.
  * Returns PNG file bytes ready to be written to a file or used in a browser.
  */
@@ -184,6 +218,33 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 	}
 
 	return pngBytes, nil
+}
+
+func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
+	// Map preset values to Options
+	// - Smaller (0): Maximum compression with quality preservation
+	// - Balanced (1): Standard trade-off
+	// - Faster (2): Fast with size guarantee
+	var opts png.Options
+	switch preset {
+	case 0: // Smaller
+		opts = png.SmallerOptions(1, 1)
+	case 1: // Balanced
+		opts = png.BalancedOptions(1, 1)
+	case 2: // Faster - Fast with size guarantee
+		opts = png.FasterOptions(1, 1)
+	default:
+		opts = png.BalancedOptions(1, 1)
+	}
+
+	if progressFunc != nil {
+		opts.ProgressCallback = progressFunc
+	}
+	if zopfliIterations > 0 {
+		opts.ZopfliIterations = zopfliIterations
+	}
+
+	return png.RecompressPNGBytesLossless(inputPNG, opts)
 }
 
 /**
