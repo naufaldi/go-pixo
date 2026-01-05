@@ -22,6 +22,16 @@ let savingsColor = (percent: float): string => {
   }
 }
 
+let isAlreadyOptimized = (original: int, compressed: int): bool => {
+  if original <= 0 {
+    false
+  } else {
+    let saved = original - compressed
+    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
+    percent <= 0.1
+  }
+}
+
 let statusText = (status: Types.fileStatus): string => {
   switch status {
   | Pending => "Pending"
@@ -141,20 +151,26 @@ let make = (
                        {React.string("Compressing...")}
                      </span>
                    }
-                 | Done =>
-                   switch item.compressedBytes {
-                   | Some(bytes) =>
-                     let originalSize = item.originalBytes
-                     let saved = originalSize - bytes
-                     let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
-                     <span className={"text-xs font-medium " ++ savingsColor(percent)}>
-                       {React.string(
-                         formatSize(bytes) ++ " (-" ++
-                         Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
-                       )}
-                     </span>
-                   | None => React.null
-                   }
+                | Done =>
+                  switch item.compressedBytes {
+                  | Some(bytes) =>
+                    let originalSize = item.originalBytes
+                    if isAlreadyOptimized(originalSize, bytes) {
+                      <span className="text-xs font-medium text-blue-400">
+                        {React.string("Image already optimized")}
+                      </span>
+                    } else {
+                      let saved = originalSize - bytes
+                      let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
+                      <span className={"text-xs font-medium " ++ savingsColor(percent)}>
+                        {React.string(
+                          formatSize(bytes) ++ " (-" ++
+                          Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
+                        )}
+                      </span>
+                    }
+                  | None => React.null
+                  }
                  | Error(msg) =>
                    <span className="text-xs text-red-400">
                      {React.string(msg)}

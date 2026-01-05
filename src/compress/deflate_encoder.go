@@ -171,9 +171,10 @@ func (enc *DeflateEncoder) EncodeTo(w io.Writer, data []byte, useDynamic bool) e
 // EncodeStored encodes data using DEFLATE stored blocks (no compression).
 // This is used as a fallback when DEFLATE compression doesn't reduce size.
 // Stored blocks have minimal overhead: header (1 byte) + LEN/NLEN (4 bytes) + data.
+// Large data is automatically split into multiple blocks of 65535 bytes each.
 func (enc *DeflateEncoder) EncodeStored(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := WriteStoredBlockDeflate(&buf, true, data); err != nil {
+	if err := WriteStoredBlocks(&buf, data); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

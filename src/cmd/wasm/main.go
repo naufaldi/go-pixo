@@ -14,6 +14,7 @@ func main() {
 	// Register functions
 	js.Global().Set("encodePng", js.FuncOf(wasm.HandleEncodePng))
 	js.Global().Set("encodePngAdvanced", js.FuncOf(wasm.HandleEncodePngAdvanced))
+	js.Global().Set("encodeJpeg", js.FuncOf(wasm.HandleEncodeJpeg))
 	js.Global().Set("recompressPngLossless", js.FuncOf(wasm.HandleRecompressPngLossless))
 	js.Global().Set("bytesPerPixel", js.FuncOf(wasm.HandleBytesPerPixel))
 

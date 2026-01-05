@@ -14,6 +14,16 @@ let formatSize = (bytes: int): string => {
   }
 }
 
+let isAlreadyOptimized = (original: int, compressed: int): bool => {
+  if original <= 0 {
+    false
+  } else {
+    let saved = original - compressed
+    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
+    percent <= 0.1
+  }
+}
+
 let calculateSavings = (original: int, compressed: int): option<(float, string)> => {
   if original <= 0 {
     None
@@ -183,23 +193,36 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
       </div>
     }
   | (Some(orig), Some(comp)) =>
-    let savings = calculateSavings(originalBytes, compressedBytes->Option.getOr(0))
+    let compressedSize = compressedBytes->Option.getOr(0)
+    let savings = calculateSavings(originalBytes, compressedSize)
+    let optimized = isAlreadyOptimized(originalBytes, compressedSize)
     
     <div className="mt-8">
-      {switch savings {
-      | Some((percent, saved)) =>
+      {if optimized {
         <div className="flex justify-center mb-4">
-          <div className={"text-lg font-medium " ++ savingsColor(percent)}>
-            {React.string(
-              "Saved " ++ saved ++ " (" ++ to1dp(percent) ++ "%)" ++
-              switch compressionTime {
-              | Some(time) => " in " ++ formatTime(time)
-              | None => ""
-              }
-            )}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm font-medium">{"This image is already optimized"->React.string}</span>
           </div>
         </div>
-      | None => React.null
+      } else {
+        switch savings {
+        | Some((percent, saved)) =>
+          <div className="flex justify-center mb-4">
+            <div className={"text-lg font-medium " ++ savingsColor(percent)}>
+              {React.string(
+                "Saved " ++ saved ++ " (" ++ to1dp(percent) ++ "%)" ++
+                switch compressionTime {
+                | Some(time) => " in " ++ formatTime(time)
+                | None => ""
+                }
+              )}
+            </div>
+          </div>
+        | None => React.null
+        }
       }}
       
       <div

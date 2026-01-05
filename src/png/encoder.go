@@ -115,7 +115,7 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 		// Size guarantee: if compressed is larger than original, return minimal PNG
 		if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
-			return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
+			return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, opts.ColorType)
 		}
 
 		return result, nil
@@ -188,7 +188,7 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 	// Size guarantee: if compressed is larger than original, return minimal PNG
 	if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
-		return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
+		return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, opts.ColorType)
 	}
 
 	return result, nil
@@ -208,20 +208,16 @@ func (e *Encoder) encodeMinimalPNG(pixels []byte, width, height int, colorType C
 	}
 
 	// Use stored blocks for minimal compression (fast, no expansion for already-compressed data)
-	scanlineData := make([]byte, 0, (1+width*BytesPerPixel(colorType))*height)
-	for y := 0; y < height; y++ {
-		offset := y * width * BytesPerPixel(colorType)
-		row := pixels[offset : offset+width*BytesPerPixel(colorType)]
-		scanlineData = append(scanlineData, 0) // Filter type 0
-		scanlineData = append(scanlineData, row...)
-	}
+	// We call WriteIDATWithOptions with a special preset/level if needed,
+	// but the default behavior with CompressionLevel=0 or if it's smaller will use stored blocks.
+	opts := e.opts
+	opts.Width = width
+	opts.Height = height
+	opts.ColorType = colorType
+	// Force stored blocks by using level 0
+	opts.CompressionLevel = 0
 
-	// Write IDAT with stored blocks (no compression)
-	chunk := Chunk{
-		chunkType: ChunkIDAT,
-		Data:      scanlineData, // Stored blocks - raw data
-	}
-	if _, err := chunk.WriteTo(&buf); err != nil {
+	if err := WriteIDATWithOptions(&buf, pixels, width, height, colorType, opts); err != nil {
 		return nil, err
 	}
 

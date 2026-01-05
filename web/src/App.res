@@ -258,13 +258,16 @@ let make = () => {
           let compressedSize = compressedBytes->Array.length;
           logCompressed(id, compressedSize)
           
-          // Check if it was reverted to original
-          let wasReverted = switch itemsRef.current->Array.find(item => item.id == id) {
+          // Check if image is already optimized (compressed size equals original size)
+          // Note: The worker already handles the case where compressed > original by reverting to original.
+          // So if compressedSize == originalBytes here, it means the image is already optimized
+          // and our compression couldn't reduce it further (not a regression, just a limitation).
+          let isAlreadyOptimized = switch itemsRef.current->Array.find(item => item.id == id) {
           | Some(item) => compressedSize == item.originalBytes
           | None => false
           }
-          if (wasReverted) {
-            %raw("console.debug('[app] compression was larger than original, reverted to original file')")
+          if (isAlreadyOptimized) {
+            %raw("console.debug('[app] image already optimized, no size reduction possible')")
           }
 
           // Calculate compression time

@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 )
@@ -64,6 +65,9 @@ func WriteBlockFooter(w io.Writer, n uint32) error {
 
 // WriteStoredBlock writes a complete stored block (header + data + footer).
 func WriteStoredBlock(w io.Writer, final bool, data []byte) error {
+	if len(data) > 65535 {
+		return ErrInvalidBlockSize
+	}
 	if err := WriteStoredBlockHeader(w, final); err != nil {
 		return err
 	}
@@ -73,28 +77,52 @@ func WriteStoredBlock(w io.Writer, final bool, data []byte) error {
 	return WriteBlockData(w, data)
 }
 
-// StoredBlockBytes returns the byte representation of a stored block.
+// WriteStoredBlocks writes data as one or more stored blocks.
+// This is necessary because a single stored block has a maximum size of 65535 bytes.
+func WriteStoredBlocks(w io.Writer, data []byte) error {
+	if len(data) == 0 {
+		return WriteStoredBlock(w, true, nil)
+	}
+
+	for i := 0; i < len(data); i += 65535 {
+		end := i + 65535
+		final := false
+		if end >= len(data) {
+			end = len(data)
+			final = true
+		}
+
+		if err := WriteStoredBlock(w, final, data[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StoredBlockBytes returns the byte representation of one or more stored blocks.
 func StoredBlockBytes(data []byte, final bool) ([]byte, error) {
-	if len(data) > 65535 {
-		return nil, ErrInvalidBlockSize
+	// If it fits in one block and we know if it's final, use simple path
+	if len(data) <= 65535 {
+		result := make([]byte, 1+4+len(data))
+		// Header byte: type=000, BFINAL
+		if final {
+			result[0] = 0x01
+		} else {
+			result[0] = 0x00
+		}
+		// Footer: LEN and NLEN
+		binary.LittleEndian.PutUint16(result[1:3], uint16(len(data)))
+		nlen := ^uint16(len(data))
+		binary.LittleEndian.PutUint16(result[3:5], nlen)
+		// Data
+		copy(result[5:], data)
+		return result, nil
 	}
 
-	result := make([]byte, 1+4+len(data))
-
-	// Header byte: type=000, BFINAL
-	if final {
-		result[0] = 0x01
-	} else {
-		result[0] = 0x00
+	// For larger data, use WriteStoredBlocks with a buffer
+	var buf bytes.Buffer
+	if err := WriteStoredBlocks(&buf, data); err != nil {
+		return nil, err
 	}
-
-	// Footer: LEN and NLEN
-	binary.LittleEndian.PutUint16(result[1:3], uint16(len(data)))
-	nlen := ^uint16(len(data))
-	binary.LittleEndian.PutUint16(result[3:5], nlen)
-
-	// Data
-	copy(result[5:], data)
-
-	return result, nil
+	return buf.Bytes(), nil
 }

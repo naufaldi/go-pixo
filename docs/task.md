@@ -590,183 +590,495 @@ Goal: Optional lossy PNG with palette quantization.
 
 ---
 
-## Phase 6: JPEG Baseline Encoder
+## Phase 6: JPEG Baseline Encoder ✅ PARTIAL
 
 Goal: Implement JPEG encoding for photos.
 
-### 6.1 Color Conversion
+**Testing Requirements for Phase 6:**
 
-- **[Task 6.1.1]** Create `src/jpeg/constants.go`
+- **Each task must include its own unit tests** ( `*_test.go` files)
+- After completing each task, run: `go test ./src/jpeg/...` (must pass)
+- After completing each task, run: `golangci-lint run ./src/jpeg/...` (must pass, no warnings)
+- Encoder output must decode correctly with Go's `image/jpeg` decoder
+- Output must open in standard image viewers
 
-  - Define JPEG marker constants (SOI, EOI, APP0, DQT, SOF0, DHT, SOS)
-  - Define `Component` struct (ID, H, V, QuantTable, DCTable, ACTable)
-  - Output: `src/jpeg/constants.go`
+### Phase 6 Progress: ✅ 15 of 16 Tasks Complete
 
-- **[Task 6.1.2]** Create `src/jpeg/ycbcr.go`
-  - Define `YCbCr` struct (Y, Cb, Cr []byte)
-  - Add `RGBToYCbCr(r, g, b []byte) (y, cb, cr []byte)` function
-  - Add `YCbCrToRGB(y, cb, cr []byte) (r, g, b []byte)` function
-  - Test: round-trip conversion
-  - Output: `src/jpeg/ycbcr.go`, `src/jpeg/ycbcr_test.go`
+### 6.1 JPEG Infrastructure ✅ COMPLETED
 
-### 6.2 Block Splitting
+- **[Task 6.1.1]** ✅ Create `src/jpeg/constants.go`
 
-- **[Task 6.2.1]** Create `src/jpeg/blocks.go`
-  - Add `SplitIntoBlocks(data []byte, width, height int) [][][]int8` function
+  - Define JPEG marker constants (SOI=0xFFD8, EOI=0xFFD9, APP0=0xFFE0, DQT=0xFFDB, SOF0=0xFFC0, SOF2=0xFFC2, DHT=0xFFC4, SOS=0xFFDA, DRI=0xFFDD)
+  - Define `ColorType` constants (Grayscale=1, RGB=3)
+  - Define `Subsampling` type (S444, S420)
+  - Test: verify constants are correct values
+  - Output: `src/jpeg/constants.go`, `src/jpeg/constants_test.go`
+
+- **[Task 6.1.2]** ✅ Create `src/jpeg/errors.go`
+
+  - Define JPEG-specific error types
+  - Errors: invalid quality, invalid dimensions, unsupported color type, invalid data length
+  - Test: verify error messages are descriptive
+  - Output: `src/jpeg/errors.go`, `src/jpeg/errors_test.go`
+
+- **[Task 6.1.3]** ✅ Create `src/jpeg/color.go`
+  - Add `RGBToYCbCr(r, g, b uint8) (y, cb, cr uint8)` function
+  - Implement ITU-R BT.601 conversion using fixed-point arithmetic
+  - Formula: Y = (77*R + 150*G + 29*B + 128) >> 8
+  - Add `YCbCrToRGB(y, cb, cr uint8) (r, g, b uint8)` for testing
+  - Test: round-trip conversion accuracy
+  - Output: `src/jpeg/color.go`, `src/jpeg/color_test.go`
+
+### 6.2 Block Splitting ✅ COMPLETED
+
+- **[Task 6.2.1]** ✅ Create `src/jpeg/blocks.go`
+
+  - Add `ExtractBlock(data []byte, width, height, blockX, blockY int, colorType ColorType) ([64]float32, [64]float32, [64]float32)` function
+  - Extract 8x8 block from image data
   - Handle edge padding (replicate last pixel)
+  - Convert RGB to YCbCr during extraction
+  - Level-shift to -128..127 range for DCT
+  - Test: verify block extraction handles edges correctly
   - Output: `src/jpeg/blocks.go`, `src/jpeg/blocks_test.go`
 
-### 6.3 DCT Implementation
+- **[Task 6.2.2]** ✅ Create `src/jpeg/mcu.go` for 4:2:0 subsampling
+  - Add `ExtractMCU420(data []byte, width, height, mcuX, mcuY int) ([4][64]float32, [64]float32, [64]float32)` function
+  - Extract 16x16 MCU with 4 Y blocks and 1 Cb/Cr block each
+  - Average chroma over 2x2 regions
+  - Test: verify MCU extraction and chroma averaging
+  - Output: `src/jpeg/mcu.go`, `src/jpeg/mcu_test.go`
 
-- **[Task 6.3.1]** Create `src/jpeg/dct.go`
-  - Add `ForwardDCT(block [][]int) [][]int` function
-  - Implement integer DCT (not floating point)
-  - Add `InverseDCT(block [][]int) [][]int` function (for verification)
-  - Test: IDCT(InverseDCT(x)) ≈ x
+### 6.3 DCT Implementation ✅ COMPLETED
+
+- **[Task 6.3.1]** ✅ Create `src/jpeg/dct.go`
+
+  - Add `ForwardDCT(block [64]float32) [64]float32` function
+  - Implement 2D DCT using AAN (Arai-Agui-Nakajima) algorithm
+  - Process 8x8 blocks (row-wise then column-wise)
+  - Use floating-point for accuracy (integer version can be added later)
+  - Add `InverseDCT(block [64]float32) [64]float32` for testing
+  - Test: IDCT(DCT(x)) ≈ x (within tolerance)
   - Output: `src/jpeg/dct.go`, `src/jpeg/dct_test.go`
 
-### 6.4 Quantization
+### 6.4 Quantization ✅ COMPLETED
 
-- **[Task 6.4.1]** Create `src/jpeg/quantization_tables.go`
+- **[Task 6.4.1]** ✅ Create `src/jpeg/quantize.go`
 
-  - Define standard luminance table (quality 50)
-  - Define standard chrominance table (quality 50)
-  - Add `ScaleTable(table []int, quality int) []int` function
-  - Output: `src/jpeg/quantization_tables.go`
+  - Define standard JPEG quantization tables (luminance and chrominance)
+  - Add `QuantizationTables` struct with quality scaling
+  - Add `NewQuantizationTables(quality uint8) *QuantizationTables` constructor
+  - Implement quality scaling: scale = (quality < 50) ? 5000/quality : 200 - 2*quality
+  - Scale tables and clamp to 1-255 range
+  - Store tables in both zigzag and natural order
+  - Test: verify quality scaling produces expected table values
+  - Output: `src/jpeg/quantize.go`, `src/jpeg/quantize_test.go`
 
-- **[Task 6.4.2]** Create `src/jpeg/quantize.go`
-  - Add `Quantize(block [][]int, table []int) [][]int` function
-  - Round(DCT / table)
-  - Output: `src/jpeg/quantize.go`
+- **[Task 6.4.2]** ✅ Add quantization operations
 
-### 6.5 Zigzag
+  - Add `QuantizeBlock(dct [64]float32, table [64]float32) [64]int16` function
+  - Round DCT coefficients divided by quantization values
+  - Test: verify quantization produces expected values, test edge cases (zero, negative, large values)
+  - Output: `src/jpeg/quantize.go` (updated), `src/jpeg/quantize_test.go` (updated)
 
-- **[Task 6.5.1]** Create `src/jpeg/zigzag.go`
-  - Define zigzag order array [64]int
-  - Add `Zigzag(block [][]int) []int` function
-  - Add `Dezigzag(coeffs []int) [][]int` function
+### 6.5 Zigzag Reordering ✅ COMPLETED
+
+- **[Task 6.5.1]** ✅ Create `src/jpeg/zigzag.go`
+
+  - Define zigzag scan order array `[64]int`
+  - Add `ZigzagReorder(block [64]int16) [64]int16` function
+  - Reorder quantized coefficients to zigzag order
+  - Add `Dezigzag(coeffs [64]int16) [64]int16` for testing
   - Test: zigzag then dezigzag = original
   - Output: `src/jpeg/zigzag.go`, `src/jpeg/zigzag_test.go`
 
-### 6.6 DC Encoding
+### 6.6 DC Encoding ✅ COMPLETED
 
-- **[Task 6.6.1]** Create `src/jpeg/dc.go`
-  - Add `EncodeDC(dc int) (bits []int, size int)` function
-  - Compute difference from previous DC
-  - Size-category encoding
-  - Add `DecodeDC(coeffs []int) int` function
+- **[Task 6.6.1]** ✅ Create `src/jpeg/dc.go`
+
+  - Add `EncodeDC(dc int16, prevDC int16) (category uint8, diffBits uint16, bitLen uint8)` function
+  - Compute DC difference: diff = dc - prevDC
+  - Calculate category (bit length needed): category = bits needed for |diff|
+  - Encode category using Huffman table
+  - Encode diff value in two's complement
+  - Add `DecodeDC` for testing
+  - Test: verify DC encoding/decoding round-trip
   - Output: `src/jpeg/dc.go`, `src/jpeg/dc_test.go`
 
-### 6.7 AC Encoding
+### 6.7 AC Encoding ✅ COMPLETED
 
-- **[Task 6.7.1]** Create `src/jpeg/ac.go`
-  - Add `RunLengthEncode(coeffs []int) []Tuple` function
-  - Tuple = (runLength, size) for zeros, then (0, value) for non-zeros
-  - Add `RunLengthDecode(tuples []Tuple) []int` function
+- **[Task 6.7.1]** ✅ Create `src/jpeg/ac.go`
+
+  - Add `RunLengthEncode(coeffs [64]int16) []ACRun` function
+  - Define `ACRun` struct: `{RunLength uint8, Size uint8, Value int16}`
+  - Encode zero runs and non-zero coefficients
+  - Handle EOB (End of Block) marker
+  - Handle ZRL (Zero Run Length) for runs >= 16
+  - Add `RunLengthDecode` for testing
+  - Test: verify AC encoding/decoding round-trip
   - Output: `src/jpeg/ac.go`, `src/jpeg/ac_test.go`
 
-### 6.8 Huffman Tables
+### 6.8 Huffman Tables ✅ COMPLETED
 
-- **[Task 6.8.1]** Create `src/jpeg/huffman_tables.go`
+- **[Task 6.8.1]** ✅ Create `src/jpeg/huffman.go`
 
-  - Define standard DC luminance table
-  - Define standard DC chrominance table
-  - Define standard AC luminance table
-  - Define standard AC chrominance table
-  - Output: `src/jpeg/huffman_tables.go`
+  - Define standard JPEG Huffman tables (DC luminance, DC chrominance, AC luminance, AC chrominance)
+  - Add `HuffmanTables` struct with lookup tables
+  - Add `NewHuffmanTables() *HuffmanTables` constructor with standard tables
+  - Build code lookup tables for fast encoding
+  - Add encoding functions: `EncodeDC(category uint8, isLuminance bool) (code uint16, length uint8)`
+  - Add encoding functions: `EncodeAC(run, size uint8, isLuminance bool) (code uint16, length uint8)`
+  - Test: verify Huffman encoding produces correct codes
+  - Output: `src/jpeg/huffman.go`, `src/jpeg/huffman_test.go`
 
-- **[Task 6.8.2]** Create `src/jpeg/huffman_encoder.go`
-  - Add `HuffmanEncode(symbol int, table []Code) (bits []int)` function
-  - Look up code in table, return bits
-  - Output: `src/jpeg/huffman_encoder.go`
+### 6.9 Bit Writer for JPEG ✅ COMPLETED
 
-### 6.9 Bit Writer for JPEG
+- **[Task 6.9.1]** ✅ Create `src/jpeg/bit_writer.go`
 
-- **[Task 6.9.1]** Create `src/jpeg/bit_writer.go`
-  - Add `WriteByte(b byte) error` function
-  - Add `WriteBits(bits int, n int) error` function
-  - Handle byte stuffing (0xFF → 0xFF 0x00)
-  - Output: `src/jpeg/bit_writer.go`
+  - Define `BitWriter` struct (MSB-first, different from DEFLATE's LSB-first)
+  - Add `Write(bits uint16, n int) error` method
+  - Add `WriteByte(b byte) error` method
+  - Handle byte stuffing: 0xFF → 0xFF 0x00
+  - Add `Flush() error` method
+  - Add `Finish() []byte` method
+  - Test: write bits, verify byte output, byte stuffing
+  - Output: `src/jpeg/bit_writer.go`, `src/jpeg/bit_writer_test.go`
 
-### 6.10 Markers
+### 6.10 Markers ✅ COMPLETED
 
-- **[Task 6.10.1]** Create `src/jpeg/markers.go`
-  - Add `WriteSOI(w io.Writer) error` function
-  - Add `WriteEOI(w io.Writer) error` function
-  - Add `WriteAPP0(w io.Writer) error` function (JFIF header)
-  - Add `WriteDQT(w io.Writer, tableID int, table []int) error` function
-  - Add `WriteSOF0(w io.Writer, width, height int, components []Component) error` function
-  - Add `WriteDHT(w io.Writer, tableID int, bits []int, vals []int) error` function
-  - Add `WriteSOS(w io.Writer, components []Component) error` function
-  - Test: write markers, verify format
+- **[Task 6.10.1]** ✅ Create `src/jpeg/markers.go`
+
+  - Add `WriteSOI(w io.Writer) error` - Start of Image (0xFFD8)
+  - Add `WriteEOI(w io.Writer) error` - End of Image (0xFFD9)
+  - Add `WriteAPP0(w io.Writer) error` - JFIF header
+  - Add `WriteDQT(w io.Writer, tableID uint8, table [64]uint8) error` - Quantization table
+  - Add `WriteSOF0(w io.Writer, width, height uint16, colorType ColorType, subsampling Subsampling) error` - Baseline frame
+  - Add `WriteSOF2(w io.Writer, width, height uint16, colorType ColorType, subsampling Subsampling) error` - Progressive frame
+  - Add `WriteDHT(w io.Writer, tableID uint8, bits [16]uint8, vals []uint8) error` - Huffman table
+  - Add `WriteSOS(w io.Writer, colorType ColorType) error` - Start of Scan (baseline)
+  - Add `WriteSOSProgressive(w io.Writer, scan *ScanSpec, colorType ColorType) error` - Progressive scan
+  - Add `WriteDRI(w io.Writer, interval uint16) error` - Restart interval
+  - Test: write markers, verify format, marker lengths
   - Output: `src/jpeg/markers.go`, `src/jpeg/markers_test.go`
 
-### 6.11 JPEG Encoder Entry Point
+### 6.11 JPEG Encoder Entry Point ✅ PARTIAL
 
-- **[Task 6.11.1]** Create `src/jpeg/encoder.go`
+- **[Task 6.11.1]** ✅ Create `src/jpeg/encoder.go`
 
-  - Define `Encoder` struct (width, height, quality int)
+  - Define `Encoder` struct (width, height, colorType, quality)
+  - Add `NewEncoder(width, height int, colorType ColorType, quality uint8) (*Encoder, error)` constructor
   - Add `Encode(pixels []byte) ([]byte, error)` method
   - Sequence: RGB→YCbCr → blocks → DCT → quantize → zigzag → Huffman → markers
-  - Output: `src/jpeg/encoder.go`
+  - Write: SOI → APP0 → DQT → SOF0 → DHT → SOS → scan data → EOI
+  - Validate input dimensions and pixel count
+  - Test: 1×1 RGB image, 1×1 Grayscale image, 8×8 RGB image, 16×16 RGB image, various quality levels (1, 25, 50, 75, 100), non-multiple-of-8 dimensions (edge padding), verify output decodes with Go's `image/jpeg` decoder
+  - Output: `src/jpeg/encoder.go`, `src/jpeg/encoder_test.go`
 
-- **[Task 6.11.2]** Test JPEG encoder
+- **[Task 6.11.2]** Update WASM bridge
 
-  - Encode 1×1, 8×8, 16×16 images
-  - Verify output opens in browsers
-  - Test various quality settings
-  - Output: `src/jpeg/encoder_test.go`
-
-- **[Task 6.11.3]** Update WASM bridge and Web UI for JPEG
-  - Expose JPEG encoding in `src/wasm/bridge.go`
-  - Add JPEG support to `web/src/worker.ts` and `web/src/App.res`
+  - Add `EncodeJpeg` function to `src/wasm/bridge.go`
+  - Support quality parameter
+  - Support RGB and Grayscale color types
+  - Test: verify WASM bridge function works correctly
+  - Output: `src/wasm/bridge.go` (updated), `src/wasm/bridge_test.go` (updated)
 
 ---
 
-## Phase 7: JPEG Features and Presets
+## Phase 7: Advanced JPEG Features
 
 Goal: Advanced JPEG features after baseline works.
+
+**Testing Requirements for Phase 7:**
+
+- **Each task must include its own unit tests** (`*_test.go` files)
+- After completing each task, run: `go test ./src/jpeg/...` (must pass)
+- After completing each task, run: `golangci-lint run ./src/jpeg/...` (must pass, no warnings)
+- All Phase 6 tests must continue to pass
+- New feature tests for subsampling, optimized Huffman, progressive encoding
+- Verify optimized features produce smaller files than baseline
+- Progressive JPEG must decode correctly
 
 ### 7.1 Chroma Subsampling
 
 - **[Task 7.1.1]** Create `src/jpeg/subsample.go`
+
   - Add `Subsample420(cb, cr []byte, width, height int) ([]byte, []byte)` function
-  - Average every 2×2 block
-  - Update encoder to use subsampled Cb/Cr
+  - Average every 2×2 block of chroma samples
+  - Update encoder to support 4:2:0 subsampling
+  - Update MCU extraction for 4:2:0
+  - Test: verify subsampling reduces chroma data by 4x
   - Output: `src/jpeg/subsample.go`, `src/jpeg/subsample_test.go`
 
 ### 7.2 Optimized Huffman Tables
 
-- **[Task 7.2.1]** Create `src/jpeg/optimized_huffman.go`
-  - Add `BuildOptimizedTables(blocks [][][]int, dcTable, acTable []int) (dcBits, dcVals, acBits, acVals []int)`
-  - Count symbol frequencies from actual data
-  - Build custom tables
-  - Output: `src/jpeg/optimized_huffman.go`
+- **[Task 7.2.1]** Create `src/jpeg/huffman_optimized.go`
+
+  - Add `BuildOptimizedTables(data []byte, width, height int, colorType ColorType, subsampling Subsampling, quantTables *QuantizationTables) *HuffmanTables` function
+  - Process all blocks to count symbol frequencies
+  - Build custom Huffman tables from frequencies
+  - Use same Huffman tree building logic as PNG (reuse `compress/huffman_tree.go` concepts)
+  - Generate canonical codes
+  - Test: verify optimized tables produce smaller files than standard tables
+  - Output: `src/jpeg/huffman_optimized.go`, `src/jpeg/huffman_optimized_test.go`
 
 ### 7.3 Progressive JPEG
 
 - **[Task 7.3.1]** Create `src/jpeg/progressive.go`
-  - Add `ProgressiveOrder(coeffIndex int) int` function
-  - Add `WriteProgressiveScan(w io.Writer, blocks [][][]int, dcTable, acTable []int, start, end int) error`
-  - Split coefficients into multiple scans
-  - Output: `src/jpeg/progressive.go`
 
-### 7.4 JPEG Presets
+  - Define `ScanSpec` struct: `{Components []uint8, SS uint8, SE uint8, AH uint8, AL uint8}`
+  - Add `DefaultProgressiveScript() []ScanSpec` function
+  - Add `SimpleProgressiveScript() []ScanSpec` function
+  - Add `EncodeDCScan(writer *BitWriter, scan *ScanSpec, coeffs [][64]int16, huffTables *HuffmanTables)` function
+  - Add `EncodeACFirstScan(writer *BitWriter, scan *ScanSpec, coeffs [][64]int16, huffTables *HuffmanTables)` function
+  - Add `EncodeACRefineScan(writer *BitWriter, scan *ScanSpec, coeffs [][64]int16, huffTables *HuffmanTables)` function
+  - Implement spectral selection and successive approximation
+  - Test: verify progressive JPEG opens in browsers
+  - Output: `src/jpeg/progressive.go`, `src/jpeg/progressive_test.go`
 
-- **[Task 7.4.1]** Create `src/jpeg/presets.go`
+- **[Task 7.3.2]** Update encoder for progressive mode
+
+  - Modify `encoder.go` to support progressive encoding
+  - Compute all DCT coefficients first
+  - Encode multiple scans using progressive script
+  - Write SOF2 marker instead of SOF0
+  - Test: verify progressive JPEG encodes and decodes correctly, test with various image sizes
+  - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/encoder_test.go` (updated)
+
+### 7.4 JPEG Presets and Options
+
+- **[Task 7.4.1]** Create `src/jpeg/options.go`
+
+  - Define `Options` struct: `{Width, Height int, ColorType ColorType, Quality uint8, Subsampling Subsampling, OptimizeHuffman bool, Progressive bool, TrellisQuant bool, RestartInterval *uint16}`
   - Define `Preset` type (Fast, Balanced, Max)
-  - Add `FastEncoder() Encoder` function (subsampling 420, standard tables)
-  - Add `BalancedEncoder() Encoder` function (subsampling 420, optimized tables)
-  - Add `MaxEncoder() Encoder` function (subsampling 444, optimized tables)
-  - Output: `src/jpeg/presets.go`
+  - Add `FastOptions(width, height int, quality uint8) Options` function
+  - Add `BalancedOptions(width, height int, quality uint8) Options` function
+  - Add `MaxOptions(width, height int, quality uint8) Options` function
+  - Test: verify preset configurations are correct, test all preset options
+  - Output: `src/jpeg/options.go`, `src/jpeg/options_test.go`
+
+- **[Task 7.4.2]** Create `src/jpeg/options_builder.go`
+
+  - Define `OptionsBuilder` struct
+  - Add chainable methods: `Quality()`, `Subsampling()`, `OptimizeHuffman()`, `Progressive()`, `TrellisQuant()`, `RestartInterval()`, `Preset()`
+  - Add `Build() Options` method
+  - Test: verify preset configurations
+  - Output: `src/jpeg/options_builder.go`, `src/jpeg/options_builder_test.go`
+
+- **[Task 7.4.3]** Update encoder to use Options
+
+  - Modify `NewEncoder` to accept `Options`
+  - Update `Encode` to use options for all settings
+  - Test: verify encoder works with all option combinations
+  - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/encoder_test.go` (updated)
 
 ---
 
-## Phase 8: Web Product Polish ✅ PARTIAL
+## Phase 8: Advanced JPEG Optimizations
+
+Goal: Advanced JPEG optimizations matching PNG's advanced features.
+
+**Testing Requirements for Phase 8:**
+
+- **Each task must include its own unit tests** (`*_test.go` files)
+- After completing each task, run: `go test ./src/jpeg/...` (must pass)
+- After completing each task, run: `golangci-lint run ./src/jpeg/...` (must pass, no warnings)
+- All previous tests must continue to pass
+- Trellis quantization must show 5-15% compression improvement
+- WASM bridge tests must pass
+- CLI tests must pass
+- Web UI must work correctly
+
+### 8.1 Trellis Quantization
+
+- **[Task 8.1.1]** Create `src/jpeg/trellis.go`
+
+  - Add `TrellisQuantize(dct [64]float32, quantTable [64]float32, lambda float32) [64]int16` function
+  - Implement Viterbi algorithm for rate-distortion optimization
+  - Consider multiple candidate quantized values per coefficient
+  - Track zero runs for accurate EOB prediction
+  - Use cost model: cost = rate + lambda * distortion
+  - Test: verify trellis produces 5-15% better compression
+  - Output: `src/jpeg/trellis.go`, `src/jpeg/trellis_test.go`
+
+- **[Task 8.1.2]** Integrate trellis into encoder
+
+  - Add trellis option to `Options`
+  - Use trellis quantization when enabled
+  - Test: verify trellis integration works, compare file sizes with/without trellis
+  - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/encoder_test.go` (updated)
+
+### 8.2 Quality-Based Optimizations
+
+- **[Task 8.2.1]** Enhance quantization for quality control
+
+  - Improve quality scaling algorithm
+  - Add quality presets (low, medium, high, maximum)
+  - Test: verify quality levels produce expected file sizes, test edge cases
+  - Output: `src/jpeg/quantize.go` (updated), `src/jpeg/quantize_test.go` (updated)
+
+### 8.3 Enhanced Progressive Scans
+
+- **[Task 8.3.1]** Optimize progressive scan scripts
+
+  - Create multiple scan script presets
+  - Fine-tune spectral selection ranges
+  - Optimize for different image types
+  - Test: verify optimized scan scripts produce better compression
+  - Output: `src/jpeg/progressive.go` (updated), `src/jpeg/progressive_test.go` (updated)
+
+### 8.4 WASM Integration
+
+- **[Task 8.4.1]** Update WASM bridge for advanced features
+
+  - Add `EncodeJpegAdvanced` function with all options
+  - Support quality, subsampling, progressive, trellis, optimized Huffman
+  - Add progress callback support
+  - Map presets: Smaller→MaxOptions, Balanced→BalancedOptions, Faster→FastOptions
+  - Test: verify all advanced options work via WASM bridge
+  - Output: `src/wasm/bridge.go` (updated), `src/wasm/bridge_test.go` (updated)
+
+- **[Task 8.4.2]** Update web UI for JPEG
+
+  - Add JPEG support to `web/src/worker.ts`
+  - Add JPEG controls to `web/src/App.res` and `BottomBar.res`
+  - Support quality slider, progressive toggle, subsampling options
+  - Output: `web/src/worker.ts` (updated), `web/src/App.res` (updated), `web/src/components/BottomBar.res` (updated)
+
+### 8.5 CLI Integration
+
+- **[Task 8.5.1]** Update CLI for JPEG
+
+  - Add `-format jpeg` flag to `src/cmd/cli/main.go`
+  - Add `-quality` flag (1-100)
+  - Add `-preset` flag (fast, balanced, max)
+  - Add `-progressive` flag
+  - Add `-subsampling` flag (444, 420)
+  - Add `-trellis` flag
+  - Add `-optimize-huffman` flag
+  - Test: verify all flags work correctly, test CLI with various combinations
+  - Output: `src/cmd/cli/main.go` (updated), `src/cmd/cli/main_test.go` (updated)
+
+---
+
+## Phase 10: JPEG Documentation
+
+Goal: Create comprehensive documentation for JPEG encoding.
+
+### 10.1 JPEG Overview
+
+- **[Task 10.1]** Create JPEG overview documentation
+
+  - Create `docs/learning/jpg/jpeg.md`
+  - Explain JPEG format basics
+  - Compare JPEG vs PNG (reference existing `png-vs-jpeg.md`)
+  - Explain lossy compression concept
+  - Document JPEG markers and structure
+  - Output: `docs/learning/jpg/jpeg.md`
+
+### 10.2 Encoder Documentation
+
+- **[Task 10.2]** Create JPEG encoder documentation
+
+  - Create `docs/learning/jpg/encoder.md`
+  - Document encoder architecture and pipeline
+  - Explain RGB to YCbCr conversion
+  - Document block extraction and DCT process
+  - Explain quantization and quality scaling
+  - Document encoding flow: blocks → DCT → quantize → zigzag → Huffman → markers
+  - Output: `docs/learning/jpg/encoder.md`
+
+### 10.3 DCT Documentation
+
+- **[Task 10.3]** Create DCT documentation
+
+  - Create `docs/learning/jpg/dct.md`
+  - Explain Discrete Cosine Transform theory
+  - Document AAN algorithm implementation
+  - Explain why DCT is used for image compression
+  - Show DCT coefficient visualization
+  - Output: `docs/learning/jpg/dct.md`
+
+### 10.4 Quantization Documentation
+
+- **[Task 10.4]** Create quantization documentation
+
+  - Create `docs/learning/jpg/quantization.md`
+  - Explain quantization tables and quality scaling
+  - Document standard JPEG quantization tables
+  - Explain how quality affects file size and visual quality
+  - Show quality level comparisons
+  - Output: `docs/learning/jpg/quantization.md`
+
+### 10.5 Progressive JPEG Documentation
+
+- **[Task 10.5]** Create progressive JPEG documentation
+
+  - Create `docs/learning/jpg/progressive.md`
+  - Explain progressive vs baseline JPEG
+  - Document spectral selection and successive approximation
+  - Explain progressive scan scripts
+  - Show compression benefits of progressive encoding
+  - Output: `docs/learning/jpg/progressive.md`
+
+### 10.6 Trellis Quantization Documentation
+
+- **[Task 10.6]** Create trellis quantization documentation
+
+  - Create `docs/learning/jpg/trellis.md`
+  - Explain rate-distortion optimization
+  - Document Viterbi algorithm for trellis quantization
+  - Explain how trellis improves compression (5-15%)
+  - Show compression ratio comparisons
+  - Output: `docs/learning/jpg/trellis.md`
+
+### 10.7 Huffman Tables Documentation
+
+- **[Task 10.7]** Create Huffman tables documentation
+
+  - Create `docs/learning/jpg/huffman.md`
+  - Explain JPEG Huffman encoding (DC and AC)
+  - Document standard JPEG Huffman tables
+  - Explain optimized Huffman table generation
+  - Show compression benefits of optimized tables
+  - Output: `docs/learning/jpg/huffman.md`
+
+### 10.8 Chroma Subsampling Documentation
+
+- **[Task 10.8]** Create chroma subsampling documentation
+
+  - Create `docs/learning/jpg/subsampling.md`
+  - Explain 4:2:0 vs 4:4:4 subsampling
+  - Document why chroma subsampling works (human vision)
+  - Show visual quality comparison
+  - Explain file size impact
+  - Output: `docs/learning/jpg/subsampling.md`
+
+### 10.9 JPEG Index Documentation
+
+- **[Task 10.9]** Create JPEG index documentation
+
+  - Create `docs/learning/jpg/index.md`
+  - Organize all JPEG documentation with links
+  - Add quick reference tables (quality levels, presets, subsampling)
+  - Add getting started guide
+  - Link to related PNG documentation
+  - Output: `docs/learning/jpg/index.md`
+
+### 10.10 Update Main Documentation
+
+- **[Task 10.10]** Update main documentation
+
+  - Update `docs/learning/png-vs-jpeg.md` with implementation details
+  - Add links to new JPEG documentation
+  - Update any cross-references
+  - Output: `docs/learning/png-vs-jpeg.md` (updated)
+
+---
+
+## Phase 8: Web Product Polish ✅ COMPLETED
 
 Goal: Make the product easy to use.
 
-### Phase 8 Progress: ✅ 7 of 10 Tasks Complete
+### Phase 8 Progress: ✅ 12 of 12 Tasks Complete
 
 ### 8.1 Drag and Drop ✅ COMPLETED
 
@@ -859,7 +1171,7 @@ Goal: Make the product easy to use.
 
 ---
 
-## Phase 9: Advanced PNG Compression Optimization ✅ PARTIAL
+## Phase 9: Advanced PNG Compression Optimization ✅ COMPLETED
 
 Goal: Improve PNG compression to match or beat existing tools like OxiPNG and OptiPNG, using cursor-meetup.png (727 KB baseline) as the target.
 
@@ -1139,16 +1451,33 @@ Phase 5 (Lossy PNG) ✅ COMPLETED
   │  └─ 5.4.1 tRNS writer ✅
   └─ 5.5-5.6 Integration + Tests ✅
 
-Phase 6 (JPEG) → independent of PNG phases
-  ├─ 6.1-6.5 Core (YCbCr, Blocks, DCT, Quant, Zigzag)
+Phase 6 (JPEG Baseline) → independent of PNG phases
+  ├─ 6.1 Infrastructure (Constants, Errors, Color Conversion)
+  ├─ 6.2 Block Splitting (8x8 blocks, MCU for 4:2:0)
+  ├─ 6.3 DCT Implementation
+  ├─ 6.4 Quantization (Tables + Operations)
+  ├─ 6.5 Zigzag Reordering
   ├─ 6.6-6.7 Encoding (DC, AC)
-  ├─ 6.8-6.9 Huffman + BitWriter
-  └─ 6.10-6.11 Markers + Encoder + Tests
+  ├─ 6.8 Huffman Tables
+  ├─ 6.9 Bit Writer (MSB-first)
+  ├─ 6.10 Markers
+  └─ 6.11 Encoder Entry Point + WASM Bridge
 
-Phase 7 (JPEG Features) → depends on Phase 6
-  ├─ 7.1 Subsampling
-  ├─ 7.2 Optimized Tables
-  └─ 7.3-7.4 Progressive + Presets
+Phase 7 (JPEG Advanced Features) → depends on Phase 6
+  ├─ 7.1 Chroma Subsampling
+  ├─ 7.2 Optimized Huffman Tables
+  ├─ 7.3 Progressive JPEG
+  └─ 7.4 Presets and Options
+
+Phase 8 (JPEG Advanced Optimizations) → depends on Phase 7
+  ├─ 8.1 Trellis Quantization
+  ├─ 8.2 Quality-Based Optimizations
+  ├─ 8.3 Enhanced Progressive Scans
+  ├─ 8.4 WASM Integration
+  └─ 8.5 CLI Integration
+
+Phase 10 (JPEG Documentation) → depends on Phase 8
+  └─ 10.1-10.10 Documentation files
 
 Phase 8 (Web Polish) ✅ PARTIAL
   ├─ 8.1-8.3 UX (Drag/Drop, Progress, Batch) ✅
@@ -1178,9 +1507,11 @@ Phase 9 (Advanced PNG Compression) ✅ COMPLETE
 | 3     | 5     | ✅ Complete | Filter selection                    |
 | 4     | 8     | ✅ Complete | Preset system                       |
 | 5     | 6     | ✅ Complete | Lossy PNG with quantization         |
-| 6     | 11    | Pending     | JPEG encoder                        |
-| 7     | 4     | Pending     | JPEG features                       |
-| 8     | 10    | ✅ Partial  | Web UI polish (7/10 done)           |
+| 6     | 16    | ✅ Partial  | JPEG baseline encoder (15/16 done)  |
+| 7     | 4     | Pending     | JPEG advanced features               |
+| 8     | 5     | Pending     | JPEG advanced optimizations          |
+| 10    | 10    | Pending     | JPEG documentation                   |
+| 8 (Web) | 12    | ✅ Complete | Web UI polish (all done)            |
 | 9     | 7     | ✅ Complete | Advanced PNG compression (all done) |
 | Infra | 4     | ✅ Partial  | Build/test/docs                     |
 
@@ -1193,7 +1524,7 @@ For fastest path to working product:
 1. **Phase 1** (all 11 tasks) ✅ Complete - Valid PNG encoder working
 2. **Phase 3** (all 5 tasks) ✅ Complete - Add filters for compression
 3. **Phase 2** (all 8 tasks) ✅ Complete - Add DEFLATE
-4. **Phase 8** (tasks 8.1-8.9) ✅ Partial - Web UI Polish (Slider, Privacy, etc.)
+4. **Phase 8** (tasks 8.1-8.9) ✅ Complete - Web UI Polish (Slider, Privacy, etc.)
 5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
 6. **Phase 5** (all 6 tasks) ✅ Complete - Lossy PNG with palette quantization
 7. **Phase 9** (all 7 tasks) ✅ Complete - Advanced PNG compression, CLI, WASM, lossy mode
