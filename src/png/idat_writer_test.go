@@ -176,7 +176,7 @@ func TestIDATDataBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer zlibReader.Close()
+	defer func() { _ = zlibReader.Close() }()
 
 	decompressed := make([]byte, 100)
 	n, err := zlibReader.Read(decompressed)
@@ -281,7 +281,7 @@ func TestWriteIDAT_CompressionReducesSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer zlibReader.Close()
+	defer func() { _ = zlibReader.Close() }()
 
 	decompressed := make([]byte, uncompressedSize+100)
 	n, err := zlibReader.Read(decompressed)
@@ -377,7 +377,7 @@ func TestSizeComparisonFallback_StoredBlockForRandomData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create zlib reader: %v", err)
 	}
-	defer zlibReader.Close()
+	defer func() { _ = zlibReader.Close() }()
 
 	decompressed := make([]byte, len(scanlineData)+100)
 	n, err := zlibReader.Read(decompressed)
@@ -492,7 +492,7 @@ func TestSizeComparisonFallback_NeverIncreasesSize(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create zlib reader: %v", err)
 			}
-			defer zlibReader.Close()
+			defer func() { _ = zlibReader.Close() }()
 
 			decompressed := make([]byte, len(tc.data)+tc.width*tc.height+100)
 			n, err := zlibReader.Read(decompressed)
@@ -654,7 +654,7 @@ func TestRealImageCompression(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to open %s: %v", tc.filename, err)
 			}
-			defer originalFile.Close()
+			defer func() { _ = originalFile.Close() }()
 
 			img, err := stdpng.Decode(originalFile)
 			if err != nil {
@@ -664,7 +664,9 @@ func TestRealImageCompression(t *testing.T) {
 			bounds := img.Bounds()
 
 			// Get file size
-			originalFile.Seek(0, 0)
+			if _, seekErr := originalFile.Seek(0, 0); seekErr != nil {
+				t.Fatalf("failed to seek %s: %v", tc.filename, seekErr)
+			}
 			originalStats, err := originalFile.Stat()
 			if err != nil {
 				t.Fatalf("failed to stat %s: %v", tc.filename, err)
@@ -676,21 +678,8 @@ func TestRealImageCompression(t *testing.T) {
 
 			// Determine color type
 			colorType := ColorRGBA
-			bpp := 4
-			switch img.ColorModel() {
-			case color.RGBAModel, color.NRGBAModel:
-				colorType = ColorRGBA
-				bpp = 4
-			case color.GrayModel:
+			if img.ColorModel() == color.GrayModel {
 				colorType = ColorGrayscale
-				bpp = 1
-			default:
-				// For other color models, assume RGBA
-				colorType = ColorRGBA
-				bpp = len(pixels) / (bounds.Dx() * bounds.Dy())
-				if bpp != 4 {
-					bpp = 4
-				}
 			}
 
 			// Compress using our encoder

@@ -22,7 +22,9 @@ func (c *Chunk) Type() string {
 
 func (c *Chunk) CRC() uint32 {
 	typeBytes := []byte(c.chunkType)
-	combined := append(typeBytes, c.Data...)
+	combined := make([]byte, 0, len(typeBytes)+len(c.Data))
+	combined = append(combined, typeBytes...)
+	combined = append(combined, c.Data...)
 	return compress.CRC32(combined)
 }
 

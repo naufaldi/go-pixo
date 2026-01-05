@@ -31,15 +31,15 @@ func SelectFilterWithStrategy(row []byte, prevRow []byte, bpp int, strategy Filt
 	}
 }
 
-func selectNone(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+func selectNone(row []byte, _ []byte, _ int) (FilterType, []byte) {
 	return FilterNone, ApplyFilterNone(row)
 }
 
-func selectSub(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+func selectSub(row []byte, _ []byte, bpp int) (FilterType, []byte) {
 	return FilterSub, ApplyFilterSub(row, bpp)
 }
 
-func selectUp(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+func selectUp(row []byte, prevRow []byte, _ int) (FilterType, []byte) {
 	return FilterUp, ApplyFilterUp(row, prevRow)
 }
 

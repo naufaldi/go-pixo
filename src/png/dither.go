@@ -6,11 +6,11 @@ type DitherStrength float64
 
 // Dithering presets for common use cases.
 const (
-	DitherNone      DitherStrength = 0.0
-	DitherLow       DitherStrength = 0.25
-	DitherMedium    DitherStrength = 0.5
-	DitherHigh      DitherStrength = 0.75
-	DitherMaximum   DitherStrength = 1.0
+	DitherNone    DitherStrength = 0.0
+	DitherLow     DitherStrength = 0.25
+	DitherMedium  DitherStrength = 0.5
+	DitherHigh    DitherStrength = 0.75
+	DitherMaximum DitherStrength = 1.0
 )
 
 // Threshold applies no dithering, direct palette mapping.

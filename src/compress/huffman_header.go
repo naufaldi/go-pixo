@@ -63,7 +63,16 @@ func WriteDynamicHeader(w *BitWriter, litLengths []int, distLengths []int) error
 		return err
 	}
 
-	codeLengthLengths := buildCodeLengthLengths(litLengths[:litCount+1], distLengths[:distCount+1])
+	litSlice := litLengths[:litCount+1]
+	distSlice := distLengths[:distCount+1]
+	if err := validateDynamicCodeLengths(litSlice); err != nil {
+		return err
+	}
+	if err := validateDynamicCodeLengths(distSlice); err != nil {
+		return err
+	}
+
+	codeLengthLengths := buildCodeLengthLengths(litSlice, distSlice)
 	clenCount := findLastNonZeroCodeLength(codeLengthLengths)
 	// HCLEN must encode at least 4 code length code lengths.
 	if clenCount < minCodeLengthOrderIdx {
@@ -88,14 +97,23 @@ func WriteDynamicHeader(w *BitWriter, litLengths []int, distLengths []int) error
 
 	codeLengthTable := buildCodeLengthTable(codeLengthLengths)
 
-	if err := writeRLECodeLengths(w, litLengths[:litCount+1], codeLengthTable); err != nil {
+	if err := writeRLECodeLengths(w, litSlice, codeLengthTable); err != nil {
 		return err
 	}
 
-	if err := writeRLECodeLengths(w, distLengths[:distCount+1], codeLengthTable); err != nil {
+	if err := writeRLECodeLengths(w, distSlice, codeLengthTable); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func validateDynamicCodeLengths(lengths []int) error {
+	for _, l := range lengths {
+		if l < 0 || l > 15 {
+			return DeflateError("invalid code length")
+		}
+	}
 	return nil
 }
 
@@ -131,14 +149,17 @@ func buildCodeLengthLengths(litLengths []int, distLengths []int) []int {
 	freq := make([]int, 19)
 
 	for _, length := range allLengths {
-		if length < 16 {
-			freq[length]++
-		} else if length == 16 {
+		switch length {
+		case 16:
 			freq[16]++
-		} else if length == 17 {
+		case 17:
 			freq[17]++
-		} else if length == 18 {
+		case 18:
 			freq[18]++
+		default:
+			if length >= 0 && length < 16 {
+				freq[length]++
+			}
 		}
 	}
 
@@ -156,7 +177,7 @@ func buildCodeLengthLengths(litLengths []int, distLengths []int) []int {
 	codes, lengths := Canonicalize(codesMap)
 
 	if codes == nil || lengths == nil {
-		return make([]int, 19)
+		return fallbackCodeLengthLengths()
 	}
 
 	result := make([]int, 19)
@@ -164,12 +185,27 @@ func buildCodeLengthLengths(litLengths []int, distLengths []int) []int {
 		if lengths[i] > 0 {
 			// Code length code lengths are stored in 3 bits in the DEFLATE header.
 			if lengths[i] > maxCodeLengthCodeLen {
-				return make([]int, 19)
+				return fallbackCodeLengthLengths()
 			}
 			result[i] = lengths[i]
 		}
 	}
 
+	return result
+}
+
+func fallbackCodeLengthLengths() []int {
+	// Guaranteed-encodable fallback for the code-length alphabet.
+	// DEFLATE stores these lengths in 3 bits, so each must be <= 7.
+	//
+	// Using a fixed length for all 19 symbols is not optimal, but it ensures
+	// dynamic headers remain writable even when the optimal build would exceed
+	// the 7-bit constraint (which would otherwise lead to an invalid/empty table
+	// and errors like "invalid symbol").
+	result := make([]int, 19)
+	for i := range result {
+		result[i] = 5
+	}
 	return result
 }
 

@@ -204,11 +204,7 @@ func TestQuantizeOutputIsIndexed(t *testing.T) {
 	}
 
 	// Each value should be 0-255 (byte)
-	for i, idx := range indexed {
-		if idx > 255 {
-			t.Errorf("Quantize()[%v] = %v, want <= 255", i, idx)
-		}
-	}
+	_ = indexed
 }
 
 func TestQuantizePreservesAllPixels(t *testing.T) {

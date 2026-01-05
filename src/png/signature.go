@@ -6,9 +6,9 @@ func IsValidSignature(data []byte) bool {
 	if len(data) < 8 {
 		return false
 	}
-	return bytes.Equal(data[:8], PNG_SIGNATURE[:])
+	return bytes.Equal(data[:8], PngSignature[:])
 }
 
 func Signature() []byte {
-	return PNG_SIGNATURE[:]
+	return PngSignature[:]
 }

@@ -33,7 +33,7 @@ func bruteForceAllCombinations(pixels []byte, width, height, bpp int) []FilterTy
 	recurse = func(row int, currentFilters []FilterType, currentData []byte) {
 		if row == height {
 			// All rows processed, compress and check size
-			compressed := compressWithFilters(currentData, width, height, bpp)
+			compressed := compressWithFilters(currentData)
 			if bestSize < 0 || len(compressed) < bestSize {
 				bestSize = len(compressed)
 				copy(bestFilters, currentFilters)
@@ -51,9 +51,14 @@ func bruteForceAllCombinations(pixels []byte, width, height, bpp int) []FilterTy
 		// Try all 5 filter types
 		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
 			filtered := applyFilter(filterType, rowData, prevRow, bpp)
-			newFilters := append(currentFilters, filterType)
-			newData := append(currentData, byte(filterType))
-			newData = append(newData, filtered...)
+			newFilters := make([]FilterType, len(currentFilters)+1)
+			copy(newFilters, currentFilters)
+			newFilters[len(currentFilters)] = filterType
+
+			newData := make([]byte, len(currentData)+1+len(filtered))
+			copy(newData, currentData)
+			newData[len(currentData)] = byte(filterType)
+			copy(newData[len(currentData)+1:], filtered)
 			recurse(row+1, newFilters, newData)
 		}
 	}
@@ -115,7 +120,7 @@ func applyFilter(filterType FilterType, row, prevRow []byte, bpp int) []byte {
 }
 
 // compressWithFilters compresses data with specific filter bytes prepended.
-func compressWithFilters(dataWithFilters []byte, width, height, bpp int) []byte {
+func compressWithFilters(dataWithFilters []byte) []byte {
 	// For estimation, use a simple approach
 	return compressSingleRow(dataWithFilters)
 }

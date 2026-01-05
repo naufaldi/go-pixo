@@ -95,6 +95,10 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 			return nil, err
 		}
 
+		if err := writePreservedChunks(&buf, opts.PreserveChunks); err != nil {
+			return nil, err
+		}
+
 		if err := WritePLTE(&buf, palette); err != nil {
 			return nil, err
 		}
@@ -110,7 +114,7 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		result := buf.Bytes()
 
 		// Size guarantee: if compressed is larger than original, return minimal PNG
-		if opts.EnsureSizeNotLarger && len(result) >= len(pixels) {
+		if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
 			return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
 		}
 
@@ -125,14 +129,12 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 			if err != nil {
 				return nil, err
 			}
-			bpp = BytesPerPixel(colorType)
 		} else if CanReduceToGrayscale(processedPixels, opts.Width, opts.Height, colorType) {
 			var err error
 			processedPixels, colorType, err = ReduceToGrayscale(processedPixels, opts.Width, opts.Height, colorType)
 			if err != nil {
 				return nil, err
 			}
-			bpp = BytesPerPixel(colorType)
 		}
 	}
 
@@ -158,8 +160,10 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		return nil, err
 	}
 
-	// Note: If we had ancillary chunks (metadata), we would check opts.StripMetadata
-	// here before writing them. Currently, we only write required chunks.
+	// Optional ancillary chunk passthrough (e.g. color profile chunks for visual fidelity)
+	if err := writePreservedChunks(&buf, opts.PreserveChunks); err != nil {
+		return nil, err
+	}
 
 	// 5. Write IDAT Chunk (Critical) - Includes Filter Strategy and Deflate Compression
 	if err := WriteIDATWithOptions(&buf, processedPixels, opts.Width, opts.Height, colorType, opts); err != nil {
@@ -183,7 +187,7 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 	result := buf.Bytes()
 
 	// Size guarantee: if compressed is larger than original, return minimal PNG
-	if opts.EnsureSizeNotLarger && len(result) >= len(pixels) {
+	if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
 		return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, colorType)
 	}
 
@@ -244,4 +248,26 @@ func writeIHDR(w io.Writer, width, height int, colorType ColorType) error {
 
 func writeIEND(w io.Writer) error {
 	return WriteIEND(w)
+}
+
+func writePreservedChunks(w io.Writer, chunks []Chunk) error {
+	for _, c := range chunks {
+		if c.IsRequired() {
+			continue
+		}
+		if c.chunkType == ChunkIDAT {
+			continue
+		}
+		if _, err := c.WriteTo(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func originalSizeForGuarantee(opts Options, pixels []byte) int {
+	if opts.OriginalFileSize > 0 {
+		return opts.OriginalFileSize
+	}
+	return len(pixels)
 }

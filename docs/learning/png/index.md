@@ -57,6 +57,7 @@ Reducing colors for smaller file sizes.
 
 - [PNG Infrastructure](png-infra.md) - Core data structures
 - [Rust PNG Implementation](rust-png.md) - Reference implementation insights
+- [Already-Compressed PNG Recompress (2026-01-05)](2026-01-05-already-compressed-png-recompress.md) - Lossless recompression strategy + benchmarks
 
 ---
 

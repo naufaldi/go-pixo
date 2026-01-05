@@ -19,9 +19,7 @@ func WriteTRNS(w io.Writer, alphaValues []uint8) error {
 	}
 
 	data := make([]byte, len(alphaValues))
-	for i, a := range alphaValues {
-		data[i] = a
-	}
+	copy(data, alphaValues)
 
 	length := uint32(len(data))
 	if err := binary.Write(w, binary.BigEndian, length); err != nil {
@@ -51,9 +49,7 @@ func TRNSChunkData(alphaValues []uint8) []byte {
 	}
 
 	data := make([]byte, len(alphaValues))
-	for i, a := range alphaValues {
-		data[i] = a
-	}
+	copy(data, alphaValues)
 
 	return data
 }

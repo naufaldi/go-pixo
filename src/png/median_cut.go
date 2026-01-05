@@ -154,7 +154,6 @@ func splitBucketWithQuality(colors []ColorWithCount, quality float64) ([]ColorWi
 		sortBy = 1
 	}
 	if rangeB > maxRange {
-		maxRange = rangeB
 		sortBy = 2
 	}
 
@@ -189,11 +188,6 @@ func splitBucketWithQuality(colors []ColorWithCount, quality float64) ([]ColorWi
 	}
 
 	return sorted[:mid], sorted[mid:]
-}
-
-// splitBucket splits a bucket into two at the median.
-func splitBucket(colors []ColorWithCount) ([]ColorWithCount, []ColorWithCount) {
-	return splitBucketWithQuality(colors, 1.0)
 }
 
 // averageColors calculates the average color of all colors in the bucket.
@@ -355,7 +349,6 @@ func splitBucketWithQualityAndAlpha(colors []ColorWithCount, quality float64) ([
 		sortBy = 1
 	}
 	if rangeB > maxRange {
-		maxRange = rangeB
 		sortBy = 2
 	}
 
@@ -565,7 +558,6 @@ func splitRGBBucket(colors []ExtendedColorWithCount, quality float64) ([]Extende
 		sortBy = 1
 	}
 	if rangeB > maxRange {
-		maxRange = rangeB
 		sortBy = 2
 	}
 
@@ -626,9 +618,9 @@ func averageRGBColors(colors []ExtendedColorWithCount) ExtendedColor {
 
 // QuantizationError represents the error introduced by quantization.
 type QuantizationError struct {
-	MaxError  float64
-	AvgError  float64
-	RMSE      float64
+	MaxError float64
+	AvgError float64
+	RMSE     float64
 }
 
 // CalculateQuantizationError calculates error metrics for a quantization result.

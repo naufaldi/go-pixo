@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -14,18 +15,18 @@ import (
 
 func main() {
 	var (
-		inputFile       = flag.String("input", "", "Input image file (PNG or JPEG)")
-		outputFile      = flag.String("output", "", "Output PNG file (default: input with .png extension)")
-		preset          = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
-		lossy           = flag.Bool("lossy", false, "Enable lossy compression with palette quantization")
-		quality         = flag.Int("quality", 75, "Quality level for lossy compression (0-100)")
-		compare         = flag.Bool("compare", false, "Show original vs compressed size comparison")
-		verbose         = flag.Bool("verbose", false, "Enable detailed output")
-		iterations      = flag.Int("iterations", 0, "Number of Zopfli iterations (0-100)")
-		ditherStrength  = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
-		maxColors       = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
-		benchmark       = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
-		benchmarkRuns   = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
+		inputFile      = flag.String("input", "", "Input image file (PNG or JPEG)")
+		outputFile     = flag.String("output", "", "Output PNG file (default: input with .png extension)")
+		preset         = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
+		lossy          = flag.Bool("lossy", false, "Enable lossy compression with palette quantization")
+		quality        = flag.Int("quality", 75, "Quality level for lossy compression (0-100)")
+		compare        = flag.Bool("compare", false, "Show original vs compressed size comparison")
+		verbose        = flag.Bool("verbose", false, "Enable detailed output")
+		iterations     = flag.Int("iterations", 0, "Number of Zopfli iterations (0-100)")
+		ditherStrength = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
+		maxColors      = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
+		benchmark      = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
+		benchmarkRuns  = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
 	)
 	flag.Parse()
 
@@ -39,21 +40,15 @@ func main() {
 		*outputFile = (*inputFile)[:len(*inputFile)-len(getExt(*inputFile))] + ".png"
 	}
 
-	file, err := os.Open(*inputFile)
+	inputBytes, err := os.ReadFile(*inputFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening input file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error reading input file: %v\n", err)
 		os.Exit(1)
 	}
-	defer file.Close()
 
-	// Get input file size for comparison
-	fileInfo, err := file.Stat()
-	inputFileSize := int64(0)
-	if err == nil {
-		inputFileSize = fileInfo.Size()
-	}
+	inputFileSize := int64(len(inputBytes))
 
-	img, format, err := image.Decode(file)
+	img, format, err := image.Decode(bytes.NewReader(inputBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding image: %v\n", err)
 		os.Exit(1)
@@ -70,12 +65,11 @@ func main() {
 
 	var pixels []byte
 
-	switch img.(type) {
+	switch m := img.(type) {
 	case *image.RGBA:
-		rgba := img.(*image.RGBA)
-		pixels = rgba.Pix
+		pixels = m.Pix
 	case *image.NRGBA:
-		nrgba := img.(*image.NRGBA)
+		nrgba := m
 		pixels = make([]byte, width*height*4)
 		for i := 0; i < len(nrgba.Pix); i += 4 {
 			pixels[i] = nrgba.Pix[i]
@@ -144,16 +138,24 @@ func main() {
 				opts.ApplyLossy(*maxColors, *quality, *ditherStrength)
 			}
 
-			encoder, err = png.NewEncoderWithOptions(opts)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
-				os.Exit(1)
-			}
+			if format == "png" && !*lossy {
+				pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error recompressing PNG: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				encoder, err = png.NewEncoderWithOptions(opts)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+					os.Exit(1)
+				}
 
-			pngData, err = encoder.Encode(pixels)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
-				os.Exit(1)
+				pngData, err = encoder.Encode(pixels)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
+					os.Exit(1)
+				}
 			}
 
 			elapsed := time.Since(startTime).Milliseconds()
@@ -219,14 +221,17 @@ func main() {
 			opts.ApplyLossy(*maxColors, *quality, *ditherStrength)
 		}
 
-		encoder, err = png.NewEncoderWithOptions(opts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
-			os.Exit(1)
-		}
-
 		startTime := time.Now()
-		pngData, err = encoder.Encode(pixels)
+		if format == "png" && !*lossy {
+			pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
+		} else {
+			encoder, err = png.NewEncoderWithOptions(opts)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+				os.Exit(1)
+			}
+			pngData, err = encoder.Encode(pixels)
+		}
 		elapsed := time.Since(startTime).Milliseconds()
 
 		if err != nil {
@@ -252,11 +257,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
 		os.Exit(1)
 	}
-	defer outFile.Close()
 
-	_, err = outFile.Write(pngData)
-	if err != nil {
+	if _, err := outFile.Write(pngData); err != nil {
+		_ = outFile.Close()
 		fmt.Fprintf(os.Stderr, "Error writing output file: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := outFile.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error closing output file: %v\n", err)
 		os.Exit(1)
 	}
 

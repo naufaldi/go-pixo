@@ -56,7 +56,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 	}
 
 	// Build zlib-compressed data
-	zlibData, err := buildZlibData(scanlineData, width, height, colorType, opts)
+	zlibData, err := buildZlibData(scanlineData, opts)
 	if err != nil {
 		return fmt.Errorf("png: failed to build zlib data: %w", err)
 	}
@@ -74,7 +74,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 // The pixels parameter contains all scanline data with filter bytes prepended.
 // This function uses size comparison fallback: if DEFLATE doesn't reduce the size,
 // it falls back to stored blocks (uncompressed) to ensure the output is never larger.
-func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
+func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
 	if err != nil {
@@ -95,8 +95,11 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts O
 
 	var deflateData []byte
 	if opts.OptimalDeflate {
-		// EncodeOptimal already tries multiple passes, use it directly
-		deflateData, err = encoder.EncodeOptimal(pixels)
+		iterations := opts.ZopfliIterations
+		if iterations <= 0 {
+			iterations = 15
+		}
+		deflateData, err = encoder.EncodeOptimalWithConfig(pixels, iterations, true)
 	} else {
 		// Use fallback: if DEFLATE doesn't help, use stored blocks
 		deflateData, err = encoder.EncodeWithFallback(pixels)
@@ -114,6 +117,14 @@ func buildZlibData(pixels []byte, width, height int, colorType ColorType, opts O
 	result = append(result, cmf...)
 	result = append(result, deflateData...)
 	result = append(result, adlerBuf[:]...)
+
+	// Optionally compare against stdlib zlib output and keep the smaller stream.
+	// This is still "standard Go" (no third-party deps) and helps keep results
+	// competitive for already-compressed PNGs.
+	stdlibZlib, stdlibErr := compress.ZlibCompressStdlib(pixels, opts.CompressionLevel)
+	if stdlibErr == nil && len(stdlibZlib) > 0 && len(stdlibZlib) < len(result) {
+		return stdlibZlib, nil
+	}
 
 	return result, nil
 }
@@ -148,7 +159,7 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 		prevRow = row
 	}
 
-	return buildZlibData(scanlineData, width, height, colorType, opts)
+	return buildZlibData(scanlineData, opts)
 }
 
 // ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.

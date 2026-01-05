@@ -298,7 +298,7 @@ func TestBitWriter_WriteWithNilWriter(t *testing.T) {
 		}
 	}()
 
-	bw.Write(0xFF, 8)
+	_ = bw.Write(0xFF, 8)
 	t.Error("Expected panic, but Write completed")
 }
 

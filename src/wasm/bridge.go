@@ -107,14 +107,14 @@ func HandleBytesPerPixel(this js.Value, args []js.Value) any {
  */
 func HandleQuantizeInfo(this js.Value, args []js.Value) any {
 	return js.ValueOf(map[string]interface{}{
-		"maxColors":            256,
-		"ditheringSupported":   true,
-		"minColors":            2,
-		"maxDitherStrength":    1.0,
-		"minDitherStrength":    0.0,
-		"qualityTargetMin":     0,
-		"qualityTargetMax":     100,
-		"zopfliIterationsMax":  50,
+		"maxColors":           256,
+		"ditheringSupported":  true,
+		"minColors":           2,
+		"maxDitherStrength":   1.0,
+		"minDitherStrength":   0.0,
+		"qualityTargetMin":    0,
+		"qualityTargetMax":    100,
+		"zopfliIterationsMax": 50,
 	})
 }
 

@@ -77,7 +77,7 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 		return fixed, nil
 	}
 
-	if len(dynamic) < len(fixed) {
+	if len(dynamic) < len(fixed) && validateDeflateRoundTrip(dynamic, data) {
 		return dynamic, nil
 	}
 	return fixed, nil

@@ -34,6 +34,7 @@ type Options struct {
 	OptimizeAlpha       bool
 	ReduceColorType     bool
 	StripMetadata       bool
+	PreserveChunks      []Chunk // Optional ancillary chunks to copy through (e.g. sRGB/iCCP/gAMA/cHRM)
 	OptimalDeflate      bool
 	MaxColors           int
 	Dithering           bool
@@ -41,6 +42,7 @@ type Options struct {
 	QualityTarget       int
 	ZopfliIterations    int
 	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
+	OriginalFileSize    int                              // Optional original PNG file size; used with EnsureSizeNotLarger
 	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
 }
 
@@ -197,21 +199,6 @@ func QualityPresets() map[string]Options {
 	// Return a map of preset names to configuration functions
 	// This is a placeholder - actual usage requires width/height
 	return map[string]Options{}
-}
-
-func lossyWithQuality(width, height, maxColors, quality int) Options {
-	opts := LossyOptions(width, height, maxColors)
-	opts.QualityTarget = quality
-	if quality >= 90 {
-		opts.DitheringStrength = 0.25
-	} else if quality >= 75 {
-		opts.DitheringStrength = 0.5
-	} else if quality >= 50 {
-		opts.DitheringStrength = 0.75
-	} else {
-		opts.DitheringStrength = 1.0
-	}
-	return opts
 }
 
 // ApplyLossy applies lossy compression settings to an Options struct.

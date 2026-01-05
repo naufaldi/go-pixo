@@ -168,10 +168,10 @@ func TestBruteForceFilters_Gradient(t *testing.T) {
 
 func TestOptimalFiltersForImage(t *testing.T) {
 	tests := []struct {
-		name         string
-		width        int
-		height       int
-		expectBrute  bool
+		name        string
+		width       int
+		height      int
+		expectBrute bool
 	}{
 		{"small 64x64", 64, 64, true},
 		{"medium 128x128", 128, 128, true},

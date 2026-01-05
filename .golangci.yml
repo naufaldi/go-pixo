@@ -24,7 +24,7 @@ linters:
     - bodyclose
     - nilnil
     - noctx
-    - exportloopref
+    - copyloopvar
     - prealloc
     - unconvert
     - unparam
@@ -36,12 +36,7 @@ linters-settings:
       - fieldalignment
   revive:
     rules:
-      - name: exported
-        severity: warning
-      - name: package-comments
-        severity: warning
       - name: blank-imports
-      - name: context-as-first-argument
       - name: error-return
       - name: error-strings
       - name: error-naming

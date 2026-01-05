@@ -9,7 +9,6 @@ import (
 
 func TestWriteCMFValidWindowSizes(t *testing.T) {
 	for windowSize := 256; windowSize <= 32768; windowSize *= 2 {
-		windowSize := windowSize
 		t.Run(fmt.Sprintf("windowSize=%d", windowSize), func(t *testing.T) {
 			var buf bytes.Buffer
 			err := WriteCMF(&buf, windowSize)
@@ -22,7 +21,7 @@ func TestWriteCMFValidWindowSizes(t *testing.T) {
 
 			wlog := bits.TrailingZeros(uint(windowSize))
 			cinfo := wlog - 8
-			expected := byte(0x08 | byte(cinfo<<4))
+			expected := byte(0x08 | (cinfo << 4))
 
 			if got := buf.Bytes()[0]; got != expected {
 				t.Fatalf("WriteCMF(%d) = 0x%02X, want 0x%02X", windowSize, got, expected)
@@ -35,7 +34,6 @@ func TestWriteCMFInvalidWindowSize(t *testing.T) {
 	invalidSizes := []int{0, 1, 255, 257, 1234, 65536}
 
 	for _, windowSize := range invalidSizes {
-		windowSize := windowSize
 		t.Run(fmt.Sprintf("windowSize=%d", windowSize), func(t *testing.T) {
 			var buf bytes.Buffer
 			err := WriteCMF(&buf, windowSize)
@@ -61,7 +59,6 @@ func TestWriteFLGComputesFCHECK(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			if err := WriteCMF(&buf, tc.window); err != nil {
@@ -117,7 +114,6 @@ func TestWriteFLGInvalidCompressionLevel(t *testing.T) {
 	levels := []uint8{4, 7, 255}
 
 	for _, level := range levels {
-		level := level
 		t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
 			var buf bytes.Buffer
 			if err := WriteCMF(&buf, 32768); err != nil {
@@ -134,7 +130,6 @@ func TestWriteFLGInvalidCompressionLevel(t *testing.T) {
 
 func TestZlibHeaderCMFAndFLGDivisibleBy31ForAllValidWindows(t *testing.T) {
 	for windowSize := 256; windowSize <= 32768; windowSize *= 2 {
-		windowSize := windowSize
 		t.Run(fmt.Sprintf("windowSize=%d", windowSize), func(t *testing.T) {
 			var buf bytes.Buffer
 			if err := WriteCMF(&buf, windowSize); err != nil {
@@ -158,7 +153,6 @@ func TestZlibHeaderCMFAndFLGDivisibleBy31ForAllValidWindows(t *testing.T) {
 func TestZlibHeaderBytesInvalidLevel(t *testing.T) {
 	invalidLevels := []uint8{4, 7, 255}
 	for _, level := range invalidLevels {
-		level := level
 		t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
 			_, err := ZlibHeaderBytes(32768, level)
 			if err != ErrInvalidCompressionLevel {
