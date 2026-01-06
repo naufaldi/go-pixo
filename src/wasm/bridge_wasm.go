@@ -120,6 +120,43 @@ func HandleEncodeJpeg(this js.Value, args []js.Value) any {
 }
 
 /**
+ * HandleEncodeJpegAdvanced converts JS arguments to Go and calls EncodeJpegAdvanced.
+ * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number, subsampling: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean, preset: number)
+ */
+func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
+	if len(args) < 10 {
+		return js.ValueOf("invalid arguments: expected 10 arguments")
+	}
+
+	pixelsJS := args[0]
+	width := args[1].Int()
+	height := args[2].Int()
+	colorType := args[3].Int()
+	quality := args[4].Int()
+	subsampling := args[5].Int()
+	progressive := args[6].Bool()
+	trellis := args[7].Bool()
+	optimizeHuffman := args[8].Bool()
+	preset := args[9].Int()
+
+	// Copy JS buffer to Go slice
+	pixels := make([]byte, pixelsJS.Get("length").Int())
+	js.CopyBytesToGo(pixels, pixelsJS)
+
+	// Call the advanced implementation
+	output, err := EncodeJpegAdvanced(pixels, width, height, colorType, uint8(quality), subsampling, progressive, trellis, optimizeHuffman, preset)
+	if err != nil {
+		return js.ValueOf(fmt.Sprintf("error: %v", err))
+	}
+
+	// Copy Go slice back to JS
+	dst := js.Global().Get("Uint8Array").New(len(output))
+	js.CopyBytesToJS(dst, output)
+
+	return dst
+}
+
+/**
  * HandleBytesPerPixel returns the bytes per pixel for a given color type.
  * Expected arguments: (colorType: number)
  */

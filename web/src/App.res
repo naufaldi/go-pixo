@@ -566,6 +566,51 @@ let make = () => {
     })
     found.contents
   }
+
+  let getAppliedOptimizations = (): option<array<string>> => {
+    if !hasCompletedItems {
+      None
+    } else {
+      let optimizations = switch state.preset {
+      | Types.Smaller => 
+        let base = ["Maximum compression"]
+        let withTrellis = if state.trellis {
+          base->Array.concat(["Smart quality balance"])
+        } else {
+          base
+        }
+        let withHuffman = if state.optimizeHuffman {
+          withTrellis->Array.concat(["Optimized file structure"])
+        } else {
+          withTrellis
+        }
+        withHuffman
+      | Types.Faster =>
+        let base = ["Fast compression", "Quality preservation"]
+        let withSubsampling = if state.subsampling == "420" {
+          base->Array.concat(["Speed optimization"])
+        } else {
+          base
+        }
+        withSubsampling
+      | Types.Balanced => ["Balanced compression"]
+      }
+      
+      let withProgressive = if state.progressive && formatText == "JPEG" {
+        optimizations->Array.concat(["Progressive loading"])
+      } else {
+        optimizations
+      }
+      
+      let final = if state.lossless {
+        withProgressive->Array.concat(["Perfect quality preserved"])
+      } else {
+        withProgressive->Array.concat(["Size optimized"])
+      }
+      
+      Some(final)
+    }
+  }
   
   let handleDownload = () => {
     switch selectedItem {
@@ -646,28 +691,15 @@ let make = () => {
     </main>
     
     <BottomBar
-      format=formatText
+      format={formatText}
       preset={state.preset}
       lossless={state.lossless}
-      quantization={state.quantization}
-      dithering={state.dithering}
-      ditherStrength={state.ditherStrength}
-      qualityTarget={state.qualityTarget}
-      zopfliIterations={state.zopfliIterations}
       onPresetChange={preset => dispatch(SetPreset(preset))}
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
-      onQuantizationChange={quantization => dispatch(SetQuantization(quantization))}
-      onDitheringChange={dithering => dispatch(SetDithering(dithering))}
-      onDitheringStrengthChange={strength => dispatch(SetDitherStrength(strength))}
-      onQualityTargetChange={target => dispatch(SetQualityTarget(target))}
-      onZopfliIterationsChange={iterations => dispatch(SetZopfliIterations(iterations))}
-      onProgressiveChange={progressive => dispatch(SetProgressive(progressive))}
-      onSubsamplingChange={subsampling => dispatch(SetSubsampling(subsampling))}
-      onTrellisChange={trellis => dispatch(SetTrellis(trellis))}
-      onOptimizeHuffmanChange={optimize => dispatch(SetOptimizeHuffman(optimize))}
-      onDownload=handleDownload
-      onDownloadAll=handleDownloadAll
-      hasCompletedItems
+      onDownload={handleDownload}
+      onDownloadAll={handleDownloadAll}
+      hasCompletedItems={hasCompletedItems}
+      appliedOptimizations={getAppliedOptimizations()}
     />
   </div>
 }
