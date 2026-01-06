@@ -82,29 +82,88 @@ jobs:
       - build-and-push-image
       - commit-hash
     steps:
+      - name: Validate deployment secrets
+        id: validate-secrets
+        run: |
+          echo "Validating required deployment secrets..."
+          
+          # Check for required secrets
+          REQUIRED_SECRETS=("VPS_HOST" "VPS_USERNAME" "SSH_PRIVATE_KEY")
+          MISSING_SECRETS=()
+          
+          for secret in "${REQUIRED_SECRETS[@]}"; do
+            if [ -z "${!secret}" ]; then
+              MISSING_SECRETS+=("$secret")
+            fi
+          done
+          
+          # Check if any secrets are missing
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "❌ Missing required secrets for deployment:"
+            printf '   - %s\n' "${MISSING_SECRETS[@]}"
+            echo ""
+            echo "Skipping deployment. To enable automatic deployment, add the following secrets to your repository:"
+            echo "  - VPS_HOST: Your server hostname or IP"
+            echo "  - VPS_USERNAME: SSH username for deployment"
+            echo "  - SSH_PRIVATE_KEY: Private SSH key for authentication"
+            echo ""
+            echo "::set-output name=can_deploy::false"
+          else
+            echo "✅ All required deployment secrets are present"
+            echo "::set-output name=can_deploy::true"
+          fi
+
+      - name: Check if deployment should proceed
+        id: check-deployment
+        run: |
+          if [ "${{ steps.validate-secrets.outputs.can_deploy }}" = "false" ]; then
+            echo "Deployment skipped due to missing secrets"
+            echo "::set-output name=should_skip::true"
+          else
+            echo "Proceeding with deployment"
+            echo "::set-output name=should_skip::false"
+          fi
+
       - name: Deploy to VPS
+        if: ${{ steps.check-deployment.outputs.should_skip == 'false' }}
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          timeout: 300000
           script: |
-            echo "Starting deployment..."
-
+            set -e
+            
+            echo "🚀 Starting deployment to VPS..."
+            echo "Target: ${{ secrets.VPS_HOST }}"
+            echo "User: ${{ secrets.VPS_USERNAME }}"
+            echo "Image tag: ${{ needs.commit-hash.outputs.commit_hash }}"
+            echo ""
+            
+            # Create deployment directory
+            echo "📁 Creating deployment directory..."
             mkdir -p ~/go-pixo
             cd ~/go-pixo
-
+            
+            # Authenticate with container registry
+            echo "🔐 Authenticating with GitHub Container Registry..."
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
+            
+            # Pull the latest image
+            echo "📦 Pulling latest image..."
+            docker pull ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
             docker pull ghcr.io/naufaldi/go-pixo:prod
-
+            
+            # Create docker-compose configuration
+            echo "⚙️ Creating docker-compose configuration..."
             cat > docker-compose.prod.yml << 'EOL'
             version: '3.8'
-
+            
             services:
               app:
-                image: ghcr.io/naufaldi/go-pixo:prod
+                image: ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
                 labels:
                   - "caddy=go-pixo.faldi.xyz"
                   - "caddy.reverse_proxy={{upstreams 3000}}"
@@ -113,19 +172,67 @@ jobs:
                 networks:
                   - edge
                   - personal-web-private
-
+                healthcheck:
+                  test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+            
             networks:
               edge:
                 external: true
               personal-web-private:
                 driver: bridge
             EOL
-
+            
+            # Stop existing containers
+            echo "🛑 Stopping existing containers..."
             docker compose -f docker-compose.prod.yml down || true
+            
+            # Start new containers
+            echo "▶️ Starting new containers..."
             docker compose -f docker-compose.prod.yml up -d
-
-            echo "Checking running containers..."
-            docker ps | grep go-pixo || true
-
+            
+            # Wait for containers to be healthy
+            echo "⏳ Waiting for containers to be ready..."
+            sleep 30
+            
+            # Check running containers
+            echo "📊 Checking running containers..."
+            docker ps | grep go-pixo
+            
+            # Show container logs
+            echo "📋 Recent container logs:"
+            docker compose -f docker-compose.prod.yml logs --tail=20
+            
+            # Clean up unused images and containers
+            echo "🧹 Cleaning up unused Docker resources..."
             docker image prune -f
             docker container prune -f
+            
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Application should be available at: http://go-pixo.faldi.xyz"
+            echo ""
+            echo "Commit: ${{ needs.commit-hash.outputs.commit_hash }}"
+            echo "Deployed at: $(date -u)"
+            
+      - name: Log deployment result
+        if: always()
+        run: |
+          if [ "${{ steps.check-deployment.outputs.should_skip }}" = "true" ]; then
+            echo "📝 Deployment skipped - missing required secrets"
+            echo "Set up the following secrets in your repository to enable automatic deployment:"
+            echo "  - VPS_HOST"
+            echo "  - VPS_USERNAME" 
+            echo "  - SSH_PRIVATE_KEY"
+          elif [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deployment completed successfully!"
+          else
+            echo "❌ Deployment failed. Check the logs above for details."
+            echo "Common issues:"
+            echo "  - SSH key authentication failed"
+            echo "  - Docker registry access denied"
+            echo "  - Server resources insufficient"
+            echo "  - Network connectivity issues"
+          fi
