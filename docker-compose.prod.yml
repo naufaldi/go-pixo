@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  app:
+    image: ghcr.io/mac/go-pixo:prod
+    labels:
+      - "caddy=go-pixo.faldi.xyz"
+      - "caddy.reverse_proxy={{upstreams 3000}}"
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: always
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true

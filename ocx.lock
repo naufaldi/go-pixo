@@ -1,0 +1,102 @@
+{
+  "lockVersion": 1,
+  "installed": {
+    "kdco/background-agents": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "8a7f33c3162a2b3276098b5a7f2f5136dbd7f86364e45ff1b8dd215a5f38bb0d",
+      "files": [
+        ".opencode/plugin/background-agents.ts"
+      ],
+      "installedAt": "2026-01-06T06:15:57.208Z"
+    },
+    "kdco/workspace-plugin": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "24a91f93a8057ab258f749b0e95752e291ea4e617574d91cfa6abf92563846c4",
+      "files": [
+        ".opencode/plugin/workspace-plugin.ts"
+      ],
+      "installedAt": "2026-01-06T06:15:57.209Z"
+    },
+    "kdco/plan-protocol": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "bee4b844ee705305eb692d82e48122bcbc2d69e84eda56d37c6caf1b8e3e6f42",
+      "files": [
+        ".opencode/skill/plan-protocol/SKILL.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.209Z"
+    },
+    "kdco/researcher": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "750b46976f47a9716146fc495042ced167e4edf341a483c549e19b761c1ba5bd",
+      "files": [
+        ".opencode/agent/researcher.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/scribe": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "758fe4dc0c0a2d7dc03261278746639c6b02172ef5d0628120e44ab71351fd80",
+      "files": [
+        ".opencode/agent/scribe.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/coder": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "d7ad9717006ff75752e0ce1c123cb8849a4783856dc440de89ad72cb24fe267a",
+      "files": [
+        ".opencode/agent/coder.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/code-review": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "8a19be50c6ec904a8c5a1a32ebaabb8499579206388114202e07d83954269d74",
+      "files": [
+        ".opencode/skill/code-review/SKILL.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/reviewer": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "0e33ded3fbec985af8ee721b9206a751c21f640736d80bea45e33b310d1c30ef",
+      "files": [
+        ".opencode/agent/reviewer.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/review": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "0825fe7b718b38e0ca74e6112b640da17d8a3b880056b860748b1c296875965c",
+      "files": [
+        ".opencode/command/review.md"
+      ],
+      "installedAt": "2026-01-06T06:15:57.210Z"
+    },
+    "kdco/notify": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "b852a3a1759e6595f80fbb9e94a3582f658d1f9872612f111485e74bfddf9239",
+      "files": [
+        ".opencode/plugin/notify.ts"
+      ],
+      "installedAt": "2026-01-06T06:15:57.211Z"
+    },
+    "kdco/workspace": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": [],
+      "installedAt": "2026-01-06T06:15:57.211Z"
+    }
+  }
+}
