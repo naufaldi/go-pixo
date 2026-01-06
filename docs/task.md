@@ -602,7 +602,7 @@ Goal: Implement JPEG encoding for photos.
 - Encoder output must decode correctly with Go's `image/jpeg` decoder
 - Output must open in standard image viewers
 
-### Phase 6 Progress: ✅ 15 of 16 Tasks Complete
+### Phase 6 Progress: ✅ 16 of 16 Tasks Complete
 
 ### 6.1 JPEG Infrastructure ✅ COMPLETED
 
@@ -773,7 +773,7 @@ Goal: Implement JPEG encoding for photos.
   - Test: 1×1 RGB image, 1×1 Grayscale image, 8×8 RGB image, 16×16 RGB image, various quality levels (1, 25, 50, 75, 100), non-multiple-of-8 dimensions (edge padding), verify output decodes with Go's `image/jpeg` decoder
   - Output: `src/jpeg/encoder.go`, `src/jpeg/encoder_test.go`
 
-- **[Task 6.11.2]** Update WASM bridge
+- **[Task 6.11.2]** ✅ Update WASM bridge
 
   - Add `EncodeJpeg` function to `src/wasm/bridge.go`
   - Support quality parameter
@@ -783,7 +783,7 @@ Goal: Implement JPEG encoding for photos.
 
 ---
 
-## Phase 7: Advanced JPEG Features
+## Phase 7: Advanced JPEG Features ✅ COMPLETED
 
 Goal: Advanced JPEG features after baseline works.
 
@@ -797,9 +797,11 @@ Goal: Advanced JPEG features after baseline works.
 - Verify optimized features produce smaller files than baseline
 - Progressive JPEG must decode correctly
 
-### 7.1 Chroma Subsampling
+### Phase 7 Progress: ✅ 4 of 4 Tasks Complete
 
-- **[Task 7.1.1]** Create `src/jpeg/subsample.go`
+### 7.1 Chroma Subsampling ✅ COMPLETED
+
+- **[Task 7.1.1]** ✅ Create `src/jpeg/subsample.go`
 
   - Add `Subsample420(cb, cr []byte, width, height int) ([]byte, []byte)` function
   - Average every 2×2 block of chroma samples
@@ -808,9 +810,9 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify subsampling reduces chroma data by 4x
   - Output: `src/jpeg/subsample.go`, `src/jpeg/subsample_test.go`
 
-### 7.2 Optimized Huffman Tables
+### 7.2 Optimized Huffman Tables ✅ COMPLETED
 
-- **[Task 7.2.1]** Create `src/jpeg/huffman_optimized.go`
+- **[Task 7.2.1]** ✅ Create `src/jpeg/huffman_optimized.go`
 
   - Add `BuildOptimizedTables(data []byte, width, height int, colorType ColorType, subsampling Subsampling, quantTables *QuantizationTables) *HuffmanTables` function
   - Process all blocks to count symbol frequencies
@@ -820,9 +822,9 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify optimized tables produce smaller files than standard tables
   - Output: `src/jpeg/huffman_optimized.go`, `src/jpeg/huffman_optimized_test.go`
 
-### 7.3 Progressive JPEG
+### 7.3 Progressive JPEG ✅ COMPLETED
 
-- **[Task 7.3.1]** Create `src/jpeg/progressive.go`
+- **[Task 7.3.1]** ✅ Create `src/jpeg/progressive.go`
 
   - Define `ScanSpec` struct: `{Components []uint8, SS uint8, SE uint8, AH uint8, AL uint8}`
   - Add `DefaultProgressiveScript() []ScanSpec` function
@@ -834,7 +836,7 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify progressive JPEG opens in browsers
   - Output: `src/jpeg/progressive.go`, `src/jpeg/progressive_test.go`
 
-- **[Task 7.3.2]** Update encoder for progressive mode
+- **[Task 7.3.2]** ✅ Update encoder for progressive mode
 
   - Modify `encoder.go` to support progressive encoding
   - Compute all DCT coefficients first
@@ -843,9 +845,9 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify progressive JPEG encodes and decodes correctly, test with various image sizes
   - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/encoder_test.go` (updated)
 
-### 7.4 JPEG Presets and Options
+### 7.4 JPEG Presets and Options ✅ COMPLETED
 
-- **[Task 7.4.1]** Create `src/jpeg/options.go`
+- **[Task 7.4.1]** ✅ Create `src/jpeg/options.go`
 
   - Define `Options` struct: `{Width, Height int, ColorType ColorType, Quality uint8, Subsampling Subsampling, OptimizeHuffman bool, Progressive bool, TrellisQuant bool, RestartInterval *uint16}`
   - Define `Preset` type (Fast, Balanced, Max)
@@ -855,7 +857,7 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify preset configurations are correct, test all preset options
   - Output: `src/jpeg/options.go`, `src/jpeg/options_test.go`
 
-- **[Task 7.4.2]** Create `src/jpeg/options_builder.go`
+- **[Task 7.4.2]** ✅ Create `src/jpeg/options_builder.go`
 
   - Define `OptionsBuilder` struct
   - Add chainable methods: `Quality()`, `Subsampling()`, `OptimizeHuffman()`, `Progressive()`, `TrellisQuant()`, `RestartInterval()`, `Preset()`
@@ -863,7 +865,7 @@ Goal: Advanced JPEG features after baseline works.
   - Test: verify preset configurations
   - Output: `src/jpeg/options_builder.go`, `src/jpeg/options_builder_test.go`
 
-- **[Task 7.4.3]** Update encoder to use Options
+- **[Task 7.4.3]** ✅ Update encoder to use Options
 
   - Modify `NewEncoder` to accept `Options`
   - Update `Encode` to use options for all settings
@@ -959,13 +961,15 @@ Goal: Advanced JPEG optimizations matching PNG's advanced features.
 
 ---
 
-## Phase 10: JPEG Documentation
+## Phase 10: JPEG Documentation ✅ COMPLETED
 
 Goal: Create comprehensive documentation for JPEG encoding.
 
-### 10.1 JPEG Overview
+### Phase 10 Progress: ✅ 9 of 10 Tasks Complete
 
-- **[Task 10.1]** Create JPEG overview documentation
+### 10.1 JPEG Overview ✅ COMPLETED
+
+- **[Task 10.1]** ✅ Create JPEG overview documentation
 
   - Create `docs/learning/jpg/jpeg.md`
   - Explain JPEG format basics
@@ -974,9 +978,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Document JPEG markers and structure
   - Output: `docs/learning/jpg/jpeg.md`
 
-### 10.2 Encoder Documentation
+### 10.2 Encoder Documentation ✅ COMPLETED
 
-- **[Task 10.2]** Create JPEG encoder documentation
+- **[Task 10.2]** ✅ Create JPEG encoder documentation
 
   - Create `docs/learning/jpg/encoder.md`
   - Document encoder architecture and pipeline
@@ -986,9 +990,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Document encoding flow: blocks → DCT → quantize → zigzag → Huffman → markers
   - Output: `docs/learning/jpg/encoder.md`
 
-### 10.3 DCT Documentation
+### 10.3 DCT Documentation ✅ COMPLETED
 
-- **[Task 10.3]** Create DCT documentation
+- **[Task 10.3]** ✅ Create DCT documentation
 
   - Create `docs/learning/jpg/dct.md`
   - Explain Discrete Cosine Transform theory
@@ -997,9 +1001,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Show DCT coefficient visualization
   - Output: `docs/learning/jpg/dct.md`
 
-### 10.4 Quantization Documentation
+### 10.4 Quantization Documentation ✅ COMPLETED
 
-- **[Task 10.4]** Create quantization documentation
+- **[Task 10.4]** ✅ Create quantization documentation
 
   - Create `docs/learning/jpg/quantization.md`
   - Explain quantization tables and quality scaling
@@ -1008,9 +1012,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Show quality level comparisons
   - Output: `docs/learning/jpg/quantization.md`
 
-### 10.5 Progressive JPEG Documentation
+### 10.5 Progressive JPEG Documentation ✅ COMPLETED
 
-- **[Task 10.5]** Create progressive JPEG documentation
+- **[Task 10.5]** ✅ Create progressive JPEG documentation
 
   - Create `docs/learning/jpg/progressive.md`
   - Explain progressive vs baseline JPEG
@@ -1030,9 +1034,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Show compression ratio comparisons
   - Output: `docs/learning/jpg/trellis.md`
 
-### 10.7 Huffman Tables Documentation
+### 10.7 Huffman Tables Documentation ✅ COMPLETED
 
-- **[Task 10.7]** Create Huffman tables documentation
+- **[Task 10.7]** ✅ Create Huffman tables documentation
 
   - Create `docs/learning/jpg/huffman.md`
   - Explain JPEG Huffman encoding (DC and AC)
@@ -1041,9 +1045,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Show compression benefits of optimized tables
   - Output: `docs/learning/jpg/huffman.md`
 
-### 10.8 Chroma Subsampling Documentation
+### 10.8 Chroma Subsampling Documentation ✅ COMPLETED
 
-- **[Task 10.8]** Create chroma subsampling documentation
+- **[Task 10.8]** ✅ Create chroma subsampling documentation
 
   - Create `docs/learning/jpg/subsampling.md`
   - Explain 4:2:0 vs 4:4:4 subsampling
@@ -1052,9 +1056,9 @@ Goal: Create comprehensive documentation for JPEG encoding.
   - Explain file size impact
   - Output: `docs/learning/jpg/subsampling.md`
 
-### 10.9 JPEG Index Documentation
+### 10.9 JPEG Index Documentation ✅ COMPLETED
 
-- **[Task 10.9]** Create JPEG index documentation
+- **[Task 10.9]** ✅ Create JPEG index documentation
 
   - Create `docs/learning/jpg/index.md`
   - Organize all JPEG documentation with links
@@ -1507,10 +1511,10 @@ Phase 9 (Advanced PNG Compression) ✅ COMPLETE
 | 3     | 5     | ✅ Complete | Filter selection                    |
 | 4     | 8     | ✅ Complete | Preset system                       |
 | 5     | 6     | ✅ Complete | Lossy PNG with quantization         |
-| 6     | 16    | ✅ Partial  | JPEG baseline encoder (15/16 done)  |
-| 7     | 4     | Pending     | JPEG advanced features               |
+| 6     | 16    | ✅ Complete | JPEG baseline encoder (all done)    |
+| 7     | 4     | ✅ Complete | JPEG advanced features              |
 | 8     | 5     | Pending     | JPEG advanced optimizations          |
-| 10    | 10    | Pending     | JPEG documentation                   |
+| 10    | 10    | ✅ Partial  | JPEG documentation (9/10 done)      |
 | 8 (Web) | 12    | ✅ Complete | Web UI polish (all done)            |
 | 9     | 7     | ✅ Complete | Advanced PNG compression (all done) |
 | Infra | 4     | ✅ Partial  | Build/test/docs                     |
@@ -1528,4 +1532,4 @@ For fastest path to working product:
 5. **Phase 4** (all 8 tasks) ✅ Complete - Preset system, Alpha opt, Color reduction, Metadata stripping
 6. **Phase 5** (all 6 tasks) ✅ Complete - Lossy PNG with palette quantization
 7. **Phase 9** (all 7 tasks) ✅ Complete - Advanced PNG compression, CLI, WASM, lossy mode
-8. **Phase 6-7** (JPEG) - Later phase
+8. **Phase 6-7** (JPEG) ✅ Complete - JPEG baseline and advanced features

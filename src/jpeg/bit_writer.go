@@ -24,19 +24,20 @@ func (bw *BitWriter) Write(bits uint32, n uint8) error {
 		return nil
 	}
 
-	// Add bits to buffer (from MSB to LSB of the n bits)
-	// We shift the buffer left and add the new bits
+	// Add bits to buffer
 	bw.buf = (bw.buf << uint32(n)) | (bits & ((1 << uint32(n)) - 1))
 	bw.nbits += int(n)
 
 	// Flush full bytes
 	for bw.nbits >= 8 {
-		bw.nbits -= 8
-		b := byte((bw.buf >> uint32(bw.nbits)) & 0xFF)
+		b := byte((bw.buf >> uint32(bw.nbits-8)) & 0xFF)
 		if err := bw.writeByte(b); err != nil {
 			return err
 		}
+		bw.nbits -= 8
 	}
+	// Mask buffer to only keep remaining bits
+	bw.buf &= (1 << uint32(bw.nbits)) - 1
 
 	return nil
 }

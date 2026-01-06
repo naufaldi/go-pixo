@@ -10,23 +10,31 @@ import (
 	"os"
 	"time"
 
+	"github.com/mac/go-pixo/src/jpeg"
 	"github.com/mac/go-pixo/src/png"
 )
 
 func main() {
 	var (
 		inputFile      = flag.String("input", "", "Input image file (PNG or JPEG)")
-		outputFile     = flag.String("output", "", "Output PNG file (default: input with .png extension)")
-		preset         = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
-		lossy          = flag.Bool("lossy", false, "Enable lossy compression with palette quantization")
-		quality        = flag.Int("quality", 75, "Quality level for lossy compression (0-100)")
+		outputFile     = flag.String("output", "", "Output file (default: input with format extension)")
+		format         = flag.String("format", "png", "Output format: png or jpeg")
+		preset         = flag.String("preset", "balanced", "Compression preset: fast, balanced, max")
+		lossy          = flag.Bool("lossy", false, "Enable lossy compression with palette quantization (PNG only)")
+		quality        = flag.Int("quality", 75, "Quality level (PNG: 0-100 for lossy, JPEG: 1-100)")
 		compare        = flag.Bool("compare", false, "Show original vs compressed size comparison")
 		verbose        = flag.Bool("verbose", false, "Enable detailed output")
-		iterations     = flag.Int("iterations", 0, "Number of Zopfli iterations (0-100)")
+		iterations     = flag.Int("iterations", 0, "Number of Zopfli iterations (PNG only, 0-100)")
 		ditherStrength = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
 		maxColors      = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
 		benchmark      = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
 		benchmarkRuns  = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
+
+		// JPEG-specific flags
+		progressive     = flag.Bool("progressive", false, "Enable progressive JPEG encoding")
+		subsampling     = flag.String("subsampling", "420", "Chroma subsampling: 420 or 444 (JPEG only)")
+		trellis         = flag.Bool("trellis", false, "Enable trellis quantization (JPEG only)")
+		optimizeHuffman = flag.Bool("optimize-huffman", false, "Enable optimized Huffman tables (JPEG only)")
 	)
 	flag.Parse()
 
@@ -36,8 +44,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *format != "png" && *format != "jpeg" {
+		fmt.Fprintf(os.Stderr, "Error: -format must be 'png' or 'jpeg'\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if *format == "jpeg" && (*lossy || *iterations > 0) {
+		fmt.Fprintf(os.Stderr, "Error: -lossy and -iterations are only valid for PNG format\n")
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	if *outputFile == "" {
-		*outputFile = (*inputFile)[:len(*inputFile)-len(getExt(*inputFile))] + ".png"
+		ext := ".png"
+		if *format == "jpeg" {
+			ext = ".jpeg"
+		}
+		*outputFile = (*inputFile)[:len(*inputFile)-len(getExt(*inputFile))] + ext
 	}
 
 	inputBytes, err := os.ReadFile(*inputFile)
@@ -48,13 +72,13 @@ func main() {
 
 	inputFileSize := int64(len(inputBytes))
 
-	img, format, err := image.Decode(bytes.NewReader(inputBytes))
+	img, formatName, err := image.Decode(bytes.NewReader(inputBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding image: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Decoded %s image: %dx%d\n", format, img.Bounds().Dx(), img.Bounds().Dy())
+	fmt.Printf("Decoded %s image: %dx%d\n", formatName, img.Bounds().Dx(), img.Bounds().Dy())
 	if inputFileSize > 0 {
 		fmt.Printf("Input file size: %d bytes\n", inputFileSize)
 	}
@@ -138,7 +162,7 @@ func main() {
 				opts.ApplyLossy(*maxColors, *quality, *ditherStrength)
 			}
 
-			if format == "png" && !*lossy {
+			if *format == "png" && !*lossy {
 				pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error recompressing PNG: %v\n", err)
@@ -222,20 +246,92 @@ func main() {
 		}
 
 		startTime := time.Now()
-		if format == "png" && !*lossy {
-			pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
+
+		if *format == "png" {
+			if !*lossy && formatName == "png" {
+				pngData, err = png.RecompressPNGBytesLossless(inputBytes, opts)
+			} else {
+				encoder, err = png.NewEncoderWithOptions(opts)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+					os.Exit(1)
+				}
+				pngData, err = encoder.Encode(pixels)
+			}
 		} else {
-			encoder, err = png.NewEncoderWithOptions(opts)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error creating encoder: %v\n", err)
+			// JPEG encoding
+			// Convert RGBA to RGB if needed
+			var jpegPixels []byte
+			var jpegColorType jpeg.ColorType
+
+			if len(pixels) == width*height*4 {
+				// RGBA -> RGB conversion
+				jpegPixels = make([]byte, width*height*3)
+				for i := 0; i < width*height; i++ {
+					jpegPixels[i*3] = pixels[i*4]
+					jpegPixels[i*3+1] = pixels[i*4+1]
+					jpegPixels[i*3+2] = pixels[i*4+2]
+				}
+				jpegColorType = jpeg.ColorRGB
+			} else if len(pixels) == width*height*3 {
+				// Already RGB
+				jpegPixels = pixels
+				jpegColorType = jpeg.ColorRGB
+			} else if len(pixels) == width*height {
+				// Grayscale
+				jpegPixels = pixels
+				jpegColorType = jpeg.ColorGrayscale
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: unsupported pixel format for JPEG (length: %d, expected: %d or %d or %d)\n",
+					len(pixels), width*height, width*height*3, width*height*4)
 				os.Exit(1)
 			}
-			pngData, err = encoder.Encode(pixels)
+
+			var jpegOpts jpeg.Options
+			switch *preset {
+			case "fast":
+				jpegOpts = jpeg.FastOptions(width, height, uint8(*quality))
+			case "max":
+				jpegOpts = jpeg.MaxOptions(width, height, uint8(*quality))
+			default:
+				jpegOpts = jpeg.BalancedOptions(width, height, uint8(*quality))
+			}
+
+			// Apply JPEG-specific options
+			jpegOpts.ColorType = jpegColorType
+			if *progressive {
+				jpegOpts.Progressive = true
+			}
+			if *trellis {
+				jpegOpts.TrellisQuant = true
+			}
+			if *optimizeHuffman {
+				jpegOpts.OptimizeHuffman = true
+			}
+			if *subsampling == "444" {
+				jpegOpts.Subsampling = jpeg.Subsampling444
+			}
+
+			if *verbose {
+				fmt.Printf("JPEG encoding with color type: %v\n", jpegColorType)
+				fmt.Printf("JPEG pixel data size: %d bytes\n", len(jpegPixels))
+			}
+
+			jpegEncoder, err := jpeg.NewEncoder(jpegOpts)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating JPEG encoder: %v\n", err)
+				os.Exit(1)
+			}
+			pngData, err = jpegEncoder.Encode(jpegPixels)
 		}
 		elapsed := time.Since(startTime).Milliseconds()
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
+			if *format == "png" {
+				fmt.Fprintf(os.Stderr, "Error encoding PNG: %v\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error encoding JPEG: %v\n", err)
+			}
 			os.Exit(1)
 		}
 

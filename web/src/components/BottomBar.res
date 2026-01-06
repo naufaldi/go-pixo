@@ -37,6 +37,10 @@ let make = (
   ~onDitheringStrengthChange,
   ~onQualityTargetChange,
   ~onZopfliIterationsChange,
+  ~onProgressiveChange,
+  ~onSubsamplingChange,
+  ~onTrellisChange,
+  ~onOptimizeHuffmanChange,
   ~onDownload,
   ~onDownloadAll,
   ~hasCompletedItems: bool,
@@ -59,6 +63,7 @@ let make = (
   }
 
   let isLosslessMode = lossless || isLossless(quantization)
+  let isJpeg = format === "JPEG"
 
   <div className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-6 py-3 flex items-center justify-between z-50">
     <div className="text-sm text-neutral-400">
@@ -169,6 +174,87 @@ let make = (
           className="w-16 bg-neutral-800 text-neutral-300 text-sm px-2 py-1 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
         />
       </div>
+
+      // JPEG-specific controls
+      {isJpeg
+        ? <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type_="checkbox"
+                checked={qualityTarget >= 90}
+                onChange={_e => {
+                  let checked = %raw("ReactEvent.Form.target(_e).checked")
+                  onQualityTargetChange(checked ? 90 : 75)
+                }}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
+              />
+              <span className="text-sm text-neutral-300">{React.string("High Quality")}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type_="checkbox"
+                checked={qualityTarget <= 60}
+                onChange={_e => {
+                  let checked = %raw("ReactEvent.Form.target(_e).checked")
+                  onQualityTargetChange(checked ? 60 : 75)
+                }}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
+              />
+              <span className="text-sm text-neutral-300">{React.string("Small Size")}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type_="checkbox"
+                onChange={_e => {
+                  let checked = %raw("ReactEvent.Form.target(_e).checked")
+                  onProgressiveChange(checked)
+                }}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
+              />
+              <span className="text-sm text-neutral-300">{React.string("Progressive")}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-sm text-neutral-400">{React.string("Subsampling:")}</span>
+              <select
+                onChange={_e => {
+                  let value = %raw("ReactEvent.Form.target(_e).value")
+                  onSubsamplingChange(value)
+                }}
+                className="bg-neutral-800 text-neutral-300 text-sm px-2 py-1 rounded border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+              >
+                <option value="420">{React.string("4:2:0")}</option>
+                <option value="444">{React.string("4:4:4")}</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type_="checkbox"
+                onChange={_e => {
+                  let checked = %raw("ReactEvent.Form.target(_e).checked")
+                  onTrellisChange(checked)
+                }}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
+              />
+              <span className="text-sm text-neutral-300">{React.string("Trellis")}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type_="checkbox"
+                onChange={_e => {
+                  let checked = %raw("ReactEvent.Form.target(_e).checked")
+                  onOptimizeHuffmanChange(checked)
+                }}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
+              />
+              <span className="text-sm text-neutral-300">{React.string("Optimize Huffman")}</span>
+            </label>
+          </div>
+        : React.null}
 
       <label className="flex items-center gap-2 cursor-pointer">
         <input

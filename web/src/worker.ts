@@ -6,6 +6,7 @@ interface CompressionRequest {
   width: number;
   height: number;
   colorType: number;
+  format: 'png' | 'jpeg';
   preset: number;
   lossy: boolean;
   maxColors: number;
@@ -13,6 +14,11 @@ interface CompressionRequest {
   ditherStrength?: number;
   qualityTarget?: number;
   zopfliIterations?: number;
+  // JPEG-specific options
+  progressive?: boolean;
+  subsampling?: '420' | '444';
+  trellis?: boolean;
+  optimizeHuffman?: boolean;
   originalFileBytes?: Uint8Array; // Original PNG file bytes for "never larger" guard
 }
 
@@ -178,6 +184,45 @@ function encodePngAdvanced(
   return result as Uint8Array;
 }
 
+// Encode JPEG using WASM with advanced parameters
+function encodeJpegAdvanced(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  colorType: number = 3,
+  quality: number = 85,
+  subsampling: number = 0, // 0 = 420, 1 = 444
+  progressive: boolean = false,
+  trellis: boolean = false,
+  optimizeHuffman: boolean = false,
+  preset: number = 1,
+): Uint8Array {
+  // @ts-ignore - encodeJpegAdvanced is exposed by Go WASM on the worker global
+  if (!(self as any).encodeJpegAdvanced) {
+    throw new Error("encodeJpegAdvanced not available");
+  }
+
+  // @ts-ignore - encodeJpegAdvanced is exposed by Go WASM on the worker global
+  const result = (self as any).encodeJpegAdvanced(
+    pixels,
+    width,
+    height,
+    colorType,
+    quality,
+    subsampling,
+    progressive,
+    trellis,
+    optimizeHuffman,
+    preset,
+  );
+
+  if (typeof result === "string" && result.startsWith("error:")) {
+    throw new Error(result);
+  }
+
+  return result as Uint8Array;
+}
+
 function recompressPngLossless(
   pngBytes: Uint8Array,
   preset: number,
@@ -268,36 +313,43 @@ self.onmessage = async (
 
         let compressedBytes: Uint8Array;
 
-        const useLosslessPngBytes =
-          req.lossy === false &&
-          req.originalFileBytes !== undefined &&
-          req.originalFileBytes.length > 0;
-
-        if (useLosslessPngBytes) {
-          const sendProgress = (phase: string, progress: number) => {
-            self.postMessage({
-              type: "progress",
-              id: req.id,
-              phase,
-              progress,
-            } as ProgressMessage);
-          };
-
-          compressedBytes = recompressPngLossless(
-            req.originalFileBytes,
+        // Handle JPEG encoding
+        if (req.format === 'jpeg') {
+          // Convert RGBA to RGB if needed
+          let jpegPixels = req.pixels;
+          let jpegColorType = req.colorType;
+          
+          if (req.colorType === 6) {
+            // RGBA to RGB conversion
+            jpegPixels = new Uint8Array(req.width * req.height * 3);
+            for (let i = 0; i < req.width * req.height; i++) {
+              jpegPixels[i * 3] = req.pixels[i * 4];
+              jpegPixels[i * 3 + 1] = req.pixels[i * 4 + 1];
+              jpegPixels[i * 3 + 2] = req.pixels[i * 4 + 2];
+            }
+            jpegColorType = 3; // RGB
+          }
+          
+          compressedBytes = encodeJpegAdvanced(
+            jpegPixels,
+            req.width,
+            req.height,
+            jpegColorType,
+            req.qualityTarget ?? 85,
+            req.subsampling === '444' ? 1 : 0,
+            req.progressive ?? false,
+            req.trellis ?? false,
+            req.optimizeHuffman ?? false,
             req.preset,
-            req.zopfliIterations ?? 0,
-            sendProgress,
           );
         } else {
-          // Determine if we should use advanced encoding
-          const useAdvanced =
-            (req.zopfliIterations !== undefined && req.zopfliIterations > 0) ||
-            req.ditherStrength !== undefined ||
-            req.qualityTarget !== undefined;
+          // Handle PNG encoding (existing logic)
+          const useLosslessPngBytes =
+            req.lossy === false &&
+            req.originalFileBytes !== undefined &&
+            req.originalFileBytes.length > 0;
 
-          if (useAdvanced) {
-            // Use advanced encoding with progress reporting
+          if (useLosslessPngBytes) {
             const sendProgress = (phase: string, progress: number) => {
               self.postMessage({
                 type: "progress",
@@ -307,32 +359,57 @@ self.onmessage = async (
               } as ProgressMessage);
             };
 
-            compressedBytes = encodePngAdvanced(
-              req.pixels,
-              req.width,
-              req.height,
-              req.colorType,
+            compressedBytes = recompressPngLossless(
+              req.originalFileBytes,
               req.preset,
-              req.lossy,
-              req.maxColors,
-              req.dithering,
-              req.ditherStrength ?? 0.5,
-              req.qualityTarget ?? 75,
               req.zopfliIterations ?? 0,
               sendProgress,
             );
           } else {
-            // Use basic encoding
-            compressedBytes = encodePng(
-              req.pixels,
-              req.width,
-              req.height,
-              req.colorType,
-              req.preset,
-              req.lossy,
-              req.maxColors,
-              req.dithering,
-            );
+            // Determine if we should use advanced encoding
+            const useAdvanced =
+              (req.zopfliIterations !== undefined && req.zopfliIterations > 0) ||
+              req.ditherStrength !== undefined ||
+              req.qualityTarget !== undefined;
+
+            if (useAdvanced) {
+              // Use advanced encoding with progress reporting
+              const sendProgress = (phase: string, progress: number) => {
+                self.postMessage({
+                  type: "progress",
+                  id: req.id,
+                  phase,
+                  progress,
+                } as ProgressMessage);
+              };
+
+              compressedBytes = encodePngAdvanced(
+                req.pixels,
+                req.width,
+                req.height,
+                req.colorType,
+                req.preset,
+                req.lossy,
+                req.maxColors,
+                req.dithering,
+                req.ditherStrength ?? 0.5,
+                req.qualityTarget ?? 75,
+                req.zopfliIterations ?? 0,
+                sendProgress,
+              );
+            } else {
+              // Use basic encoding
+              compressedBytes = encodePng(
+                req.pixels,
+                req.width,
+                req.height,
+                req.colorType,
+                req.preset,
+                req.lossy,
+                req.maxColors,
+                req.dithering,
+              );
+            }
           }
         }
 

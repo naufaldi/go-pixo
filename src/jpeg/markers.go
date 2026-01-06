@@ -60,7 +60,16 @@ func WriteDQT(w io.Writer, tableID uint8, table [64]uint8) error {
 
 // WriteSOF0 writes a Start of Frame (Baseline DCT) segment.
 func WriteSOF0(w io.Writer, width, height uint16, colorType ColorType, subsampling Subsampling) error {
-	if err := binary.Write(w, binary.BigEndian, SOF0); err != nil {
+	return writeSOF(w, SOF0, width, height, colorType, subsampling)
+}
+
+// WriteSOF2 writes a Start of Frame (Progressive DCT) segment.
+func WriteSOF2(w io.Writer, width, height uint16, colorType ColorType, subsampling Subsampling) error {
+	return writeSOF(w, SOF2, width, height, colorType, subsampling)
+}
+
+func writeSOF(w io.Writer, marker uint16, width, height uint16, colorType ColorType, subsampling Subsampling) error {
+	if err := binary.Write(w, binary.BigEndian, marker); err != nil {
 		return err
 	}
 
@@ -147,18 +156,16 @@ func WriteDHT(w io.Writer, tableID uint8, bits [16]uint8, vals []uint8) error {
 
 // WriteSOS writes a Start of Scan segment.
 func WriteSOS(w io.Writer, colorType ColorType) error {
-	if err := binary.Write(w, binary.BigEndian, SOS); err != nil {
-		return err
-	}
-
 	numComponents := uint8(colorType)
 	// Length (2 + 1 + numComponents * 2 + 3)
 	length := uint16(6 + uint16(numComponents)*2)
+
+	if err := binary.Write(w, binary.BigEndian, SOS); err != nil {
+		return err
+	}
 	if err := binary.Write(w, binary.BigEndian, length); err != nil {
 		return err
 	}
-
-	// Number of components in scan
 	if err := binary.Write(w, binary.BigEndian, numComponents); err != nil {
 		return err
 	}
@@ -185,6 +192,59 @@ func WriteSOS(w io.Writer, colorType ColorType) error {
 
 	// Ss (0), Se (63), Ah/Al (0) - Baseline markers
 	if _, err := w.Write([]byte{0x00, 0x3F, 0x00}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// WriteSOSProgressive writes a Start of Scan segment for a progressive scan.
+func WriteSOSProgressive(w io.Writer, scan *ScanSpec, colorType ColorType) error {
+	numComponents := uint8(len(scan.Components))
+	// Length (2 + 1 + numComponents * 2 + 3)
+	length := uint16(6 + uint16(numComponents)*2)
+
+	if err := binary.Write(w, binary.BigEndian, SOS); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.BigEndian, length); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.BigEndian, numComponents); err != nil {
+		return err
+	}
+
+	for _, compID := range scan.Components {
+		if err := binary.Write(w, binary.BigEndian, compID); err != nil {
+			return err
+		}
+		// Huffman table IDs
+		// Bits 7-4: DC entropy coding table destination selector
+		// Bits 3-0: AC entropy coding table destination selector
+		var selector uint8
+		if scan.SS == 0 {
+			// DC scan
+			dcID := uint8(0)
+			if compID > 1 {
+				dcID = 1
+			}
+			selector = (dcID << 4)
+		} else {
+			// AC scan
+			acID := uint8(0)
+			if compID > 1 {
+				acID = 1
+			}
+			selector = acID
+		}
+
+		if err := binary.Write(w, binary.BigEndian, selector); err != nil {
+			return err
+		}
+	}
+
+	// Ss, Se, Ah/Al
+	if _, err := w.Write([]byte{scan.SS, scan.SE, (scan.AH << 4) | scan.AL}); err != nil {
 		return err
 	}
 

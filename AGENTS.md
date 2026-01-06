@@ -1,53 +1,87 @@
-go-pixo: Go → WASM PNG compression, client-side only (no upload/API).
+# go-pixo Development Guide
 
-## Workflow
+Go → WASM PNG/JPEG compression library with web UI (client-side only).
 
-**Always follow this sequence for every task:**
+## Project Snapshot
 
-1. Implement & code the feature/fix
-2. Test Go: `go test ./...` (must pass)
-3. Lint Go: `golangci-lint run` (must pass, no warnings)
-4. Lint Web: `cd web && rescript build 2>&1 | grep -qi "Warning" && exit 1 || exit 0` (must pass, no warnings)
-5. Commit changes
+Simple monorepo with:
+- **Go backend** (PNG/JPEG encoders + WASM bridge)
+- **Web frontend** (React + Rescript + Vite)
+- **Documentation** (Learning materials in `docs/`)
 
-## Commands
+Each package has its own AGENTS.md - see JIT Index below.
+
+## Root Setup Commands
 
 ```bash
-# Testing Go
-go test ./...                       # All Go tests
-go test -run TestFunc ./src/pkg     # Single Go test
+# Install Go dependencies
+go mod download
 
-# Formatting & Linting Go
-go fmt ./...                        # Format Go code
-golangci-lint run                   # Comprehensive Go linting (no warnings allowed)
+# Install web dependencies  
+cd web && npm install
 
-# Pipeline Go (test then lint)
-go test ./... && golangci-lint run  # Full Go validation
+# Build WASM bridge
+./scripts/build-wasm.sh
 
-# Building
-./scripts/build-wasm.sh             # Build WASM
+# Run web dev server
+cd web && npm run dev
 
-# Web UI
-cd web && bun run dev               # Web UI dev
-
-# Web UI Linting
-cd web && rescript build 2>&1 | grep -qi "Warning" && echo "Warnings found!" && exit 1 || echo "No warnings"
-
-# Combined Lint (all code)
-golangci-lint run && cd web && rescript build 2>&1 | grep -qi "Warning" && exit 1 || exit 0
+# Run all tests
+go test ./... && cd web && npm test
 ```
 
-## Code Style
+## Universal Conventions
 
-**Imports**: std lib first, then local (full module path: `github.com/mac/go-pixo/src/...`)
-**Naming**: Exported PascalCase, private camelCase. Constants: Exported PascalCase, private camelCase
-**Error handling**: Return `error` as second value, never suppress
-**Testing**: Table-driven with `t.Run`, descriptive names
-**WASM code**: Use `//go:build js && wasm` build tag
-**Comments**: Godoc on exported functions
-**Rescript**: No warnings allowed, fix unused imports, shadowing, fragile patterns
-**Linting**: Both Go and Web must pass without warnings
+**Go Code Style**:
+- Imports: std lib first, then local (full module path)
+- Naming: Exported = PascalCase, private = camelCase
+- Error handling: Return `error` as second value, never suppress
+- Comments: Godoc on exported functions
 
-## Architecture
+**Web Code Style**:
+- Rescript + React functional components
+- Tailwind CSS for styling
+- TypeScript for type safety
+- No warnings allowed
 
-`png/` → PNG encoder, `compress/` → DEFLATE/zlib/CRC32, `wasm/` → syscall/js bridge, `cmd/wasm/` → WASM entrypoint, `web/` → Vite+TS+Tailwind UI
+**Testing**:
+- Go: Table-driven tests with `t.Run`
+- Web: Vitest for unit, Playwright for E2E
+
+## Security & Secrets
+
+- Never commit tokens, API keys, or credentials
+- Use `.env` files (already in `.gitignore`)
+- WASM compilation requires Go 1.25+ and wasm_exec.js
+
+## JIT Index (what to open, not what to paste)
+
+### Package Structure
+- Core compression: `src/compress/` → [see src/compress/AGENTS.md](src/compress/AGENTS.md)
+- PNG encoder: `src/png/` → [see src/png/AGENTS.md](src/png/AGENTS.md)
+- JPEG encoder: `src/jpeg/` → [see src/jpeg/AGENTS.md](src/jpeg/AGENTS.md)
+- WASM bridge: `src/wasm/` → [see src/wasm/AGENTS.md](src/wasm/AGENTS.md)
+- Web UI: `web/` → [see web/AGENTS.md](web/AGENTS.md)
+
+### Quick Find Commands
+```bash
+# Find Go function
+rg -n "func Name" src/**/*.go
+
+# Find Go test
+rg -n "func Test" src/**/*_test.go
+
+# Find React component
+rg -n "export.*Component" web/src/**/*.res
+
+# Find API/WASM bridge
+rg -n "//go:build js" src/wasm/*.go
+```
+
+## Definition of Done
+
+Before committing:
+- [ ] `go test ./...` passes
+- [ ] `golangci-lint run` passes (Go)
+- [ ] `cd web && npm run build` passes (Web)
+- [ ] All tests green (Go + Web)

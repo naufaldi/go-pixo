@@ -70,6 +70,10 @@ type appState = {
   ditherStrength: float,
   qualityTarget: int,
   zopfliIterations: int,
+  progressive: bool,
+  subsampling: string,
+  trellis: bool,
+  optimizeHuffman: bool,
   compressionProgress: option<compressionProgress>,
   compressionTime: option<int>,
 }

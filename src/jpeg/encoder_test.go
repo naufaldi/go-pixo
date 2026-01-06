@@ -10,7 +10,8 @@ import (
 func TestEncoder_1x1(t *testing.T) {
 	width, height := 1, 1
 	pixels := []byte{255, 0, 0} // Single Red pixel
-	encoder, _ := NewEncoder(width, height, ColorRGB, 75)
+	opts := BalancedOptions(width, height, 75)
+	encoder, _ := NewEncoder(opts)
 	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {
 		t.Fatalf("Encode failed: %v", err)
@@ -35,7 +36,9 @@ func TestEncoder_Grayscale(t *testing.T) {
 	for i := range pixels {
 		pixels[i] = uint8(i * 4)
 	}
-	encoder, _ := NewEncoder(width, height, ColorGrayscale, 75)
+	opts := BalancedOptions(width, height, 75)
+	opts.ColorType = ColorGrayscale
+	encoder, _ := NewEncoder(opts)
 	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {
 		t.Fatalf("Encode failed: %v", err)
@@ -53,7 +56,8 @@ func TestEncoder_Grayscale(t *testing.T) {
 func TestEncoder_NonMultipleOf8(t *testing.T) {
 	width, height := 10, 10
 	pixels := make([]byte, width*height*3)
-	encoder, _ := NewEncoder(width, height, ColorRGB, 75)
+	opts := BalancedOptions(width, height, 75)
+	encoder, _ := NewEncoder(opts)
 	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {
 		t.Fatalf("Encode failed: %v", err)
@@ -75,13 +79,58 @@ func TestEncoder_QualityLevels(t *testing.T) {
 		pixels[i] = uint8(i % 256)
 	}
 
-	eLow, _ := NewEncoder(width, height, ColorRGB, 10)
+	optsLow := BalancedOptions(width, height, 10)
+	eLow, _ := NewEncoder(optsLow)
 	jpegLow, _ := eLow.Encode(pixels)
 
-	eHigh, _ := NewEncoder(width, height, ColorRGB, 90)
+	optsHigh := BalancedOptions(width, height, 90)
+	eHigh, _ := NewEncoder(optsHigh)
 	jpegHigh, _ := eHigh.Encode(pixels)
 
 	if len(jpegLow) >= len(jpegHigh) {
 		t.Errorf("expected low quality JPEG (%d) to be smaller than high quality (%d)", len(jpegLow), len(jpegHigh))
+	}
+}
+
+func TestOptionsBuilder(t *testing.T) {
+	width, height := 64, 64
+	builder := NewOptionsBuilder(width, height)
+	opts := builder.Quality(85).
+		Subsampling(Subsampling420).
+		OptimizeHuffman(true).
+		Progressive(true).
+		Build()
+
+	if opts.Quality != 85 {
+		t.Errorf("expected quality 85, got %d", opts.Quality)
+	}
+	if opts.Subsampling != Subsampling420 {
+		t.Errorf("expected subsampling 420")
+	}
+	if !opts.OptimizeHuffman {
+		t.Errorf("expected OptimizeHuffman true")
+	}
+	if !opts.Progressive {
+		t.Errorf("expected Progressive true")
+	}
+}
+
+func TestPresets(t *testing.T) {
+	width, height := 64, 64
+	quality := uint8(75)
+
+	fast := FastOptions(width, height, quality)
+	if fast.Subsampling != Subsampling444 || fast.OptimizeHuffman || fast.Progressive {
+		t.Errorf("Fast preset incorrect: %+v", fast)
+	}
+
+	balanced := BalancedOptions(width, height, quality)
+	if balanced.Subsampling != Subsampling420 || balanced.OptimizeHuffman || balanced.Progressive {
+		t.Errorf("Balanced preset incorrect: %+v", balanced)
+	}
+
+	max := MaxOptions(width, height, quality)
+	if max.Subsampling != Subsampling420 || !max.OptimizeHuffman || !max.Progressive {
+		t.Errorf("Max preset incorrect: %+v", max)
 	}
 }

@@ -1,46 +1,11 @@
-//go:build js && wasm
-
 package wasm
 
 import (
 	"fmt"
-	"syscall/js"
 
 	"github.com/mac/go-pixo/src/jpeg"
 	"github.com/mac/go-pixo/src/png"
 )
-
-/**
- * HandleEncodeJpeg converts JS arguments to Go and calls EncodeJpeg.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number)
- */
-func HandleEncodeJpeg(this js.Value, args []js.Value) any {
-	if len(args) < 5 {
-		return js.ValueOf("invalid arguments: expected 5 arguments")
-	}
-
-	pixelsJS := args[0]
-	width := args[1].Int()
-	height := args[2].Int()
-	colorType := args[3].Int()
-	quality := args[4].Int()
-
-	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
-
-	// Call the actual implementation
-	output, err := EncodeJpeg(pixels, width, height, colorType, uint8(quality))
-	if err != nil {
-		return js.ValueOf(fmt.Sprintf("error: %v", err))
-	}
-
-	// Copy Go slice back to JS
-	dst := js.Global().Get("Uint8Array").New(len(output))
-	js.CopyBytesToJS(dst, output)
-
-	return dst
-}
 
 /**
  * EncodeJpeg encodes pixels as a JPEG image using the go-pixo JPEG encoder.
@@ -56,7 +21,10 @@ func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) 
 		return nil, fmt.Errorf("unsupported JPEG color type: %d", colorType)
 	}
 
-	encoder, err := jpeg.NewEncoder(width, height, jpegColorType, quality)
+	opts := jpeg.BalancedOptions(width, height, quality)
+	opts.ColorType = jpegColorType
+
+	encoder, err := jpeg.NewEncoder(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JPEG encoder: %w", err)
 	}
@@ -70,159 +38,66 @@ func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) 
 }
 
 /**
- * HandleEncodePng converts JS arguments to Go and calls EncodePng.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number)
+ * EncodeJpegAdvanced encodes pixels as a JPEG image with full control over all options.
+ * Parameters:
+ *   - pixels: raw pixel data
+ *   - width, height: image dimensions
+ *   - colorType: 1=grayscale, 3=RGB
+ *   - quality: 1-100 quality level
+ *   - subsampling: 0=4:2:0, 1=4:4:4
+ *   - progressive: enable progressive encoding
+ *   - trellis: enable trellis quantization
+ *   - optimizeHuffman: use optimized Huffman tables
+ *   - preset: 0=fast, 1=balanced, 2=max
  */
-func HandleEncodePng(this js.Value, args []js.Value) any {
-	if len(args) < 7 {
-		return js.ValueOf("invalid arguments")
+func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int) ([]byte, error) {
+	var jpegColorType jpeg.ColorType
+	switch colorType {
+	case 1:
+		jpegColorType = jpeg.ColorGrayscale
+	case 3:
+		jpegColorType = jpeg.ColorRGB
+	default:
+		return nil, fmt.Errorf("unsupported JPEG color type: %d", colorType)
 	}
 
-	pixelsJS := args[0]
-	width := args[1].Int()
-	height := args[2].Int()
-	colorType := args[3].Int()
-	preset := args[4].Int()
-	lossy := args[5].Bool()
-	maxColors := args[6].Int()
+	// Create options based on preset
+	var opts jpeg.Options
+	switch preset {
+	case 0: // Fast
+		opts = jpeg.FastOptions(width, height, quality)
+	case 2: // Max
+		opts = jpeg.MaxOptions(width, height, quality)
+	default: // Balanced
+		opts = jpeg.BalancedOptions(width, height, quality)
+	}
 
-	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
+	// Apply color type
+	opts.ColorType = jpegColorType
 
-	// Call the actual implementation
-	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors)
+	// Apply subsampling
+	if subsampling == 1 {
+		opts.Subsampling = jpeg.Subsampling444
+	} else {
+		opts.Subsampling = jpeg.Subsampling420
+	}
+
+	// Apply advanced options
+	opts.Progressive = progressive
+	opts.TrellisQuant = trellis
+	opts.OptimizeHuffman = optimizeHuffman
+
+	encoder, err := jpeg.NewEncoder(opts)
 	if err != nil {
-		return js.ValueOf(fmt.Sprintf("error: %v", err))
+		return nil, fmt.Errorf("failed to create JPEG encoder: %w", err)
 	}
 
-	// Copy Go slice back to JS
-	dst := js.Global().Get("Uint8Array").New(len(output))
-	js.CopyBytesToJS(dst, output)
-
-	return dst
-}
-
-/**
- * HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, progressCallback: function)
- */
-func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
-	if len(args) < 11 {
-		return js.ValueOf("invalid arguments: expected 11 arguments")
-	}
-
-	pixelsJS := args[0]
-	width := args[1].Int()
-	height := args[2].Int()
-	colorType := args[3].Int()
-	preset := args[4].Int()
-	lossy := args[5].Bool()
-	maxColors := args[6].Int()
-	dithering := args[7].Bool()
-	ditherStrength := args[8].Float()
-	qualityTarget := args[9].Int()
-	zopfliIterations := args[10].Int()
-
-	var progressFunc func(phase string, progress int)
-	if len(args) > 11 && args[11].Type() == js.TypeFunction {
-		cb := args[11]
-		progressFunc = func(phase string, progress int) {
-			cb.Invoke(phase, progress)
-		}
-	}
-
-	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
-
-	// Call the advanced implementation
-	output, err := EncodePngAdvanced(pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressFunc)
+	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {
-		return js.ValueOf(fmt.Sprintf("error: %v", err))
+		return nil, fmt.Errorf("failed to encode JPEG: %w", err)
 	}
 
-	// Copy Go slice back to JS
-	dst := js.Global().Get("Uint8Array").New(len(output))
-	js.CopyBytesToJS(dst, output)
-
-	return dst
-}
-
-/**
- * HandleBytesPerPixel returns the bytes per pixel for a given color type.
- * Expected arguments: (colorType: number)
- */
-func HandleBytesPerPixel(this js.Value, args []js.Value) any {
-	if len(args) < 1 {
-		return js.ValueOf(0)
-	}
-	colorType := args[0].Int()
-	return js.ValueOf(BytesPerPixel(colorType))
-}
-
-/**
- * HandleQuantizeInfo returns quantization capabilities.
- * No arguments required.
- */
-func HandleQuantizeInfo(this js.Value, args []js.Value) any {
-	return js.ValueOf(map[string]interface{}{
-		"maxColors":           256,
-		"ditheringSupported":  true,
-		"minColors":           2,
-		"maxDitherStrength":   1.0,
-		"minDitherStrength":   0.0,
-		"qualityTargetMin":    0,
-		"qualityTargetMax":    100,
-		"zopfliIterationsMax": 50,
-	})
-}
-
-/**
- * HandleGetPresets returns available compression presets.
- * No arguments required.
- */
-func HandleGetPresets(this js.Value, args []js.Value) any {
-	return js.ValueOf(map[string]interface{}{
-		"fast":     0,
-		"balanced": 1,
-		"max":      2,
-		"extreme":  3,
-	})
-}
-
-/**
- * HandleRecompressPngLossless recompresses an input PNG (provided as file bytes) in lossless mode.
- * Expected arguments: (pngBytes: Uint8Array, preset: number, zopfliIterations: number, progressCallback?: function)
- */
-func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
-	if len(args) < 3 {
-		return js.ValueOf("invalid arguments: expected 3 arguments")
-	}
-
-	pngBytesJS := args[0]
-	preset := args[1].Int()
-	zopfliIterations := args[2].Int()
-
-	var progressFunc func(phase string, progress int)
-	if len(args) > 3 && args[3].Type() == js.TypeFunction {
-		cb := args[3]
-		progressFunc = func(phase string, progress int) {
-			cb.Invoke(phase, progress)
-		}
-	}
-
-	input := make([]byte, pngBytesJS.Get("length").Int())
-	js.CopyBytesToGo(input, pngBytesJS)
-
-	output, err := RecompressPngLossless(input, preset, zopfliIterations, progressFunc)
-	if err != nil {
-		return js.ValueOf(fmt.Sprintf("error: %v", err))
-	}
-
-	dst := js.Global().Get("Uint8Array").New(len(output))
-	js.CopyBytesToJS(dst, output)
-	return dst
+	return jpegBytes, nil
 }
 
 /**
@@ -244,10 +119,6 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 
 	// Map ReScript presets to Go options
 	// ReScript: Smaller=0, Balanced=1, Faster=2
-	// Behavior:
-	// - Smaller (0): Maximum compression with quality preservation
-	// - Balanced (1): Standard trade-off
-	// - Faster (2): Fast encoding with size guarantee (output <= original)
 	var opts png.Options
 	switch preset {
 	case 0: // Smaller - Maximum compression
@@ -281,10 +152,6 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 }
 
 func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
-	// Map preset values to Options
-	// - Smaller (0): Maximum compression with quality preservation
-	// - Balanced (1): Standard trade-off
-	// - Faster (2): Fast with size guarantee
 	var opts png.Options
 	switch preset {
 	case 0: // Smaller
@@ -309,10 +176,6 @@ func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, pr
 
 /**
  * EncodePngAdvanced encodes pixels with full control over all compression options.
- * This function provides access to advanced features like:
- * - Zopfli iterations for better DEFLATE compression
- * - Configurable dithering strength
- * - Quality target for lossy compression
  */
 func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
 	var pngColorType png.ColorType
@@ -327,11 +190,6 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		return nil, fmt.Errorf("unsupported color type: %d", colorType)
 	}
 
-	// Map preset values to Options
-	// - Smaller (0): Maximum compression with quality preservation
-	// - Balanced (1): Standard trade-off
-	// - Faster (2): Fast with size guarantee
-	// - Extreme (3): Maximum compression with Zopfli iterations
 	var opts png.Options
 	switch preset {
 	case 0: // Smaller
@@ -347,26 +205,21 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 	}
 	opts.ColorType = pngColorType
 
-	// Apply progress callback
 	if progressFunc != nil {
 		opts.ProgressCallback = progressFunc
 	}
 
-	// Apply advanced options
 	if zopfliIterations > 0 {
 		opts.ZopfliIterations = zopfliIterations
 	}
 
-	// Apply lossy options if enabled
 	if lossy && maxColors > 0 && maxColors <= 256 {
-		// Clamp quality target to valid range
 		if qualityTarget < 0 {
 			qualityTarget = 0
 		}
 		if qualityTarget > 100 {
 			qualityTarget = 100
 		}
-		// Clamp dither strength to valid range
 		if ditherStrength < 0 {
 			ditherStrength = 0
 		}
@@ -377,7 +230,6 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		opts.ApplyLossy(maxColors, qualityTarget, ditherStrength)
 		opts.ColorType = png.ColorIndexed
 	} else if dithering {
-		// Lossless mode with dithering for indexed color
 		opts.Dithering = true
 		opts.DitheringStrength = ditherStrength
 	}
