@@ -107,10 +107,10 @@ jobs:
             echo "  - VPS_USERNAME: SSH username for deployment"
             echo "  - SSH_PRIVATE_KEY: Private SSH key for authentication"
             echo ""
-            echo "::set-output name=can_deploy::false"
+            echo "can_deploy=false" >> $GITHUB_OUTPUT
           else
             echo "✅ All required deployment secrets are present"
-            echo "::set-output name=can_deploy::true"
+            echo "can_deploy=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Check if deployment should proceed
@@ -118,10 +118,10 @@ jobs:
         run: |
           if [ "${{ steps.validate-secrets.outputs.can_deploy }}" = "false" ]; then
             echo "Deployment skipped due to missing secrets"
-            echo "::set-output name=should_skip::true"
+            echo "should_skip=true" >> $GITHUB_OUTPUT
           else
             echo "Proceeding with deployment"
-            echo "::set-output name=should_skip::false"
+            echo "should_skip=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Deploy to VPS
