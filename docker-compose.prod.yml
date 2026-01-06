@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   app:
-    image: ghcr.io/mac/go-pixo:prod
+    image: ghcr.io/naufaldi/go-pixo:prod
     labels:
       - "caddy=go-pixo.faldi.xyz"
       - "caddy.reverse_proxy={{upstreams 3000}}"
