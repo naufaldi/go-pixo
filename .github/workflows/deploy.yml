@@ -73,8 +73,8 @@ jobs:
           push: true
           no-cache: true
           tags: |
-            ghcr.io/mac/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
-            ghcr.io/mac/go-pixo:prod
+            ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
+            ghcr.io/naufaldi/go-pixo:prod
 
   deploy:
     runs-on: ubuntu-latest
@@ -97,14 +97,14 @@ jobs:
 
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-            docker pull ghcr.io/mac/go-pixo:prod
+            docker pull ghcr.io/naufaldi/go-pixo:prod
 
             cat > docker-compose.prod.yml << 'EOL'
             version: '3.8'
 
             services:
               app:
-                image: ghcr.io/mac/go-pixo:prod
+                image: ghcr.io/naufaldi/go-pixo:prod
                 labels:
                   - "caddy=go-pixo.faldi.xyz"
                   - "caddy.reverse_proxy={{upstreams 3000}}"
