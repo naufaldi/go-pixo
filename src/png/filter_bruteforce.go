@@ -1,5 +1,7 @@
 package png
 
+import "github.com/mac/go-pixo/src/compress"
+
 // BruteForceFilters tries all filter combinations for each row to find optimal selection.
 // For small images (below threshold), this exhaustive search finds the best possible filter per row.
 // This is O(5^height) which is only feasible for small images.
@@ -127,21 +129,8 @@ func compressWithFilters(dataWithFilters []byte) []byte {
 
 // compressSingleRow compresses a single row of filtered data for comparison.
 func compressSingleRow(filteredRow []byte) []byte {
-	// Create a minimal DEFLATE encoder for comparison
-	// This is a simplified version for filter selection
-	if len(filteredRow) == 0 {
-		return []byte{}
-	}
-
-	// For comparison purposes, we use a simple compression estimate
-	// In practice, we'd use the full DEFLATE encoder
-	estimate := len(filteredRow)
-	if estimate < 5 {
-		estimate = 5
-	}
-	result := make([]byte, estimate)
-	copy(result, filteredRow)
-	return result
+	size, _ := compress.EstimateCompressedSize(filteredRow)
+	return make([]byte, size)
 }
 
 // OptimalFiltersForImage determines the optimal filter strategy based on image size.

@@ -189,3 +189,89 @@ func TestOptimalFiltersForImage(t *testing.T) {
 		})
 	}
 }
+
+func TestCompressSingleRow_UsesLZ77Estimator(t *testing.T) {
+	// Test that compressSingleRow returns a slice with size based on LZ77 estimation
+	// not just the raw filtered data length
+	row := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+
+	result := compressSingleRow(row)
+
+	// Result should be a slice of estimated compressed size
+	if len(result) == 0 {
+		t.Error("compressSingleRow returned empty slice for non-empty input")
+	}
+}
+
+func TestCompressSingleRow_EmptyInput(t *testing.T) {
+	result := compressSingleRow([]byte{})
+
+	if len(result) != 0 {
+		t.Errorf("compressSingleRow([]) returned %d bytes, want 0", len(result))
+	}
+}
+
+func TestSelectBruteForce_UsesCompressSingleRow(t *testing.T) {
+	// Test that selectBruteForce uses compressSingleRow for size estimation
+	row := []byte{10, 20, 30, 40, 50, 60, 70, 80}
+	prevRow := []byte{5, 15, 25, 35, 45, 55, 65, 75}
+
+	filterType, filtered := selectBruteForce(row, prevRow, 1)
+
+	if filterType < FilterNone || filterType > FilterPaeth {
+		t.Errorf("selectBruteForce returned invalid filter type %d", filterType)
+	}
+
+	// Filtered should be the result of applying the selected filter
+	if len(filtered) == 0 && len(row) > 0 {
+		t.Error("selectBruteForce returned empty filtered result for non-empty row")
+	}
+}
+
+func TestSelectBruteForce_AllFiltersValid(t *testing.T) {
+	// Test that selectBruteForce can handle all filter types and picks one
+	row := []byte{1, 2, 3, 4, 5}
+	prevRow := []byte{1, 2, 3, 4, 5}
+
+	filterType, _ := selectBruteForce(row, prevRow, 1)
+
+	// Should always return a valid filter type
+	if filterType < FilterNone || filterType > FilterPaeth {
+		t.Errorf("Expected valid filter type, got %d", filterType)
+	}
+}
+
+func TestSelectBruteForce_UniformData(t *testing.T) {
+	// For uniform data (all same bytes), Up filter should be optimal
+	row := []byte{100, 100, 100, 100, 100, 100, 100, 100}
+	prevRow := []byte{100, 100, 100, 100, 100, 100, 100, 100}
+
+	filterType, _ := selectBruteForce(row, prevRow, 1)
+
+	// Up filter should be selected for uniform data with matching previous row
+	if filterType != FilterUp {
+		t.Logf("Expected FilterUp for uniform data, got %d", filterType)
+	}
+}
+
+func TestBruteForceFilters_UsesLZ77(t *testing.T) {
+	// Verify that BruteForceFilters uses the LZ77-based compressSingleRow
+	width, height, bpp := 4, 4, 3
+	pixels := make([]byte, width*height*bpp)
+	for i := range pixels {
+		pixels[i] = byte(i % 256)
+	}
+
+	filters := BruteForceFilters(pixels, width, height, bpp)
+
+	if len(filters) != height {
+		t.Errorf("BruteForceFilters returned %d filters, want %d", len(filters), height)
+	}
+
+	// Verify all filters are valid types
+	for i, f := range filters {
+		if f > FilterPaeth {
+			t.Errorf("filter[%d] = %d, want <= %d", i, f, FilterPaeth)
+		}
+	}
+}

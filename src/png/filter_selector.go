@@ -163,7 +163,8 @@ func selectBruteForce(row []byte, prevRow []byte, bpp int) (FilterType, []byte) 
 
 	for _, f := range filters {
 		filtered := f.fn()
-		size := len(filtered)
+		compressed := compressSingleRow(filtered)
+		size := len(compressed)
 		if bestSize < 0 || size < bestSize {
 			bestSize = size
 			bestFilter = f.typ
