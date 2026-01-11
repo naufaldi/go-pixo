@@ -177,7 +177,18 @@ func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, pr
 /**
  * EncodePngAdvanced encodes pixels with full control over all compression options.
  */
-func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
+func EncodePngAdvanced(
+	pixels []byte, width, height int, colorType, preset int,
+	lossy bool, maxColors int,
+	dithering bool, ditherStrength float64, qualityTarget int,
+	zopfliIterations int,
+	filterStrategy int,
+	usePerceptual bool,
+	distanceMetric int,
+	optimalDeflate bool,
+	filterEarlyTerm bool,
+	progressFunc func(string, int),
+) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
 	case 0:
@@ -211,7 +222,23 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 
 	if zopfliIterations > 0 {
 		opts.ZopfliIterations = zopfliIterations
+		opts.ZopfliEnabled = true
 	}
+
+	// Apply filter strategy if provided (non-default)
+	if filterStrategy >= 0 && filterStrategy <= 11 {
+		opts.FilterStrategy = png.FilterStrategy(filterStrategy)
+	}
+
+	// Apply other Phase 11 options
+	opts.UsePerceptualDistance = usePerceptual
+	if distanceMetric == 1 {
+		opts.DistanceMetric = png.DistanceMetricRedmean
+	} else {
+		opts.DistanceMetric = png.DistanceMetricEuclidean
+	}
+	opts.OptimalDeflate = optimalDeflate
+	opts.FilterEarlyTermination = filterEarlyTerm
 
 	if lossy && maxColors > 0 && maxColors <= 256 {
 		if qualityTarget < 0 {

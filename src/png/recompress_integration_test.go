@@ -11,7 +11,14 @@ import (
 )
 
 func TestRecompressPNGBytesLossless_CursorMeetup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping fixture-based test in short mode")
+	}
+
 	inputPath := "../../images/cursor-meetup.png"
+	if _, err := os.Stat(inputPath); os.IsNotExist(err) {
+		t.Skipf("fixture not found: %s", inputPath)
+	}
 	in, err := os.ReadFile(inputPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", inputPath, err)

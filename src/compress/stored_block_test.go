@@ -247,7 +247,7 @@ func TestStoredBlockBytes(t *testing.T) {
 			name:        "exceeds max size",
 			data:        make([]byte, 65536),
 			final:       true,
-			expectError: true,
+			expectError: false,
 		},
 	}
 
@@ -264,40 +264,85 @@ func TestStoredBlockBytes(t *testing.T) {
 				t.Fatalf("StoredBlockBytes(%v, %v) error = %v, want nil", tt.data, tt.final, err)
 			}
 
-			// Verify header
-			if tt.final {
-				if result[0] != 0x01 {
-					t.Errorf("Header byte = 0x%02X, want 0x01", result[0])
+			if len(tt.data) <= 65535 {
+				// Single block case
+				// Verify header
+				if tt.final {
+					if result[0] != 0x01 {
+						t.Errorf("Header byte = 0x%02X, want 0x01", result[0])
+					}
+				} else {
+					if result[0] != 0x00 {
+						t.Errorf("Header byte = 0x%02X, want 0x00", result[0])
+					}
+				}
+
+				// Verify LEN/NLEN
+				expectedLen := uint16(len(tt.data))
+				gotLen := binary.LittleEndian.Uint16(result[1:3])
+				if gotLen != expectedLen {
+					t.Errorf("LEN = %d, want %d", gotLen, expectedLen)
+				}
+
+				gotNlen := binary.LittleEndian.Uint16(result[3:5])
+				expectedNlen := ^expectedLen
+				if gotNlen != expectedNlen {
+					t.Errorf("NLEN = 0x%04X, want 0x%04X", gotNlen, expectedNlen)
+				}
+
+				// Verify data
+				dataResult := result[5:]
+				if !bytes.Equal(dataResult, tt.data) {
+					t.Errorf("Data = %v, want %v", dataResult, tt.data)
+				}
+
+				// Verify total length
+				expectedTotal := 1 + 4 + len(tt.data)
+				if len(result) != expectedTotal {
+					t.Errorf("Total length = %d, want %d", len(result), expectedTotal)
 				}
 			} else {
-				if result[0] != 0x00 {
-					t.Errorf("Header byte = 0x%02X, want 0x00", result[0])
+				// Multi-block case: verify multiple blocks exist
+				numBlocks := 0
+				pos := 0
+				for pos < len(result) {
+					header := result[pos]
+					// Verify stored block type (header byte must be 0x00 or 0x01 per codebase convention)
+					// where 0x00 = non-final stored, 0x01 = final stored
+					if header != 0x00 && header != 0x01 {
+						t.Errorf("Block %d has invalid header (expected 0x00 or 0x01, got 0x%02X)", numBlocks, header)
+					}
+					numBlocks++
+					// Skip to next block: 1 header + 4 footer + data length
+					dataLen := binary.LittleEndian.Uint16(result[pos+1 : pos+3])
+					pos += 1 + 4 + int(dataLen)
 				}
-			}
 
-			// Verify LEN/NLEN
-			expectedLen := uint16(len(tt.data))
-			gotLen := binary.LittleEndian.Uint16(result[1:3])
-			if gotLen != expectedLen {
-				t.Errorf("LEN = %d, want %d", gotLen, expectedLen)
-			}
+				// Verify we have multiple blocks for data > 65535
+				if numBlocks < 2 {
+					t.Errorf("Expected multiple blocks for data size %d, got %d blocks", len(tt.data), numBlocks)
+				}
 
-			gotNlen := binary.LittleEndian.Uint16(result[3:5])
-			expectedNlen := ^expectedLen
-			if gotNlen != expectedNlen {
-				t.Errorf("NLEN = 0x%04X, want 0x%04X", gotNlen, expectedNlen)
-			}
+				// Extract data by iterating through blocks and concatenating
+				var extractedData []byte
+				extractPos := 0
+				for extractPos < len(result) {
+					dataLen := binary.LittleEndian.Uint16(result[extractPos+1 : extractPos+3])
+					dataStart := extractPos + 5
+					extractedData = append(extractedData, result[dataStart:dataStart+int(dataLen)]...)
+					extractPos += 1 + 4 + int(dataLen)
+				}
 
-			// Verify data
-			dataResult := result[5:]
-			if !bytes.Equal(dataResult, tt.data) {
-				t.Errorf("Data = %v, want %v", dataResult, tt.data)
-			}
+				if !bytes.Equal(extractedData, tt.data) {
+					t.Errorf("Data content mismatch: extracted %d bytes, want %d bytes", len(extractedData), len(tt.data))
+				}
 
-			// Verify total length
-			expectedTotal := 1 + 4 + len(tt.data)
-			if len(result) != expectedTotal {
-				t.Errorf("Total length = %d, want %d", len(result), expectedTotal)
+				// Verify total output length accounts for multiple blocks
+				expectedBlocks := (len(tt.data) + 65534) / 65535
+				expectedTotal := expectedBlocks*5 + len(tt.data)
+				if len(result) != expectedTotal {
+					t.Errorf("Total length = %d, want %d (for %d blocks)", len(result), expectedTotal, expectedBlocks)
+				}
 			}
 		})
 	}

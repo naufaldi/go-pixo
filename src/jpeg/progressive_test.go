@@ -16,7 +16,7 @@ func TestProgressiveJPEG(t *testing.T) {
 
 	opts := BalancedOptions(width, height, 75)
 	opts.Progressive = true
-	
+
 	encoder, _ := NewEncoder(opts)
 	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestProgressiveJPEG_Grayscale(t *testing.T) {
 	opts := BalancedOptions(width, height, 75)
 	opts.Progressive = true
 	opts.ColorType = ColorGrayscale
-	
+
 	encoder, _ := NewEncoder(opts)
 	jpegBytes, err := encoder.Encode(pixels)
 	if err != nil {

@@ -71,7 +71,7 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 	processedPixels := pixels
 
 	// 0. Quantization (Lossy) - before other optimizations
-	if opts.MaxColors > 0 && opts.MaxColors < 256 {
+	if opts.MaxColors > 0 && opts.MaxColors <= 256 {
 		var indexedPixels []byte
 		var palette Palette
 

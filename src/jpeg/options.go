@@ -21,30 +21,36 @@ const (
 
 // Options represents JPEG encoding options.
 type Options struct {
-	Width           int
-	Height          int
-	ColorType       ColorType
-	Quality         uint8
-	Subsampling     Subsampling
-	OptimizeHuffman bool
-	Progressive     bool
-	TrellisQuant    bool
-	RestartInterval *uint16
+	Width             int
+	Height            int
+	ColorType         ColorType
+	Quality           uint8
+	Subsampling       Subsampling
+	OptimizeHuffman   bool
+	Progressive       bool
+	TrellisQuant      bool
+	TrellisLambda     float64
+	TrellisPerceptual bool
+	RestartInterval   *uint16
+	UseSIMD           bool
 }
 
 // FastOptions returns options optimized for speed.
 // Uses 4:4:4 subsampling, standard tables, and baseline encoding.
 func FastOptions(width, height int, quality uint8) Options {
 	return Options{
-		Width:           width,
-		Height:          height,
-		ColorType:       ColorRGB,
-		Quality:         quality,
-		Subsampling:     Subsampling444,
-		OptimizeHuffman: false,
-		Progressive:     false,
-		TrellisQuant:    false,
-		RestartInterval: nil,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGB,
+		Quality:           quality,
+		Subsampling:       Subsampling444,
+		OptimizeHuffman:   false,
+		Progressive:       false,
+		TrellisQuant:      false,
+		TrellisLambda:     1.0,
+		TrellisPerceptual: true,
+		RestartInterval:   nil,
+		UseSIMD:           true,
 	}
 }
 
@@ -52,31 +58,40 @@ func FastOptions(width, height int, quality uint8) Options {
 // Uses 4:2:0 subsampling, standard tables, and baseline encoding.
 func BalancedOptions(width, height int, quality uint8) Options {
 	return Options{
-		Width:           width,
-		Height:          height,
-		ColorType:       ColorRGB,
-		Quality:         quality,
-		Subsampling:     Subsampling420,
-		OptimizeHuffman: false,
-		Progressive:     false,
-		TrellisQuant:    false,
-		RestartInterval: nil,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGB,
+		Quality:           quality,
+		Subsampling:       Subsampling420,
+		OptimizeHuffman:   false,
+		Progressive:       false,
+		TrellisQuant:      false,
+		TrellisLambda:     1.0,
+		TrellisPerceptual: true,
+		RestartInterval:   nil,
+		UseSIMD:           true,
 	}
 }
 
 // MaxOptions returns options for maximum compression.
-// Uses 4:2:0 subsampling, optimized Huffman tables, progressive encoding, and trellis quantization.
+// Uses 4:2:0 subsampling, progressive encoding, and trellis quantization.
+// Note: Optimized Huffman is disabled when trellis is enabled because the
+// optimized tables are built based on standard quantization, but trellis
+// produces different coefficients that would mismatch.
 func MaxOptions(width, height int, quality uint8) Options {
 	return Options{
-		Width:           width,
-		Height:          height,
-		ColorType:       ColorRGB,
-		Quality:         quality,
-		Subsampling:     Subsampling420,
-		OptimizeHuffman: true,
-		Progressive:     true,
-		TrellisQuant:    true, // Enabled for maximum compression
-		RestartInterval: nil,
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGB,
+		Quality:           quality,
+		Subsampling:       Subsampling420,
+		OptimizeHuffman:   true,
+		Progressive:       true,
+		TrellisQuant:      true,
+		TrellisLambda:     1.0,
+		TrellisPerceptual: true,
+		RestartInterval:   nil,
+		UseSIMD:           true,
 	}
 }
 

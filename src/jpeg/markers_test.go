@@ -60,7 +60,7 @@ func TestWriteDHT(t *testing.T) {
 	if err := WriteDHT(buf, 0, bits, vals); err != nil {
 		t.Fatal(err)
 	}
-	if buf.Len() != 2 + 2 + 1 + 16 + 1 {
+	if buf.Len() != 2+2+1+16+1 {
 		t.Errorf("expected length 21, got %d", buf.Len())
 	}
 }

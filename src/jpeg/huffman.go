@@ -1,5 +1,11 @@
 package jpeg
 
+var huffmanCache = NewHuffmanCache()
+
+func init() {
+	huffmanCache.Prewarm()
+}
+
 // HuffCode represents a Huffman code and its bit length.
 type HuffCode struct {
 	Code   uint16
@@ -65,6 +71,7 @@ var (
 )
 
 // NewHuffmanTables creates standard JPEG Huffman tables.
+// Uses cache for improved performance when called with standard parameters.
 func NewHuffmanTables() *HuffmanTables {
 	ht := &HuffmanTables{
 		DCLumBits:   stdDCLumBits,
@@ -83,6 +90,18 @@ func NewHuffmanTables() *HuffmanTables {
 	ht.ACChromCodes = buildCodeTable256(stdACChromBits, stdACChromVals)
 
 	return ht
+}
+
+// GetStandardHuffmanTables returns cached standard Huffman tables for the given quality and subsampling.
+// This is the preferred way to get Huffman tables for encoding.
+func GetStandardHuffmanTables(quality uint8, subsampling Subsampling) *HuffmanTables {
+	return huffmanCache.GetHuffmanTables(quality, subsampling, false)
+}
+
+// GetOptimizedHuffmanTables returns cached optimized Huffman tables for the given quality and subsampling.
+// For optimized tables, the caller is responsible for building them based on actual image data.
+func GetOptimizedHuffmanTables(quality uint8, subsampling Subsampling) *HuffmanTables {
+	return huffmanCache.GetHuffmanTables(quality, subsampling, true)
 }
 
 func buildCodeTable12(bits [16]uint8, vals []uint8) [12]HuffCode {

@@ -1,7 +1,10 @@
 package png
 
 import (
+	"bytes"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/mac/go-pixo/src/compress"
 )
@@ -74,6 +77,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 // The pixels parameter contains all scanline data with filter bytes prepended.
 // This function uses size comparison fallback: if DEFLATE doesn't reduce the size,
 // it falls back to stored blocks (uncompressed) to ensure the output is never larger.
+// When ZopfliEnabled is true, uses Zopfli iterative compression for maximum compression.
 func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
@@ -86,26 +90,62 @@ func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 	encoder := compress.NewDeflateEncoder()
 	encoder.SetCompressionLevel(opts.CompressionLevel)
 
-	if opts.ProgressCallback != nil {
-		encoder.ProgressCallback = func(iteration, total int) {
-			percent := int(float64(iteration) / float64(total) * 100)
-			opts.ProgressCallback("deflate", percent)
-		}
-	}
-
 	var deflateData []byte
-	if opts.OptimalDeflate {
-		iterations := opts.ZopfliIterations
-		if iterations <= 0 {
-			iterations = 15
+
+	if opts.ZopfliEnabled {
+		deflateData, err = buildZlibDataWithZopfli(pixels, opts)
+		if err != nil {
+			log.Printf("png: Zopfli compression failed, falling back to standard DEFLATE: %v", err)
+			deflateData, err = encoder.EncodeAuto(pixels)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compress scanline data: %w", err)
+			}
 		}
-		deflateData, err = encoder.EncodeOptimalWithConfig(pixels, iterations, true)
+	} else if opts.OptimalDeflate {
+		// Use optimal DEFLATE parsing for better compression
+		config := opts.OptimalConfig
+		if config.MaxIterations <= 0 {
+			config = compress.OptimalConfigForLevel(opts.CompressionLevel)
+		}
+
+		// Set up progress callback if provided
+		if opts.ProgressCallback != nil {
+			config.ProgressCallback = func(iteration, improvement float64) {
+				percent := int(iteration / float64(config.MaxIterations) * 100)
+				if percent > 100 {
+					percent = 100
+				}
+				opts.ProgressCallback("deflate", percent)
+			}
+		}
+
+		// Use optimal parsing for better compression ratios (3-8% improvement)
+		tokens, err := compress.OptimalParse(pixels, config)
+		if err != nil {
+			// Fallback to standard encoding
+			deflateData, err = encoder.EncodeAuto(pixels)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compress scanline data: %w", err)
+			}
+		} else {
+			// Encode tokens to DEFLATE format
+			var buf bytes.Buffer
+			if err := compress.WriteDynamicBlock(&buf, true, tokens); err != nil {
+				// Fallback to standard encoding
+				deflateData, err = encoder.EncodeAuto(pixels)
+				if err != nil {
+					return nil, fmt.Errorf("failed to compress scanline data: %w", err)
+				}
+			} else {
+				deflateData = buf.Bytes()
+			}
+		}
 	} else {
 		// Use fallback: if DEFLATE doesn't help, use stored blocks
 		deflateData, err = encoder.EncodeWithFallback(pixels)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress scanline data: %w", err)
+		}
 	}
 
 	// Write Adler32 checksum of the uncompressed scanline data
@@ -124,6 +164,49 @@ func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 	stdlibZlib, stdlibErr := compress.ZlibCompressStdlib(pixels, opts.CompressionLevel)
 	if stdlibErr == nil && len(stdlibZlib) > 0 && len(stdlibZlib) < len(result) {
 		return stdlibZlib, nil
+	}
+
+	return result, nil
+}
+
+// buildZlibDataWithZopfli compresses data using Zopfli iterative compression.
+// It uses the Options.ZopfliIterations, ZopfliBlockSplitting, and ZopfliSplitThreshold settings.
+// A progress callback can be provided to track iteration progress.
+func buildZlibDataWithZopfli(pixels []byte, opts Options) ([]byte, error) {
+	if len(pixels) == 0 {
+		return []byte{}, nil
+	}
+
+	iterations := opts.ZopfliIterations
+	if iterations <= 0 {
+		iterations = compress.DefaultZopfliIterations
+	}
+
+	config := compress.NewZopfliIterationConfig()
+	config.Iterations = iterations
+	config.BlockSplitting = opts.ZopfliBlockSplitting
+	config.SplitThreshold = opts.ZopfliSplitThreshold
+
+	if opts.ProgressCallback != nil {
+		config.ProgressCallback = func(iteration, improvement float64, size int) {
+			percent := int(float64(iteration) / float64(iterations) * 100)
+			if percent > 100 {
+				percent = 100
+			}
+			opts.ProgressCallback("deflate", percent)
+		}
+	}
+
+	startTime := time.Now()
+	result, err := compress.ZopfliIterate(pixels, config)
+	elapsed := time.Since(startTime)
+
+	if elapsed > 5*time.Second {
+		log.Printf("png: Zopfli iteration took %v (%d iterations)", elapsed, iterations)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("Zopfli compression failed: %w", err)
 	}
 
 	return result, nil

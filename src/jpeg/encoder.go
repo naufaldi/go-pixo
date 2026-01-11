@@ -6,7 +6,16 @@ import (
 
 // Encoder represents a JPEG encoder.
 type Encoder struct {
-	Options Options
+	Options       Options
+	trellisConfig TrellisConfig
+	dctSIMD       *DCTSIMD
+	cacheStats    *CacheStats
+}
+
+// CacheStats tracks cache hit/miss statistics for Huffman tables.
+type CacheStats struct {
+	Hits   int64
+	Misses int64
 }
 
 // NewEncoder creates a new JPEG encoder with the given options.
@@ -21,8 +30,22 @@ func NewEncoder(opts Options) (*Encoder, error) {
 		return nil, ErrInvalidQuality
 	}
 
+	var dct *DCTSIMD
+	if opts.UseSIMD {
+		dct = DetectCPUFeatures()
+	}
+
+	trellisConfig := TrellisConfig{
+		Lambda:        opts.TrellisLambda,
+		MaxIterations: 64,
+		UsePerceptual: opts.TrellisPerceptual,
+	}
+
 	return &Encoder{
-		Options: opts,
+		Options:       opts,
+		trellisConfig: trellisConfig,
+		dctSIMD:       dct,
+		cacheStats:    &CacheStats{},
 	}, nil
 }
 
@@ -76,11 +99,21 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 	}
 
 	// Create Huffman tables
+	// Note: When trellis quantization is enabled, we use standard Huffman tables
+	// because the optimized tables are built based on standard quantization,
+	// but trellis produces different coefficients that would mismatch.
 	var ht *HuffmanTables
-	if e.Options.OptimizeHuffman {
+	if e.Options.OptimizeHuffman && !e.Options.TrellisQuant {
 		ht = BuildOptimizedTables(pixels, e.Options.Width, e.Options.Height, e.Options.ColorType, e.Options.Subsampling, qt)
 	} else {
-		ht = NewHuffmanTables()
+		ht = GetStandardHuffmanTables(e.Options.Quality, e.Options.Subsampling)
+	}
+
+	// Update cache stats
+	if e.cacheStats != nil {
+		hits, misses := huffmanCache.Stats()
+		e.cacheStats.Hits = hits
+		e.cacheStats.Misses = misses
 	}
 
 	// Write DHT segments
@@ -369,7 +402,12 @@ func (e *Encoder) encodeProgressive(buf *bytes.Buffer, pixels []byte, ht *Huffma
 }
 
 func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *QuantizationTables) [64]int16 {
-	dct := ForwardDCT(block)
+	var dct [64]float32
+	if e.dctSIMD != nil && e.dctSIMD.PreferredMethod != "scalar" {
+		dct = ForwardDCTSIMD(block)
+	} else {
+		dct = ForwardDCT(block)
+	}
 	var qTable [64]float32
 	if isLuminance {
 		qTable = qt.Luminance
@@ -377,14 +415,11 @@ func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *Quantiz
 		qTable = qt.Chrominance
 	}
 
-	// Use trellis quantization if enabled
 	if e.Options.TrellisQuant {
-		lambda := CalculateLambda(e.Options.Quality)
-		quantized := TrellisQuantize(dct, qTable, lambda)
+		quantized := TrellisOptimizeWithConfig(dct, qTable, e.trellisConfig)
 		return ZigzagReorder(quantized)
 	}
 
-	// Standard quantization
 	quantized := QuantizeBlock(dct, qTable)
 	return ZigzagReorder(quantized)
 }
@@ -424,4 +459,22 @@ func (e *Encoder) encodeComponentBlock(bw *BitWriter, block [64]float32, prevDC 
 	}
 
 	return dc, nil
+}
+
+// GetCacheStats returns the current cache statistics for this encoder.
+func (e *Encoder) GetCacheStats() CacheStats {
+	if e.cacheStats == nil {
+		return CacheStats{}
+	}
+	return *e.cacheStats
+}
+
+// GetGlobalCacheHitRate returns the global cache hit rate.
+func (e *Encoder) GetGlobalCacheHitRate() float64 {
+	return huffmanCache.HitRate()
+}
+
+// GetGlobalCacheStats returns the global cache statistics.
+func (e *Encoder) GetGlobalCacheStats() (hits, misses int64) {
+	return huffmanCache.Stats()
 }

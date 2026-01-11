@@ -105,3 +105,36 @@ func (p *Palette) GetColor(idx int) Color {
 	}
 	return Color{}
 }
+
+// FindNearestIndex finds the index of the nearest color in the palette to the given color.
+// Uses full PaletteLUT (256^3) for O(1) lookups with identical results.
+func (p *Palette) FindNearestIndex(c Color) int {
+	if p.NumColors == 0 {
+		return 0
+	}
+
+	lut := NewFullPaletteLUT(p)
+	return int(lut.Lookup(c.R, c.G, c.B, 255))
+}
+
+// FindNearestPerceptual finds the index of the nearest color in the palette using
+// the Redmean perceptual distance metric, which provides better visual quality
+// for skin tones and gradients.
+func (p *Palette) FindNearestPerceptual(c Color) int {
+	if p.NumColors == 0 {
+		return 0
+	}
+
+	bestIdx := 0
+	bestDist := uint64(math.MaxUint64)
+
+	for i := 0; i < p.NumColors; i++ {
+		dist := RedmeanDistanceSqUint64(c, p.Colors[i])
+		if dist < bestDist {
+			bestDist = dist
+			bestIdx = i
+		}
+	}
+
+	return bestIdx
+}

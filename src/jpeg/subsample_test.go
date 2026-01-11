@@ -10,7 +10,7 @@ func TestSubsample420(t *testing.T) {
 	// Fill with some values
 	for i := range cb {
 		cb[i] = uint8(i * 10)
-		cr[i] = uint8(i * 10 + 5)
+		cr[i] = uint8(i*10 + 5)
 	}
 
 	subCb, subCr := Subsample420(cb, cr, width, height)

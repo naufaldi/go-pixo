@@ -19,6 +19,124 @@ func BruteForceFilters(pixels []byte, width, height, bpp int) []FilterType {
 	return bruteForcePerRow(pixels, width, height, bpp)
 }
 
+// BruteForceFiltersWithScratch is the same as BruteForceFilters but uses scratch buffers for reduced allocation.
+func BruteForceFiltersWithScratch(pixels []byte, width, height, bpp int) []FilterType {
+	if height == 0 || width == 0 {
+		return nil
+	}
+
+	scratch := NewAdaptiveScratch(width*bpp, bpp)
+	defer scratch.Release()
+
+	// For very small images, try all combinations
+	if width*bpp*height <= 65536 {
+		return bruteForceAllCombinationsWithScratch(pixels, width, height, bpp, scratch)
+	}
+
+	// For larger images, use per-row optimization (still brute force but faster)
+	return bruteForcePerRowWithScratch(pixels, width, height, bpp, scratch)
+}
+
+// bruteForceAllCombinationsWithScratch is the scratch buffer version of bruteForceAllCombinations.
+func bruteForceAllCombinationsWithScratch(pixels []byte, width, height, bpp int, scratch *AdaptiveScratch) []FilterType {
+	if height > 12 {
+		// Fallback to per-row for taller images
+		return bruteForcePerRowWithScratch(pixels, width, height, bpp, scratch)
+	}
+
+	bestFilters := make([]FilterType, height)
+	bestSize := -1
+
+	// Generate all combinations using recursion
+	var recurse func(row int, currentFilters []FilterType, currentData []byte)
+	recurse = func(row int, currentFilters []FilterType, currentData []byte) {
+		if row == height {
+			// All rows processed, compress and check size
+			compressed := compressWithFilters(currentData)
+			if bestSize < 0 || len(compressed) < bestSize {
+				bestSize = len(compressed)
+				copy(bestFilters, currentFilters)
+			}
+			return
+		}
+
+		offset := row * width * bpp
+		rowData := pixels[offset : offset+width*bpp]
+		var prevRow []byte
+		if row > 0 {
+			prevRow = pixels[(row-1)*width*bpp : row*width*bpp]
+		}
+
+		// Try all 5 filter types
+		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
+			filtered := applyFilterWithScratch(filterType, rowData, prevRow, bpp, scratch)
+			newFilters := make([]FilterType, len(currentFilters)+1)
+			copy(newFilters, currentFilters)
+			newFilters[len(currentFilters)] = filterType
+
+			newData := make([]byte, len(currentData)+1+len(filtered))
+			copy(newData, currentData)
+			newData[len(currentData)] = byte(filterType)
+			copy(newData[len(currentData)+1:], filtered)
+			recurse(row+1, newFilters, newData)
+		}
+	}
+
+	recurse(0, []FilterType{}, []byte{})
+	return bestFilters
+}
+
+// bruteForcePerRowWithScratch is the scratch buffer version of bruteForcePerRow.
+func bruteForcePerRowWithScratch(pixels []byte, width, height, bpp int, scratch *AdaptiveScratch) []FilterType {
+	filters := make([]FilterType, height)
+
+	for y := 0; y < height; y++ {
+		offset := y * width * bpp
+		rowData := pixels[offset : offset+width*bpp]
+
+		var prevRow []byte
+		if y > 0 {
+			prevRow = pixels[(y-1)*width*bpp : y*width*bpp]
+		}
+
+		bestFilter := FilterNone
+		bestSize := -1
+
+		// Try all 5 filter types for this row
+		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
+			filtered := applyFilterWithScratch(filterType, rowData, prevRow, bpp, scratch)
+			compressed := compressSingleRow(filtered)
+
+			if bestSize < 0 || len(compressed) < bestSize {
+				bestSize = len(compressed)
+				bestFilter = filterType
+			}
+		}
+
+		filters[y] = bestFilter
+	}
+
+	return filters
+}
+
+// applyFilterWithScratch applies a single filter to a row using scratch buffers.
+func applyFilterWithScratch(filterType FilterType, row, prevRow []byte, bpp int, scratch *AdaptiveScratch) []byte {
+	switch filterType {
+	case FilterNone:
+		return ApplyFilterNoneWithScratch(row, scratch)
+	case FilterSub:
+		return ApplyFilterSubWithScratch(row, bpp, scratch)
+	case FilterUp:
+		return ApplyFilterUpWithScratch(row, prevRow, scratch)
+	case FilterAverage:
+		return ApplyFilterAverageWithScratch(row, prevRow, bpp, scratch)
+	case FilterPaeth:
+		return ApplyFilterPaethWithScratch(row, prevRow, bpp, scratch)
+	default:
+		return ApplyFilterNoneWithScratch(row, scratch)
+	}
+}
+
 // bruteForceAllCombinations tries all 5^height filter combinations.
 // Only feasible for images with height <= 10 or so.
 func bruteForceAllCombinations(pixels []byte, width, height, bpp int) []FilterType {

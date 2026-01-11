@@ -16,25 +16,35 @@ import (
 
 func main() {
 	var (
-		inputFile      = flag.String("input", "", "Input image file (PNG or JPEG)")
-		outputFile     = flag.String("output", "", "Output file (default: input with format extension)")
-		format         = flag.String("format", "png", "Output format: png or jpeg")
-		preset         = flag.String("preset", "balanced", "Compression preset: fast, balanced, max")
-		lossy          = flag.Bool("lossy", false, "Enable lossy compression with palette quantization (PNG only)")
-		quality        = flag.Int("quality", 75, "Quality level (PNG: 0-100 for lossy, JPEG: 1-100)")
-		compare        = flag.Bool("compare", false, "Show original vs compressed size comparison")
-		verbose        = flag.Bool("verbose", false, "Enable detailed output")
-		iterations     = flag.Int("iterations", 0, "Number of Zopfli iterations (PNG only, 0-100)")
-		ditherStrength = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
-		maxColors      = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
-		benchmark      = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
-		benchmarkRuns  = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
+		inputFile        = flag.String("input", "", "Input image file (PNG or JPEG)")
+		outputFile       = flag.String("output", "", "Output file (default: input with format extension)")
+		format           = flag.String("format", "png", "Output format: png or jpeg")
+		preset           = flag.String("preset", "balanced", "Compression preset: fast, balanced, max, extreme")
+		lossy            = flag.Bool("lossy", false, "Enable lossy compression with palette quantization (PNG only)")
+		quality          = flag.Int("quality", 75, "Quality level (PNG: 0-100 for lossy, JPEG: 1-100)")
+		compare          = flag.Bool("compare", false, "Show original vs compressed size comparison")
+		verbose          = flag.Bool("verbose", false, "Enable detailed output")
+		zopfliEnabled    = flag.Bool("zopfli", false, "Enable Zopfli DEFLATE compression for smaller files (PNG only, slower)")
+		zopfliIterations = flag.Int("zopfli-iterations", 10, "Number of Zopfli iterations (1-100): more iterations = smaller files, significantly slower (PNG only)")
+		zopfliNoSplit    = flag.Bool("zopfli-no-split", false, "Disable Zopfli block splitting optimization (PNG only)")
+		extreme          = flag.Bool("extreme", false, "Shortcut for maximum compression: enables Zopfli with 15 iterations (PNG only)")
+		ditherStrength   = flag.Float64("dither", 0.5, "Dithering strength 0.0-1.0 (default: 0.5)")
+		maxColors        = flag.Int("max-colors", 256, "Maximum number of colors for lossy compression (2-256)")
+		benchmark        = flag.Bool("benchmark", false, "Run compression multiple times and report statistics")
+		benchmarkRuns    = flag.Int("benchmark-runs", 3, "Number of benchmark runs")
+		optimal          = flag.Bool("optimal", false, "Enable optimal DEFLATE parsing for better compression (3-8% improvement, slower)")
 
 		// JPEG-specific flags
 		progressive     = flag.Bool("progressive", false, "Enable progressive JPEG encoding")
 		subsampling     = flag.String("subsampling", "420", "Chroma subsampling: 420 or 444 (JPEG only)")
 		trellis         = flag.Bool("trellis", false, "Enable trellis quantization (JPEG only)")
 		optimizeHuffman = flag.Bool("optimize-huffman", false, "Enable optimized Huffman tables (JPEG only)")
+
+		// Phase 11 advanced flags
+		filterStrategyArg = flag.String("filter-strategy", "", "PNG Filter strategy: none, sub, up, average, paeth, minsum, adaptive, adaptivefast, entropy, bruteforce, bigrams, parallel")
+		distanceMetricArg = flag.String("distance-metric", "euclidean", "Distance metric for quantization: euclidean, redmean")
+		perceptual        = flag.Bool("perceptual", false, "Enable perceptual distance for better visual quality")
+		earlyTerm         = flag.Bool("early-term", true, "Enable early termination in filter selection for speed")
 	)
 	flag.Parse()
 
@@ -50,8 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *format == "jpeg" && (*lossy || *iterations > 0) {
-		fmt.Fprintf(os.Stderr, "Error: -lossy and -iterations are only valid for PNG format\n")
+	if *format == "jpeg" && (*lossy || *zopfliEnabled || *extreme) {
+		fmt.Fprintf(os.Stderr, "Error: -lossy, -zopfli, and -extreme are only valid for PNG format\n")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -120,13 +130,23 @@ func main() {
 	if *verbose {
 		fmt.Printf("Input pixel data size: %d bytes\n", originalSize)
 		fmt.Printf("Preset: %s\n", *preset)
+		if *extreme {
+			fmt.Printf("Extreme Mode: enabled (Zopfli with 15 iterations)\n")
+		}
 		fmt.Printf("Lossy: %v\n", *lossy)
 		if *lossy {
 			fmt.Printf("Quality: %d\n", *quality)
 			fmt.Printf("Max Colors: %d\n", *maxColors)
 			fmt.Printf("Dither Strength: %.2f\n", *ditherStrength)
 		}
-		fmt.Printf("Zopfli Iterations: %d\n", *iterations)
+		fmt.Printf("Zopfli Enabled: %v\n", *zopfliEnabled)
+		fmt.Printf("Zopfli Iterations: %d\n", *zopfliIterations)
+		if *zopfliNoSplit {
+			fmt.Printf("Zopfli Block Splitting: disabled\n")
+		}
+		if *optimal {
+			fmt.Printf("Optimal DEFLATE: enabled (3-8%% better compression, slower)\n")
+		}
 	}
 
 	if *benchmark {
@@ -139,18 +159,25 @@ func main() {
 			startTime := time.Now()
 
 			var opts png.Options
-			switch *preset {
-			case "fast":
-				opts = png.FastOptions(width, height)
-			case "max":
-				opts = png.MaxOptions(width, height)
-			case "extreme":
+			if *extreme {
 				opts = png.ExtremeOptions(width, height)
-			default:
-				opts = png.BalancedOptions(width, height)
+			} else {
+				switch *preset {
+				case "fast":
+					opts = png.FastOptions(width, height)
+				case "max":
+					opts = png.MaxOptions(width, height)
+				case "extreme":
+					opts = png.ExtremeOptions(width, height)
+				default:
+					opts = png.BalancedOptions(width, height)
+				}
 			}
 
-			opts.ZopfliIterations = *iterations
+			opts.ZopfliIterations = *zopfliIterations
+			opts.ZopfliEnabled = *zopfliEnabled
+			opts.ZopfliBlockSplitting = !*zopfliNoSplit
+			opts.OptimalDeflate = *optimal
 
 			if *lossy {
 				if *maxColors < 2 {
@@ -222,18 +249,62 @@ func main() {
 		}
 	} else {
 		var opts png.Options
-		switch *preset {
-		case "fast":
-			opts = png.FastOptions(width, height)
-		case "max":
-			opts = png.MaxOptions(width, height)
-		case "extreme":
+		if *extreme {
 			opts = png.ExtremeOptions(width, height)
-		default:
-			opts = png.BalancedOptions(width, height)
+		} else {
+			switch *preset {
+			case "fast":
+				opts = png.FastOptions(width, height)
+			case "max":
+				opts = png.MaxOptions(width, height)
+			case "extreme":
+				opts = png.ExtremeOptions(width, height)
+			default:
+				opts = png.BalancedOptions(width, height)
+			}
 		}
 
-		opts.ZopfliIterations = *iterations
+		opts.ZopfliIterations = *zopfliIterations
+		opts.ZopfliEnabled = *zopfliEnabled
+		opts.ZopfliBlockSplitting = !*zopfliNoSplit
+		opts.OptimalDeflate = *optimal
+		opts.FilterEarlyTermination = *earlyTerm
+		opts.UsePerceptualDistance = *perceptual
+
+		if *filterStrategyArg != "" {
+			switch *filterStrategyArg {
+			case "none":
+				opts.FilterStrategy = png.FilterStrategyNone
+			case "sub":
+				opts.FilterStrategy = png.FilterStrategySub
+			case "up":
+				opts.FilterStrategy = png.FilterStrategyUp
+			case "average":
+				opts.FilterStrategy = png.FilterStrategyAverage
+			case "paeth":
+				opts.FilterStrategy = png.FilterStrategyPaeth
+			case "minsum":
+				opts.FilterStrategy = png.FilterStrategyMinSum
+			case "adaptive":
+				opts.FilterStrategy = png.FilterStrategyAdaptive
+			case "adaptivefast":
+				opts.FilterStrategy = png.FilterStrategyAdaptiveFast
+			case "entropy":
+				opts.FilterStrategy = png.FilterStrategyEntropy
+			case "bruteforce":
+				opts.FilterStrategy = png.FilterStrategyBruteForce
+			case "bigrams":
+				opts.FilterStrategy = png.FilterStrategyBigrams
+			case "parallel":
+				opts.FilterStrategy = png.FilterStrategyParallel
+			}
+		}
+
+		if *distanceMetricArg == "redmean" {
+			opts.DistanceMetric = png.DistanceMetricRedmean
+		} else {
+			opts.DistanceMetric = png.DistanceMetricEuclidean
+		}
 
 		if *lossy {
 			if *maxColors < 2 {

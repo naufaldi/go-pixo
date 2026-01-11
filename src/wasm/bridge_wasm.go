@@ -43,11 +43,11 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 
 /**
  * HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, progressCallback: function)
+ * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean, progressCallback: function)
  */
 func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
-	if len(args) < 11 {
-		return js.ValueOf("invalid arguments: expected 11 arguments")
+	if len(args) < 16 {
+		return js.ValueOf("invalid arguments: expected at least 16 arguments")
 	}
 
 	pixelsJS := args[0]
@@ -61,10 +61,15 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	ditherStrength := args[8].Float()
 	qualityTarget := args[9].Int()
 	zopfliIterations := args[10].Int()
+	filterStrategy := args[11].Int()
+	usePerceptual := args[12].Bool()
+	distanceMetric := args[13].Int()
+	optimalDeflate := args[14].Bool()
+	filterEarlyTerm := args[15].Bool()
 
 	var progressFunc func(phase string, progress int)
-	if len(args) > 11 && args[11].Type() == js.TypeFunction {
-		cb := args[11]
+	if len(args) > 16 && args[16].Type() == js.TypeFunction {
+		cb := args[16]
 		progressFunc = func(phase string, progress int) {
 			cb.Invoke(phase, progress)
 		}
@@ -75,7 +80,18 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	js.CopyBytesToGo(pixels, pixelsJS)
 
 	// Call the advanced implementation
-	output, err := EncodePngAdvanced(pixels, width, height, colorType, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressFunc)
+	output, err := EncodePngAdvanced(
+		pixels, width, height, colorType, preset,
+		lossy, maxColors,
+		dithering, ditherStrength, qualityTarget,
+		zopfliIterations,
+		filterStrategy,
+		usePerceptual,
+		distanceMetric,
+		optimalDeflate,
+		filterEarlyTerm,
+		progressFunc,
+	)
 	if err != nil {
 		return js.ValueOf(fmt.Sprintf("error: %v", err))
 	}

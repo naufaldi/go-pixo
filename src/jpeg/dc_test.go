@@ -38,9 +38,9 @@ func TestCategory(t *testing.T) {
 
 func TestEncodeValue(t *testing.T) {
 	tests := []struct {
-		val      int16
-		ebits    uint16
-		elen     uint8
+		val   int16
+		ebits uint16
+		elen  uint8
 	}{
 		{0, 0, 0},
 		{1, 1, 1},
