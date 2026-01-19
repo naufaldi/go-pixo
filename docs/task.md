@@ -2169,3 +2169,86 @@ Goal: Fix known bugs and optimize performance/bundle size.
   - **Test**: Verify documentation compiles and links work
   - **Output**: `docs/learning/jpg/trellis.md`
   - **Priority**: LOW - Documentation only
+
+---
+
+## Phase 13: JPEG Optimization (Smaller Files + Faster Encode)
+
+Goal: Improve JPEG compression ratio **at the same Quality setting** while also reducing encode time, with changes that work for both native Go and Web/WASM (Web must not regress).
+
+**Testing Requirements for Phase 13:**
+
+- Each task must include its own unit tests (`src/jpeg/*_test.go`)
+- Output must decode with Go `image/jpeg` decoder
+- No regressions in WASM-exposed APIs unless explicitly intended (then update `src/wasm/bridge_wasm.go` + `web/` wiring)
+- Add at least one measurable signal per task (size delta test or benchmark)
+
+### Phase 13 Progress: ⏳ 1 of 10 Tasks Complete
+
+### 13.1 JPEG Huffman: Standards-Compliant Optimized Tables
+
+- **[Task 13.1.1]** ✅ Implement JPEG-compliant length-limited Huffman builder (no naive >16 clamping)
+  - Create a length-limiting step that guarantees code lengths ≤ 16 while preserving canonical ordering rules
+  - Add tests that validate:
+    - Total symbols = sum(bits)
+    - All code lengths are 1..16
+    - Table is prefix-free and encodes/decodes consistently (round-trip via generated tables)
+  - Output: `src/jpeg/huffman_length_limit.go`, `src/jpeg/huffman_length_limit_test.go`
+
+- **[Task 13.1.2]** Replace clamped code-length logic in `BuildOptimizedTables` with the new builder
+  - Update `src/jpeg/huffman_optimized.go` to use the new length-limited builder
+  - Remove `if l > 16 { l = 16 }` behavior
+  - Add tests asserting optimized tables are valid for real-ish frequency distributions (including sparse and skewed cases)
+  - Output: `src/jpeg/huffman_optimized.go` (updated), `src/jpeg/huffman_optimized_test.go` (updated)
+
+### 13.2 Trellis + Optimized Huffman Compatibility (Smaller at Same Quality)
+
+- **[Task 13.2.1]** Add trellis-aware Huffman optimization mode (build tables from the actual coefficient stream)
+  - Implement a two-pass path: pass 1 generates coefficients using the same quantization mode (standard or trellis), pass 2 builds optimized Huffman tables from those coefficients
+  - Ensure coefficients are interleaved in the same order as the encoder writes blocks (baseline + progressive)
+  - Output: `src/jpeg/huffman_optimized.go` (updated), `src/jpeg/encoder.go` (updated), tests updated/added
+
+- **[Task 13.2.2]** Enable `OptimizeHuffman` even when `TrellisQuant` is enabled (behind safe logic)
+  - Remove the current restriction in `src/jpeg/encoder.go` that disables optimized Huffman when trellis is on
+  - Add tests demonstrating:
+    - Output decodes correctly
+    - File size is smaller-or-equal at same quality on representative fixtures
+  - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/encoder_test.go` (updated)
+
+### 13.3 DCT Speed: Realistic SIMD/Hot Path Improvements (No WASM Regression)
+
+- **[Task 13.3.1]** Implement real CPU feature detection for native builds; keep WASM on fast scalar path
+  - Replace stubbed `cpuHasAVX2()` / `cpuHasNEON()` in `src/jpeg/dct_simd.go` with reliable detection (native only)
+  - Ensure build tags / fallbacks behave correctly on: `amd64`, `arm64`, and `js/wasm`
+  - Output: `src/jpeg/dct_simd.go` (updated), tests verifying selection/fallback behavior
+
+- **[Task 13.3.2]** Add DCT micro-benchmarks and verify encoder uses the best available DCT path
+  - Add benchmarks for `ForwardDCT`, optimized scalar DCT, and any SIMD-selected path
+  - Confirm baseline and progressive encoding call the optimized DCT consistently (without changing output bytes beyond expected marker/table differences)
+  - Output: `src/jpeg/dct_bench_test.go` (new), `src/jpeg/encoder.go` (updated if needed)
+
+### 13.4 Encoder Hot-Loop Optimizations (Reduce Allocations/GC)
+
+- **[Task 13.4.1]** Remove per-MCU/per-block tiny slice allocations in progressive scans
+  - Refactor `EncodeDCScan` / `EncodeACFirstScan` call sites to avoid creating `[][64]int16{...}` per block
+  - Add a benchmark around progressive encode loop to confirm allocation reduction
+  - Output: `src/jpeg/encoder.go` (updated), `src/jpeg/progressive.go` (updated), `src/jpeg/encoder_bench_test.go` (new or updated)
+
+- **[Task 13.4.2]** Reuse coefficient buffers for progressive mode (reduce memory churn)
+  - Preallocate coefficient slices with computed capacity based on image dimensions/subsampling
+  - Ensure grayscale and 4:4:4 / 4:2:0 paths remain correct
+  - Output: `src/jpeg/encoder.go` (updated), tests updated/added
+
+### 13.5 Progressive Script Tuning (Smaller at Same Quality)
+
+- **[Task 13.5.1]** Re-tune `GetProgressiveScript()` quality thresholds and scan partitioning
+  - Keep scripts decode-correct and compatible with common decoders
+  - Add tests comparing size deltas on a small fixed fixture set (or deterministic generated patterns) at quality 60/75/85/95
+  - Output: `src/jpeg/progressive.go` (updated), `src/jpeg/progressive_test.go` (updated)
+
+### 13.6 Size/Speed Regression Harness (Protect Improvements)
+
+- **[Task 13.6.1]** Add JPEG size+time regression harness
+  - Add a small suite that measures output size (and optionally time) for a handful of deterministic inputs (prefer generated patterns to avoid large binaries)
+  - Document how to run locally (command hints in test names or `docs/learning/optimize/` follow-up task if needed)
+  - Output: `src/jpeg/regression_test.go` (new) and any small `src/jpeg/testdata/` fixtures if required
