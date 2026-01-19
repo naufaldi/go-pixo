@@ -95,8 +95,11 @@ func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 
 	var deflateData []byte
 	if opts.OptimalDeflate {
-		// EncodeOptimal already tries multiple passes, use it directly
-		deflateData, err = encoder.EncodeOptimal(pixels)
+		if opts.OptimalConfig.MaxIterations > 0 || opts.OptimalConfig.BlockSplitting {
+			deflateData, err = encoder.EncodeOptimalWithConfig(pixels, opts.OptimalConfig.MaxIterations, opts.OptimalConfig.BlockSplitting)
+		} else {
+			deflateData, err = encoder.EncodeOptimal(pixels)
+		}
 	} else {
 		// Use fallback: if DEFLATE doesn't help, use stored blocks
 		deflateData, err = encoder.EncodeWithFallback(pixels)

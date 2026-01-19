@@ -1,5 +1,7 @@
 package png
 
+import "github.com/mac/go-pixo/src/compress"
+
 // Preset selects a predefined set of encoding options.
 type Preset int
 
@@ -38,6 +40,18 @@ const (
 	FilterStrategyEntropy
 	// FilterStrategyBruteForce tries all filters for each row.
 	FilterStrategyBruteForce
+	// FilterStrategyBigrams selects the filter with minimum distinct bigrams.
+	FilterStrategyBigrams
+	// FilterStrategyParallel selects filters in parallel (adaptive strategy).
+	FilterStrategyParallel
+)
+
+// DistanceMetric selects the color distance formula for quantization.
+type DistanceMetric int
+
+const (
+	DistanceMetricEuclidean DistanceMetric = iota
+	DistanceMetricRedmean
 )
 
 // Options represents PNG encoding options.
@@ -57,6 +71,11 @@ type Options struct {
 	QualityTarget       int
 	ZopfliIterations    int
 	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
+	PreserveChunks      []Chunk
+	OriginalFileSize    int
+	UsePerceptualDistance bool
+	DistanceMetric        DistanceMetric
+	OptimalConfig         compress.OptimalConfig
 	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
 }
 

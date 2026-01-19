@@ -28,6 +28,10 @@ func SelectFilterWithStrategy(row []byte, prevRow []byte, bpp int, strategy Filt
 		return selectEntropy(row, prevRow, bpp)
 	case FilterStrategyBruteForce:
 		return selectBruteForce(row, prevRow, bpp)
+	case FilterStrategyBigrams:
+		return selectBigrams(row, prevRow, bpp)
+	case FilterStrategyParallel:
+		return selectAdaptive(row, prevRow, bpp)
 	default:
 		return selectAdaptive(row, prevRow, bpp)
 	}
@@ -196,6 +200,14 @@ func SelectAll(pixels []byte, width, height, bpp int) []FilterType {
 
 // SelectAllWithStrategy returns the chosen filter type for each scanline using the provided strategy.
 func SelectAllWithStrategy(pixels []byte, width, height, bpp int, strategy FilterStrategy) []FilterType {
+	if strategy == FilterStrategyParallel {
+		config := DefaultParallelConfig()
+		config.Strategy = FilterStrategyAdaptive
+		return SelectAllParallelWithConfig(pixels, width, height, bpp, config)
+	}
+	if strategy == FilterStrategyBigrams {
+		return SelectAllBigrams(pixels, width, height, bpp)
+	}
 	filters := make([]FilterType, height)
 	var prevRow []byte
 

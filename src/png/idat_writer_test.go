@@ -668,6 +668,9 @@ func TestRealImageCompression(t *testing.T) {
 			// Load original PNG
 			originalFile, err := os.Open(tc.filename)
 			if err != nil {
+				if os.IsNotExist(err) {
+					t.Skipf("image not found: %s", tc.filename)
+				}
 				t.Fatalf("failed to open %s: %v", tc.filename, err)
 			}
 			t.Cleanup(func() {

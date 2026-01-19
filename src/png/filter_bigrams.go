@@ -42,6 +42,25 @@ func selectBigrams(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
 	return bestFilter, bestFiltered
 }
 
+func SelectFilterBigrams(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
+	return selectBigrams(row, prevRow, bpp)
+}
+
+func SelectAllBigrams(pixels []byte, width, height, bpp int) []FilterType {
+	filters := make([]FilterType, height)
+	var prevRow []byte
+
+	for y := 0; y < height; y++ {
+		offset := y * width * bpp
+		row := pixels[offset : offset+width*bpp]
+		filterType, _ := SelectFilterBigrams(row, prevRow, bpp)
+		filters[y] = filterType
+		prevRow = row
+	}
+
+	return filters
+}
+
 func ApplyBigrams(row []byte, prevRow []byte, bpp int) []byte {
 	_, filtered := selectBigrams(row, prevRow, bpp)
 	return filtered

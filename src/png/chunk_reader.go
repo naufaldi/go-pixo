@@ -30,14 +30,15 @@ func ExtractPreserveChunks(pngBytes []byte) ([]Chunk, error) {
 }
 
 func ReadChunks(pngBytes []byte) ([]Chunk, error) {
-	if len(pngBytes) < len(PngSignature) {
+	signature := Signature()
+	if len(pngBytes) < len(signature) {
 		return nil, fmt.Errorf("png: input too small")
 	}
-	if !bytesEqual(pngBytes[:len(PngSignature)], PngSignature[:]) {
+	if !bytesEqual(pngBytes[:len(signature)], signature) {
 		return nil, fmt.Errorf("png: invalid signature")
 	}
 
-	i := len(PngSignature)
+	i := len(signature)
 	var chunks []Chunk
 	for {
 		if i+8 > len(pngBytes) {

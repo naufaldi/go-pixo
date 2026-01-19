@@ -30,12 +30,62 @@ let initWasm = (): Promise.t<unit> => {
   ")
 }
 
-@val external encodePng: ('a, int, int, int, int, bool) => array<int> = "window.encodePng"
+@val external encodePng: ('a, int, int, int, int, bool, int) => array<int> = "window.encodePng"
+@val
+external encodePngAdvanced: (
+  'a,
+  int,
+  int,
+  int,
+  int,
+  bool,
+  int,
+  bool,
+  float,
+  int,
+  int,
+  int,
+  bool,
+  int,
+  bool,
+  bool,
+  option<(string, int) => unit>,
+) => array<int> = "window.encodePngAdvanced"
+@val external encodeJpeg: ('a, int, int, int, int) => array<int> = "window.encodeJpeg"
+@val
+external encodeJpegAdvanced: (
+  'a,
+  int,
+  int,
+  int,
+  int,
+  int,
+  bool,
+  bool,
+  bool,
+  int,
+) => array<int> = "window.encodeJpegAdvanced"
+@val
+external recompressPngLossless: (
+  'a,
+  int,
+  int,
+  option<(string, int) => unit>,
+) => array<int> = "window.recompressPngLossless"
+@val external bytesPerPixel: int => int = "window.bytesPerPixel"
 
 let encodePngImage = (pixels: 'a, width: int, height: int, colorType: int): array<int> => {
-  encodePng(pixels, width, height, colorType, 1, false)
+  encodePng(pixels, width, height, colorType, 1, false, 0)
 }
 
-let encodePngImageWithOptions = (pixels: 'a, width: int, height: int, colorType: int, preset: int, lossy: bool): array<int> => {
-  encodePng(pixels, width, height, colorType, preset, lossy)
+let encodePngImageWithOptions = (
+  pixels: 'a,
+  width: int,
+  height: int,
+  colorType: int,
+  preset: int,
+  lossy: bool,
+  maxColors: int,
+): array<int> => {
+  encodePng(pixels, width, height, colorType, preset, lossy, maxColors)
 }

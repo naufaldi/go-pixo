@@ -342,6 +342,19 @@ func floatEq(a, b float64) bool {
 	return math.Abs(a-b) < epsilon
 }
 
+func generateTestPixels(width, height int) []byte {
+	pixels := make([]byte, width*height*3)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			offset := (y*width + x) * 3
+			pixels[offset] = uint8(x % 256)
+			pixels[offset+1] = uint8(y % 256)
+			pixels[offset+2] = uint8((x + y) % 256)
+		}
+	}
+	return pixels
+}
+
 func TestQuantizePerceptualBasic(t *testing.T) {
 	pixels := []byte{
 		255, 0, 0, 0, 255, 0,

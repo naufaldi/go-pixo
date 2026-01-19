@@ -1580,9 +1580,9 @@ Phase 11 (PNG Performance Optimization) ✅ COMPLETE
 
 ## Project Status Summary
 
-### 🎯 **CURRENT STATUS: 100% COMPLETE**
+### 🎯 **CURRENT STATUS: 95% COMPLETE**
 
-**All major development phases completed with recent fixes and improvements.**
+**All major development phases completed. Phase 11: Optimization & Bug Fixes is in progress (11.1 partially implemented).**
 
 #### **Recent Achievements (Latest Session)**
 
@@ -1598,12 +1598,12 @@ Phase 11 (PNG Performance Optimization) ✅ COMPLETE
 - Verified slider functionality works before upload
 
 **✅ Testing & Verification**
-- All Go tests pass across packages
+- Go tests: `src/compress` has a failing `TestOptimalParse_BlockSplitting` (flate corrupt input before offset 22)
 - Web build successful (236KB bundle)
 - Development server functional
 - Type safety maintained
 
-**✅ Phase 11: PNG Performance Optimization Complete**
+**✅ Phase 12: PNG Performance Optimization Complete**
 - All 12 performance optimization tasks completed
 - LUT-based O(1) quantization for 10-100x speedup
 - K-means palette refinement for improved visual quality
@@ -1624,7 +1624,7 @@ Phase 11 (PNG Performance Optimization) ✅ COMPLETE
 - **Trellis Quantization**: Rate-distortion optimization working
 - **Progressive JPEG**: Web-optimized encoding functional
 - **CLI Integration**: All JPEG flags working correctly
-- **Phase 11 Optimizations**: 10-100x faster quantization, 3-8% better DEFLATE, 5-15% with Zopfli iteration
+- **Phase 12 Optimizations**: 10-100x faster quantization, 3-8% better DEFLATE, 5-15% with Zopfli iteration
 
 #### **Production Ready Features**
 
@@ -1698,7 +1698,8 @@ Phase 11 (PNG Performance Optimization) ✅ COMPLETE
 | 10    | 10    | ✅ Complete | JPEG documentation (all done)      |
 | 8 (Web) | 12    | ✅ Complete | Web UI polish + UX improvements     |
 | 9     | 7     | ✅ Complete | Advanced PNG compression (all done) |
-| 11    | 12    | ✅ Complete | PNG performance optimizations (all done) |
+| 11    | 4     | ⏳ In progress | Optimization & Bug Fixes        |
+| 12    | 12    | ✅ Complete | PNG performance optimizations (all done) |
 | Recent | 4     | ✅ Complete | UX fixes + WASM bridge + Testing   |
 | Infra | 4     | ✅ Partial  | Build/test/docs                     |
 
@@ -1717,21 +1718,22 @@ For fastest path to working product:
 7. **Phase 9** (all 7 tasks) ✅ Complete - Advanced PNG compression, CLI, WASM, lossy mode
 8. **Phase 6-8** (JPEG) ✅ Complete - JPEG baseline, advanced features, optimizations
 9. **Phase 10** (all 10 tasks) ✅ Complete - JPEG documentation
-10. **Phase 11** (all 12 tasks) ✅ Complete - PNG performance optimizations (LUT, K-means, SIMD, caching, parallel, trellis, optimal DEFLATE, scratch buffers, early termination, perceptual distance, Zopfli iteration)
+10. **Phase 11** (all 4 tasks) ⏳ In progress - Optimization & Bug Fixes (dynamic block partially implemented; still failing OptimalParse roundtrip, plus WASM bundle size, parallel batch, trellis docs)
+11. **Phase 12** (all 12 tasks) ✅ Complete - PNG performance optimizations (LUT, K-means, SIMD, caching, parallel, trellis, optimal DEFLATE, scratch buffers, early termination, perceptual distance, Zopfli iteration)
 
-**🎉 PROJECT STATUS: 100% COMPLETE**
+**🎉 PROJECT STATUS: 95% COMPLETE**
 
-All phases completed with recent UX improvements and WASM bridge fixes. Ready for production use.
+Phase 11 tasks remain before declaring full completion.
 
 ---
 
-## Phase 11: PNG Performance Optimization (Matching Rust Implementation) ✅ COMPLETED
+## Phase 12: PNG Performance Optimization (Matching Rust Implementation) ✅ COMPLETED
 
 Goal: Implement advanced optimizations to match Rust pixo performance, focusing on quantization speed, compression quality, and algorithmic improvements.
 
 **Research Reference**: See `docs/brain/optimize/possibility.md` for detailed technical analysis, code examples, and implementation guidance for all techniques in this phase.
 
-### Phase 11 Progress: ✅ 12 of 12 Tasks Complete
+### Phase 12 Progress: ✅ 12 of 12 Tasks Complete
 
 ### 11.1 Palette Lookup Table (LUT) for O(1) Quantization ✅ COMPLETED
 
@@ -2035,22 +2037,28 @@ Goal: Implement advanced optimizations to match Rust pixo performance, focusing 
 ## Task Dependencies
 
 ```
-Phase 11 (PNG Performance Optimization) ⏳ PENDING
-  ├─ 11.1 Palette LUT (11.1.1, 11.1.2) ⏳
-  ├─ 11.2 K-means Refinement (11.2.1, 11.2.2) ⏳
-  ├─ 11.3 Bigrams Filter (11.3.1, 11.3.2) ⏳
-  ├─ 11.4 SIMD DCT (11.4.1, 11.4.2) ⏳
-  ├─ 11.5 Huffman Caching (11.5.1, 11.5.2) ⏳
-  ├─ 11.6 Parallel Filters (11.6.1, 11.6.2) ⏳
-  ├─ 11.7 Full Trellis (11.7.1, 11.7.2) ⏳
-  ├─ 11.8 Cost-Model Parsing (11.8.1, 11.8.2) ⏳
-  ├─ 11.9 Scratch Buffers (11.9.1, 11.9.2) ⏳
-  ├─ 11.10 Early Termination (11.10.1) ⏳
-  ├─ 11.11 Redmean Distance (11.11.1, 11.11.2) ⏳
-  └─ 11.12 Zopfli Iteration (11.12.1-11.12.4) ⏳ NEW
+Phase 11 (Optimization & Bug Fixes) ⏳ PENDING
+  ├─ 11.1 Dynamic Block Symbol Encoding Bug Fix (11.1.1) ⏳
+  ├─ 11.2 WASM Bundle Size Optimization (11.2.1) ⏳
+  ├─ 11.3 Parallel Batch Processing (11.3.1) ⏳
+  └─ 11.4 Trellis Quantization Documentation (11.4.1) ⏳
 
-Independent Tasks: 11.1, 11.3, 11.4, 11.5, 11.6, 11.9, 11.10, 11.11, 11.12
-Dependent Tasks: 11.2 (depends on 11.1), 11.7 (depends on existing trellis), 11.8 (depends on existing DEFLATE)
+Phase 12 (PNG Performance Optimization) ⏳ PENDING
+  ├─ 12.1 Palette LUT (12.1.1, 12.1.2) ⏳
+  ├─ 12.2 K-means Refinement (12.2.1, 12.2.2) ⏳
+  ├─ 12.3 Bigrams Filter (12.3.1, 12.3.2) ⏳
+  ├─ 12.4 SIMD DCT (12.4.1, 12.4.2) ⏳
+  ├─ 12.5 Huffman Caching (12.5.1, 12.5.2) ⏳
+  ├─ 12.6 Parallel Filters (12.6.1, 12.6.2) ⏳
+  ├─ 12.7 Full Trellis (12.7.1, 12.7.2) ⏳
+  ├─ 12.8 Cost-Model Parsing (12.8.1, 12.8.2) ⏳
+  ├─ 12.9 Scratch Buffers (12.9.1, 12.9.2) ⏳
+  ├─ 12.10 Early Termination (12.10.1) ⏳
+  ├─ 12.11 Redmean Distance (12.11.1, 12.11.2) ⏳
+  └─ 12.12 Zopfli Iteration (12.12.1-12.12.4) ⏳ NEW
+
+Independent Tasks: 11.1, 11.2, 11.3, 11.4, 12.1, 12.3, 12.4, 12.5, 12.6, 12.9, 12.10, 12.11, 12.12
+Dependent Tasks: 11.1 (prerequisite for 2.6.3 note), 12.2 (depends on 12.1), 12.7 (depends on existing trellis), 12.8 (depends on existing DEFLATE)
 ```
 
 ## Implementation Priority (Research-Validated Order)
@@ -2077,19 +2085,87 @@ This priority order is based on research analysis of complexity vs. impact trade
 
 | Priority | Task | Technique | Expected Improvement | Complexity |
 |----------|------|-----------|---------------------|------------|
-| 7 | 11.1 | Palette Lookup Table | 10-100x speedup for quantization | Medium |
-| 8 | 11.4 | SIMD Acceleration | 3-5x speedup for DCT/filter ops | High |
+| 7 | 12.1 | Palette Lookup Table | 10-100x speedup for quantization | Medium |
+| 8 | 12.4 | SIMD Acceleration | 3-5x speedup for DCT/filter ops | High |
 
 ### Phase 4 (Month 2): Advanced Compression - Expert Level
 
 | Priority | Task | Technique | Expected Improvement | Complexity |
 |----------|------|-----------|---------------------|------------|
-| 9 | 11.8 | Cost-Model DEFLATE Parsing | 3-10% compression improvement | High |
-| 10 | 11.12 | Zopfli-style Iteration | 5-15% compression improvement | High |
+| 9 | 12.8 | Cost-Model DEFLATE Parsing | 3-10% compression improvement | High |
+| 10 | 12.12 | Zopfli-style Iteration | 5-15% compression improvement | High |
 
 ### Phase 5 (Bonus): Already Completed or Low Priority
 
 | Priority | Task | Technique | Notes |
 |----------|------|-----------|-------|
-| - | 11.5 | Huffman Table Caching | Nice-to-have, 10-20% faster for similar images |
-| - | 11.7 | Full Trellis Optimization | Already implemented in JPEG (Phase 8.1) |
+| - | 12.5 | Huffman Table Caching | Nice-to-have, 10-20% faster for similar images |
+| - | 12.7 | Full Trellis Optimization | Already implemented in JPEG (Phase 8.1) |
+
+---
+
+## Phase 11: Optimization & Bug Fixes
+
+Goal: Fix known bugs and optimize performance/bundle size.
+
+**Status**: ⏳ 0 of 4 Tasks Complete (11.1 partially implemented)
+
+### 11.1 Dynamic Huffman Block Bug Fix
+
+- **[Task 11.1.1]** Fix dynamic block symbol encoding bug in DEFLATE encoder
+
+  - **Issue**: Dynamic blocks have pre-existing bug with symbol encoding (marked in Task 2.6.3)
+  - **Location**: `src/compress/deflate_block.go`, `WriteDynamicBlock()` function
+  - **Current State**: `WriteDynamicBlock()` exists and passes basic roundtrip tests, but `TestOptimalParse_BlockSplitting` in `src/compress/optimal_parse_test.go` fails with `flate: corrupt input before offset 22`
+  - **Root Cause**: Still unknown; likely invalid token stream or dynamic symbol encoding for certain distributions
+  - **Impact**: Dynamic blocks cannot be considered reliable for all token streams; `EncodeAuto()` may fall back to fixed
+  - **Test**: `go test ./src/compress/...` (fails on `TestOptimalParse_BlockSplitting`)
+  - **Output**: `src/compress/deflate_block.go` (partial), `src/compress/optimal_parse_test.go` (failing case)
+  - **Priority**: HIGH - Affects compression ratio for complex images
+
+### 11.2 WASM Bundle Size Optimization
+
+- **[Task 11.2.1]** Reduce WASM bundle size from ~236KB to target <150KB
+
+  - **Current Size**: ~236KB (web build output)
+  - **Target Size**: <150KB (40% reduction)
+  - **Approaches**:
+    - Enable Go compiler optimization flags (`-O2` -wasm-opts)
+    - Enable WASM binary compression (brotli)
+    - Tree-shaking unused encoder features (PNG/JPEG separation)
+    - Use `ldflags` to strip debug symbols
+  - **Test**: Verify all WASM functions still work after optimization
+  - **Output**: Updated build scripts, smaller `go-pixo.wasm` file
+  - **Priority**: MEDIUM - Improves load time and UX
+
+### 11.3 Parallel Batch Processing
+
+- **[Task 11.3.1]** Implement parallel file processing for batch operations
+
+  - **Current State**: Files process sequentially in main thread/worker
+  - **Desired State**: Multiple files compress in parallel using Web Workers
+  - **Implementation**:
+    - Create worker pool (3-4 workers)
+    - Distribute files across workers
+    - Aggregate results in main thread
+    - Update progress UI for parallel operations
+  - **Files**: `web/src/worker.ts`, `web/src/App.res`
+  - **Test**: Process 10+ files, verify speedup (2-3x for large batches)
+  - **Output**: `web/src/worker.ts` (updated), `web/src/App.res` (updated)
+  - **Priority**: MEDIUM - Improves batch processing speed
+
+### 11.4 Trellis Quantization Documentation
+
+- **[Task 11.4.1]** Create trellis quantization documentation
+
+  - **Issue**: Task 10.6 marked incomplete in Phase 10
+  - **Create**: `docs/learning/jpg/trellis.md`
+  - **Content**:
+    - Explain rate-distortion optimization
+    - Document Viterbi algorithm for trellis quantization
+    - Explain how trellis improves compression (5-15%)
+    - Show compression ratio comparisons
+    - Document lambda parameter and tuning
+  - **Test**: Verify documentation compiles and links work
+  - **Output**: `docs/learning/jpg/trellis.md`
+  - **Priority**: LOW - Documentation only

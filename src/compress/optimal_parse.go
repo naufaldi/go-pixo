@@ -541,7 +541,7 @@ func (p *optimalParser) tryCombineMatch(tokens []Token, pos int) []Token {
 	lit1 := tokens[pos].Literal
 	lit2 := tokens[pos+1].Literal
 
-	searchPos := p.findBackwardMatch(lit1, lit2)
+		searchPos := p.findBackwardMatch(pos, lit1, lit2)
 	if searchPos < 0 {
 		return nil
 	}
@@ -558,6 +558,9 @@ func (p *optimalParser) tryCombineMatch(tokens []Token, pos int) []Token {
 
 	if matchLen >= 3 {
 		dist := pos - searchPos
+		if dist <= 0 {
+			return nil
+		}
 		result := make([]Token, 0, len(tokens)-2)
 		result = append(result, tokens[:pos]...)
 		result = append(result, TokenMatch(uint16(dist), uint16(matchLen)))
@@ -568,8 +571,19 @@ func (p *optimalParser) tryCombineMatch(tokens []Token, pos int) []Token {
 	return nil
 }
 
-func (p *optimalParser) findBackwardMatch(b1, b2 byte) int {
-	for i := len(p.data) - 1; i >= 0 && i >= len(p.data)-32768; i-- {
+func (p *optimalParser) findBackwardMatch(pos int, b1, b2 byte) int {
+	if pos <= 0 {
+		return -1
+	}
+	start := pos - 1
+	if start >= len(p.data) {
+		start = len(p.data) - 1
+	}
+	limit := pos - 32768
+	if limit < 0 {
+		limit = 0
+	}
+	for i := start; i >= limit; i-- {
 		if p.data[i] == b1 && i+1 < len(p.data) && p.data[i+1] == b2 {
 			return i
 		}

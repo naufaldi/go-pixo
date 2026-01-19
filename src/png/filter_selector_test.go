@@ -685,17 +685,3 @@ func TestEarlyTerminationNoRegression(t *testing.T) {
 	}
 }
 
-func SelectAllWithStrategyAndScratch(pixels []byte, width, height, bpp int, strategy FilterStrategy, scratch *AdaptiveScratch) []FilterType {
-	filters := make([]FilterType, height)
-	var prevRow []byte
-
-	for y := 0; y < height; y++ {
-		offset := y * width * bpp
-		row := pixels[offset : offset+width*bpp]
-		filterType, _ := SelectFilterWithStrategyAndScratch(row, prevRow, bpp, strategy, scratch)
-		filters[y] = filterType
-		prevRow = row
-	}
-
-	return filters
-}
