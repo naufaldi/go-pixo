@@ -268,7 +268,8 @@ let make = () => {
             }
           | None => "image/png"
           }
-          let compressedUrl = %raw("(mimeType, compressedBytes) => { const blob = new Blob([compressedBytes], { type: mimeType }); return URL.createObjectURL(blob); }")(mimeType, compressedBytes);
+          let createBlobUrl: (string, 'a) => string = %raw("(mimeType, compressedBytes) => { const blob = new Blob([compressedBytes], { type: mimeType }); return URL.createObjectURL(blob); }")
+          let compressedUrl = createBlobUrl(mimeType, compressedBytes);
           let compressedSize = compressedBytes->Array.length;
           logCompressed(id, compressedSize)
           
@@ -429,13 +430,14 @@ let make = () => {
           let subsampling = state.subsampling
           let trellis = state.trellis
           let optimizeHuffman = state.optimizeHuffman
+          let originalFileBytes = %raw("new Uint8Array(result.originalFileBytes)")
           let postCompress: ('a, string, 'a, int, int, int, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
             "(worker, id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, %raw("null"))
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
@@ -572,7 +574,9 @@ let make = () => {
       None
     } else {
       let optimizations = switch state.preset {
-      | Types.Smaller => 
+      | Types.Ultra =>
+        ["Combined filter strategy", "Maximum Zopfli passes", "Full alpha + color optimization"]
+      | Types.Smaller =>
         let base = ["Maximum compression"]
         let withTrellis = if state.trellis {
           base->Array.concat(["Smart quality balance"])

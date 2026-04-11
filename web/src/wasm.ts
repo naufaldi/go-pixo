@@ -54,6 +54,14 @@ export interface GoWasmInstance {
     zopfliIterations: number,
     progressCallback?: (phase: string, progress: number) => void
   ): Uint8Array | string;
+  recompressJpeg(
+    jpegBytes: Uint8Array,
+    preset: number,
+    quality: number,
+    progressive: boolean,
+    trellis: boolean,
+    optimizeHuffman: boolean
+  ): Uint8Array | string;
   bytesPerPixel(colorType: number): number;
 }
 
@@ -65,6 +73,7 @@ declare global {
     encodeJpeg: GoWasmInstance['encodeJpeg'];
     encodeJpegAdvanced: GoWasmInstance['encodeJpegAdvanced'];
     recompressPngLossless: GoWasmInstance['recompressPngLossless'];
+    recompressJpeg: GoWasmInstance['recompressJpeg'];
     bytesPerPixel: GoWasmInstance['bytesPerPixel'];
     goWasmInit: () => void;
   }
@@ -251,6 +260,34 @@ export const recompressPngLossless = (
     preset,
     zopfliIterations,
     progressCallback
+  );
+
+  if (typeof result === 'string' && result.startsWith('error:')) {
+    throw new Error(result);
+  }
+
+  return result as Uint8Array;
+};
+
+export const recompressJpeg = (
+  jpegBytes: Uint8Array,
+  preset: number,
+  quality: number = 85,
+  progressive: boolean = false,
+  trellis: boolean = false,
+  optimizeHuffman: boolean = false
+): Uint8Array => {
+  if (!window.recompressJpeg) {
+    throw new Error('recompressJpeg not available');
+  }
+
+  const result = window.recompressJpeg(
+    jpegBytes,
+    preset,
+    quality,
+    progressive,
+    trellis,
+    optimizeHuffman
   );
 
   if (typeof result === 'string' && result.startsWith('error:')) {

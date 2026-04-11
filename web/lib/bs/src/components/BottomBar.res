@@ -15,17 +15,19 @@ let make = (
   let handleSliderChange = (_e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
     switch value {
-    | 0 => onPresetChange(Smaller)
-    | 1 => onPresetChange(Balanced)
-    | 2 => onPresetChange(Faster)
+    | 0 => onPresetChange(Ultra)
+    | 1 => onPresetChange(Smaller)
+    | 2 => onPresetChange(Balanced)
+    | 3 => onPresetChange(Faster)
     | _ => ()
     }
   }
 
   let sliderValue = switch preset {
-  | Smaller => 0
-  | Balanced => 1
-  | Faster => 2
+  | Ultra => 0
+  | Smaller => 1
+  | Balanced => 2
+  | Faster => 3
   }
 
   <div className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-4 py-2 z-50">
@@ -46,7 +48,7 @@ let make = (
       <div className="flex-1 max-w-md mx-6">
         <div className="flex items-center gap-3">
           <div className="text-center">
-            <div className="text-xs text-neutral-500 font-medium">{React.string("Smaller")}</div>
+            <div className="text-xs text-neutral-500 font-medium">{React.string("Ultra")}</div>
             <div className="text-xs text-neutral-600 max-w-20 leading-tight">
               {React.string("Max size")}
             </div>
@@ -55,14 +57,14 @@ let make = (
             <input
               type_="range"
               min="0"
-              max="2"
+              max="3"
               step=1.0
               value={Int.toString(sliderValue)}
               onChange=handleSliderChange
               className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
             />
             <div className="flex justify-between mt-0.5">
-              <span className="text-xs text-neutral-500">{React.string("Smaller")}</span>
+              <span className="text-xs text-neutral-500">{React.string("Ultra")}</span>
               <span className="text-xs text-neutral-500">{React.string("Fast")}</span>
             </div>
           </div>

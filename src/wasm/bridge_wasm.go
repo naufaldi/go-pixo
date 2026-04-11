@@ -187,6 +187,35 @@ func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
 }
 
 /**
+ * HandleRecompressJpeg recompresses an input JPEG (provided as file bytes).
+ * Expected args: (jpegBytes: Uint8Array, preset: number, quality: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean)
+ */
+func HandleRecompressJpeg(this js.Value, args []js.Value) any {
+	if len(args) < 6 {
+		return js.ValueOf("error: invalid arguments: expected 6 arguments")
+	}
+
+	jpegBytesJS := args[0]
+	preset := args[1].Int()
+	quality := args[2].Int()
+	progressive := args[3].Bool()
+	trellis := args[4].Bool()
+	optimizeHuffman := args[5].Bool()
+
+	input := make([]byte, jpegBytesJS.Get("length").Int())
+	js.CopyBytesToGo(input, jpegBytesJS)
+
+	output, err := RecompressJpeg(input, preset, uint8(quality), progressive, trellis, optimizeHuffman)
+	if err != nil {
+		return js.ValueOf(fmt.Sprintf("error: %v", err))
+	}
+
+	dst := js.Global().Get("Uint8Array").New(len(output))
+	js.CopyBytesToJS(dst, output)
+	return dst
+}
+
+/**
  * HandleBytesPerPixel returns the bytes per pixel for a given color type.
  * Expected arguments: (colorType: number)
  */

@@ -28,6 +28,8 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 		opts = png.BalancedOptions(width, height)
 	case 2:
 		opts = png.FasterOptions(width, height)
+	case 4:
+		opts = png.UltraOptions(width, height)
 	default:
 		opts = png.BalancedOptions(width, height)
 	}
@@ -74,6 +76,8 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		opts = png.FasterOptions(width, height)
 	case 3:
 		opts = png.ExtremeOptions(width, height)
+	case 4:
+		opts = png.UltraOptions(width, height)
 	default:
 		opts = png.BalancedOptions(width, height)
 	}
@@ -216,6 +220,8 @@ func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, pr
 		opts = png.FasterOptions(1, 1)
 	case 3:
 		opts = png.ExtremeOptions(1, 1)
+	case 4:
+		opts = png.UltraOptions(1, 1)
 	default:
 		opts = png.BalancedOptions(1, 1)
 	}
@@ -228,6 +234,26 @@ func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, pr
 	}
 
 	return png.RecompressPNGBytesLossless(inputPNG, opts)
+}
+
+func RecompressJpeg(inputJPEG []byte, preset int, quality uint8, progressive bool, trellis bool, optimizeHuffman bool) ([]byte, error) {
+	var opts jpeg.Options
+	switch preset {
+	case 0:
+		opts = jpeg.FastOptions(1, 1, quality)
+	case 1:
+		opts = jpeg.BalancedOptions(1, 1, quality)
+	case 2:
+		opts = jpeg.MaxOptions(1, 1, quality)
+	default:
+		opts = jpeg.BalancedOptions(1, 1, quality)
+	}
+
+	opts.Progressive = progressive
+	opts.TrellisQuant = trellis
+	opts.OptimizeHuffman = optimizeHuffman
+
+	return jpeg.RecompressJPEGBytes(inputJPEG, opts)
 }
 
 func BytesPerPixel(colorType int) int {

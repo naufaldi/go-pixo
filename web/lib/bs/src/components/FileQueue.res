@@ -1,5 +1,3 @@
-open React
-
 let formatSize = (bytes: int): string => {
   if bytes >= 1_000_000 {
     let mb = Math.round(Int.toFloat(bytes) /. 1000000.0 *. 10.0) /. 10.0
@@ -28,7 +26,7 @@ let isAlreadyOptimized = (original: int, compressed: int): bool => {
   } else {
     let saved = original - compressed
     let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    percent <= 0.1
+    saved >= 0 && percent <= 0.1
   }
 }
 

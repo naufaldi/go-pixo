@@ -17,6 +17,7 @@ func main() {
 	js.Global().Set("encodeJpeg", js.FuncOf(wasm.HandleEncodeJpeg))
 	js.Global().Set("encodeJpegAdvanced", js.FuncOf(wasm.HandleEncodeJpegAdvanced))
 	js.Global().Set("recompressPngLossless", js.FuncOf(wasm.HandleRecompressPngLossless))
+	js.Global().Set("recompressJpeg", js.FuncOf(wasm.HandleRecompressJpeg))
 	js.Global().Set("bytesPerPixel", js.FuncOf(wasm.HandleBytesPerPixel))
 
 	// Signal that the WASM is ready

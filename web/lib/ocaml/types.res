@@ -22,6 +22,7 @@ type fileKind =
   | Unknown
 
 type preset =
+  | Ultra
   | Smaller
   | Balanced
   | Faster
@@ -80,6 +81,7 @@ type appState = {
 
 let presetToInt = (preset: preset): int => {
   switch preset {
+  | Ultra => 4
   | Smaller => 0
   | Balanced => 1
   | Faster => 2
