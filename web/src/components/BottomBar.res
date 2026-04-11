@@ -9,12 +9,18 @@ let make = (
   ~onLosslessChange,
   ~onDownload,
   ~onDownloadAll,
+  ~onDownloadZip: unit => unit,
   ~hasCompletedItems: bool,
+  ~completedCount: int,
   ~appliedOptimizations: option<array<string>>,
   ~outputFormat: Types.outputFormat,
   ~onOutputFormatChange: Types.outputFormat => unit,
   ~processingAll: bool,
   ~onCompressAll: unit => unit,
+  ~targetWidth: option<int>,
+  ~targetHeight: option<int>,
+  ~onTargetWidthChange: option<int> => unit,
+  ~onTargetHeightChange: option<int> => unit,
 ) => {
   let handleSliderChange = (_e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
@@ -47,6 +53,7 @@ let make = (
             ("PNG", Types.ForcePng),
             ("JPEG", Types.ForceJpeg),
             ("WebP", Types.ForceWebp),
+            ("AVIF", Types.ForceAvif),
           ]->Array.map(((label, fmt)) =>
             <button
               key=label
@@ -63,6 +70,39 @@ let make = (
               {React.string(label)}
             </button>
           )->React.array}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-neutral-500">{React.string("Resize:")}</span>
+          <input
+            type_="number"
+            placeholder="W"
+            value={switch targetWidth { | Some(w) => Int.toString(w) | None => "" }}
+            min="1"
+            max="8000"
+            onChange={e => {
+              let v = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+              let isValid: bool = %raw("!isNaN(v) && v > 0")
+              if isValid { onTargetWidthChange(Some(v)) }
+              else { onTargetWidthChange(None) }
+            }}
+            className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+          />
+          <span className="text-xs text-neutral-600">{React.string("×")}</span>
+          <input
+            type_="number"
+            placeholder="H"
+            value={switch targetHeight { | Some(h) => Int.toString(h) | None => "" }}
+            min="1"
+            max="8000"
+            onChange={e => {
+              let v = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
+              let isValid: bool = %raw("!isNaN(v) && v > 0")
+              if isValid { onTargetHeightChange(Some(v)) }
+              else { onTargetHeightChange(None) }
+            }}
+            className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+          />
+          <span className="text-xs text-neutral-600">{React.string("px")}</span>
         </div>
         {switch appliedOptimizations {
         | Some(optimizations) =>
@@ -143,6 +183,14 @@ let make = (
               onClick={_ => onDownloadAll()}
               className="text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors">
               {React.string("Download All")}
+            </button>
+          : React.null}
+        {completedCount >= 2
+          ? <button
+              type_="button"
+              onClick={_ => onDownloadZip()}
+              className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors">
+              {React.string("Download ZIP")}
             </button>
           : React.null}
       </div>

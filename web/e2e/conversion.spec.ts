@@ -1,45 +1,60 @@
 import { test, expect } from '@playwright/test'
-import { readFileSync } from 'fs'
+import { writeFileSync } from 'fs'
 import { join } from 'path'
 
-test.describe('Image Conversion', () => {
-  test('should load the application', async ({ page }) => {
+// Minimal 1x1 red PNG (67 bytes) — valid PNG header + IHDR + IDAT + IEND
+const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg=='
+
+function writeTinyPng(path: string): void {
+  writeFileSync(path, Buffer.from(TINY_PNG_BASE64, 'base64'))
+}
+
+test.describe('go-pixo', () => {
+  test('app loads with correct title', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('h1')).toContainText('Go-Pixo')
   })
 
-  test('should initialize WASM successfully', async ({ page }) => {
+  test('WASM initializes successfully', async ({ page }) => {
     await page.goto('/')
-    
-    // Wait for WASM to initialize (check for encodePng function)
-    await page.waitForFunction(() => {
-      return typeof (window as any).encodePng === 'function'
-    }, { timeout: 10000 })
-    
-    // Verify WASM is ready
-    const wasmReady = await page.evaluate(() => {
-      return typeof (window as any).encodePng === 'function'
+    await page.waitForFunction(
+      () => typeof (window as any).encodePng === 'function',
+      { timeout: 15000 }
+    )
+    const ready = await page.evaluate(() => typeof (window as any).encodePng === 'function')
+    expect(ready).toBe(true)
+  })
+
+  test('PNG file is accepted and compresses to Done status', async ({ page }) => {
+    const fixturePath = join(__dirname, 'fixtures', 'test.png')
+    writeTinyPng(fixturePath)
+
+    await page.goto('/')
+    await page.waitForFunction(
+      () => typeof (window as any).encodePng === 'function',
+      { timeout: 15000 }
+    )
+
+    // Upload via file input (find the hidden file input in the dropzone)
+    const fileInput = page.locator('input[type="file"]')
+    await fileInput.setInputFiles(fixturePath)
+
+    // Wait for compression to complete (status changes to Done)
+    // FileQueue items should show compression savings
+    await page.waitForSelector('[data-testid="file-item-done"], .text-green-400, .text-emerald-400', {
+      timeout: 30000,
     })
-    expect(wasmReady).toBe(true)
   })
 
-  test('should convert an image via WASM and produce valid PNG', async ({ page }) => {
+  test('recompressJpeg WASM function is registered', async ({ page }) => {
     await page.goto('/')
-
-    // Wait for WASM to initialize
-    await page.waitForFunction(() => {
-      return typeof (window as any).encodePng === 'function'
-    }, { timeout: 10000 })
-
-    // Load test fixture image
-    // Note: User will provide the actual image file
-    // For now, verify the page structure is correct
-    await expect(page.locator('h1')).toContainText('Go-Pixo')
-    
-    // TODO: Once user provides test image, add:
-    // const testImagePath = join(__dirname, '../fixtures/test-image.png')
-    // await page.locator('input[type="file"]').setInputFiles(testImagePath)
-    // await expect(page.locator('#compressed-preview')).toBeVisible()
-    // Verify the output is a valid PNG by checking file headers
+    await page.waitForFunction(
+      () => typeof (window as any).encodePng === 'function',
+      { timeout: 15000 }
+    )
+    const hasRecompressJpeg = await page.evaluate(
+      () => typeof (window as any).recompressJpeg === 'function'
+    )
+    expect(hasRecompressJpeg).toBe(true)
   })
 })

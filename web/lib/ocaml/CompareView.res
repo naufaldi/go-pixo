@@ -20,7 +20,7 @@ let isAlreadyOptimized = (original: int, compressed: int): bool => {
   } else {
     let saved = original - compressed
     let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    percent <= 0.1
+    saved >= 0 && percent <= 0.1
   }
 }
 

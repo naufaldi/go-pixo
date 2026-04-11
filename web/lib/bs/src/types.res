@@ -19,6 +19,7 @@ type fileStatus =
 type fileKind =
   | Png
   | Jpeg
+  | Webp
   | Unknown
 
 type preset =
@@ -35,6 +36,13 @@ type quantizationLevel =
   | Colors32
   | Colors16
   | Colors8
+
+type outputFormat =
+  | SameAsInput
+  | ForcePng
+  | ForceJpeg
+  | ForceWebp
+  | ForceAvif
 
 type queueItem = {
   id: string,
@@ -77,6 +85,9 @@ type appState = {
   optimizeHuffman: bool,
   compressionProgress: option<compressionProgress>,
   compressionTime: option<int>,
+  outputFormat: outputFormat,
+  activeCompressions: array<(string, compressionProgress)>,
+  processingAll: bool,
 }
 
 let presetToInt = (preset: preset): int => {
@@ -122,6 +133,8 @@ let fileKindFromMime = (mime: string, name: string): fileKind => {
     Png
   } else if mime->String.includes("jpeg") || mime->String.includes("jpg") || name->String.endsWith(".jpg") || name->String.endsWith(".jpeg") {
     Jpeg
+  } else if mime->String.includes("webp") || name->String.endsWith(".webp") {
+    Webp
   } else {
     Unknown
   }

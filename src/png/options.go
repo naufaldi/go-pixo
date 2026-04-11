@@ -14,6 +14,8 @@ const (
 	PresetMax
 	// PresetExtreme favors maximum size reduction.
 	PresetExtreme
+	// PresetUltra uses combined Entropy+Bigrams filter strategy with deep Zopfli passes.
+	PresetUltra
 )
 
 // FilterStrategy selects the scanline filter strategy.
@@ -44,6 +46,8 @@ const (
 	FilterStrategyBigrams
 	// FilterStrategyParallel selects filters in parallel (adaptive strategy).
 	FilterStrategyParallel
+	// FilterStrategyCombined scores each filter with a combined Entropy + Bigrams rank.
+	FilterStrategyCombined
 )
 
 // DistanceMetric selects the color distance formula for quantization.
@@ -123,14 +127,14 @@ func FasterOptions(width, height int) Options {
 }
 
 // SmallerOptions returns options optimized for maximum compression with quality preservation.
-// Uses entropy-based filtering and moderate Zopfli iterations for best size/quality ratio.
+// Uses bigrams-based filtering and moderate Zopfli iterations for best size/quality ratio.
 func SmallerOptions(width, height int) Options {
 	return Options{
 		Width:               width,
 		Height:              height,
 		ColorType:           ColorRGBA,
 		CompressionLevel:    9,
-		FilterStrategy:      FilterStrategyEntropy,
+		FilterStrategy:      FilterStrategyBigrams,
 		OptimizeAlpha:       true,
 		ReduceColorType:     true,
 		StripMetadata:       true,
@@ -191,7 +195,7 @@ func ExtremeOptions(width, height int) Options {
 		Height:            height,
 		ColorType:         ColorRGBA,
 		CompressionLevel:  10,
-		FilterStrategy:    FilterStrategyEntropy,
+		FilterStrategy:    FilterStrategyBigrams,
 		OptimizeAlpha:     true,
 		ReduceColorType:   true,
 		StripMetadata:     true,
@@ -201,6 +205,29 @@ func ExtremeOptions(width, height int) Options {
 		DitheringStrength: 0.0,
 		QualityTarget:     100,
 		ZopfliIterations:  15,
+	}
+}
+
+// UltraOptions returns options for maximum compression using the combined Entropy+Bigrams
+// filter strategy with deep Zopfli passes. Slower than ExtremeOptions but can squeeze
+// out additional savings on images already processed by other tools.
+func UltraOptions(width, height int) Options {
+	return Options{
+		Width:             width,
+		Height:            height,
+		ColorType:         ColorRGBA,
+		CompressionLevel:  10,
+		FilterStrategy:    FilterStrategyCombined,
+		OptimizeAlpha:     true,
+		ReduceColorType:   true,
+		StripMetadata:     true,
+		OptimalDeflate:    true,
+		MaxColors:         0,
+		Dithering:         false,
+		DitheringStrength: 0.0,
+		QualityTarget:     100,
+		ZopfliIterations:  20,
+		EnsureSizeNotLarger: false,
 	}
 }
 

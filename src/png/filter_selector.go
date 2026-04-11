@@ -30,6 +30,8 @@ func SelectFilterWithStrategy(row []byte, prevRow []byte, bpp int, strategy Filt
 		return selectBruteForce(row, prevRow, bpp)
 	case FilterStrategyBigrams:
 		return selectBigrams(row, prevRow, bpp)
+	case FilterStrategyCombined:
+		return selectCombined(row, prevRow, bpp)
 	case FilterStrategyParallel:
 		return selectAdaptive(row, prevRow, bpp)
 	default:

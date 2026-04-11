@@ -27,6 +27,8 @@ type action =
   | SetOutputFormat(Types.outputFormat)
   | SetActiveCompression(string, option<Types.compressionProgress>)
   | SetProcessingAll(bool)
+  | SetTargetWidth(option<int>)
+  | SetTargetHeight(option<int>)
 
 let generateId = (): string => {
   %raw("Math.random().toString(36).substring(2, 9)")
@@ -175,6 +177,8 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
     }
   | SetOutputFormat(fmt) => {...state, outputFormat: fmt}
   | SetProcessingAll(b) => {...state, processingAll: b}
+  | SetTargetWidth(w) => {...state, targetWidth: w}
+  | SetTargetHeight(h) => {...state, targetHeight: h}
   | SetActiveCompression(id, progress) => {
       let filtered = state.activeCompressions->Array.filter(((pid, _)) => pid != id)
       let updated = switch progress {
@@ -211,6 +215,8 @@ let make = () => {
       outputFormat: Types.SameAsInput,
       activeCompressions: [],
       processingAll: false,
+      targetWidth: None,
+      targetHeight: None,
     },
   )
   
@@ -293,6 +299,7 @@ let make = () => {
             | Types.ForcePng => "image/png"
             | Types.ForceJpeg => "image/jpeg"
             | Types.ForceWebp => "image/webp"
+            | Types.ForceAvif => "image/avif"
             }
           | None => "image/png"
           }
@@ -423,14 +430,15 @@ let make = () => {
           | Types.ForcePng => "png"
           | Types.ForceJpeg => "jpeg"
           | Types.ForceWebp => "webp"
+          | Types.ForceAvif => "avif"
           }
-          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
+          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a, option<int>, option<int>) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes, targetWidth, targetHeight) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes, targetWidth: targetWidth ?? undefined, targetHeight: targetHeight ?? undefined }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "png", effectiveFormat, presetInt, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, false, false, "420", false, originalFileBytes)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "png", effectiveFormat, presetInt, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, false, false, "420", false, originalFileBytes, state.targetWidth, state.targetHeight)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
@@ -478,14 +486,15 @@ let make = () => {
           | Types.ForcePng => "png"
           | Types.ForceJpeg => "jpeg"
           | Types.ForceWebp => "webp"
+          | Types.ForceAvif => "avif"
           }
-          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
+          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a, option<int>, option<int>) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes, targetWidth, targetHeight) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes, targetWidth: targetWidth ?? undefined, targetHeight: targetHeight ?? undefined }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", effectiveFormat, presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", effectiveFormat, presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes, state.targetWidth, state.targetHeight)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
@@ -618,6 +627,8 @@ let make = () => {
     found.contents
   }
 
+  let completedCount = state.items->Array.filter(item => item.status == Types.Done)->Array.length
+
   let getAppliedOptimizations = (): option<array<string>> => {
     if !hasCompletedItems {
       None
@@ -680,6 +691,10 @@ let make = () => {
   
   let handleDownloadAll = () => {
     Download.downloadAll(state.items)
+  }
+
+  let handleDownloadZip = () => {
+    let _ = Download.downloadAllAsZip(state.items)
   }
 
   let handleCompressAll = () => {
@@ -926,12 +941,18 @@ let make = () => {
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
       onDownload={handleDownload}
       onDownloadAll={handleDownloadAll}
+      onDownloadZip={handleDownloadZip}
       hasCompletedItems={hasCompletedItems}
+      completedCount={completedCount}
       appliedOptimizations={getAppliedOptimizations()}
       outputFormat={state.outputFormat}
       onOutputFormatChange={fmt => dispatch(SetOutputFormat(fmt))}
       processingAll={state.processingAll}
       onCompressAll={handleCompressAll}
+      targetWidth={state.targetWidth}
+      targetHeight={state.targetHeight}
+      onTargetWidthChange={w => dispatch(SetTargetWidth(w))}
+      onTargetHeightChange={h => dispatch(SetTargetHeight(h))}
     />
   </div>
 }

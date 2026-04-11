@@ -42,6 +42,7 @@ type outputFormat =
   | ForcePng
   | ForceJpeg
   | ForceWebp
+  | ForceAvif
 
 type queueItem = {
   id: string,
@@ -87,6 +88,8 @@ type appState = {
   outputFormat: outputFormat,
   activeCompressions: array<(string, compressionProgress)>,
   processingAll: bool,
+  targetWidth: option<int>,
+  targetHeight: option<int>,
 }
 
 let presetToInt = (preset: preset): int => {

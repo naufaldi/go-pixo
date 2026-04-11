@@ -7,7 +7,7 @@ interface CompressionRequest {
   height: number;
   colorType: number;
   format: 'png' | 'jpeg';
-  outputFormat?: 'same' | 'png' | 'jpeg' | 'webp';
+  outputFormat?: 'same' | 'png' | 'jpeg' | 'webp' | 'avif';
   preset: number;
   lossy: boolean;
   maxColors: number;
@@ -21,6 +21,8 @@ interface CompressionRequest {
   trellis?: boolean;
   optimizeHuffman?: boolean;
   originalFileBytes?: Uint8Array; // Original PNG file bytes for "never larger" guard
+  targetWidth?: number;
+  targetHeight?: number;
 }
 
 interface CompressionResponse {
@@ -283,6 +285,44 @@ async function encodeWebp(pixels: Uint8Array, width: number, height: number, qua
   return new Uint8Array(arrayBuffer);
 }
 
+// Encode image as AVIF using OffscreenCanvas
+async function encodeAvif(pixels: Uint8Array, width: number, height: number, quality: number): Promise<Uint8Array> {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d')!;
+  const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer, pixels.byteOffset, pixels.byteLength), width, height);
+  ctx.putImageData(imageData, 0, 0);
+  const blob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
+  if (blob.size === 0) {
+    throw new Error('AVIF encoding is not supported in this browser. Try WebP or JPEG instead.');
+  }
+  const arrayBuffer = await blob.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
+function resizePixels(
+  pixels: Uint8Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number
+): { pixels: Uint8Array; width: number; height: number } {
+  const src = new OffscreenCanvas(srcW, srcH);
+  const srcCtx = src.getContext('2d')!;
+  const imageData = new ImageData(
+    new Uint8ClampedArray(pixels.buffer as ArrayBuffer, pixels.byteOffset, pixels.byteLength),
+    srcW,
+    srcH
+  );
+  srcCtx.putImageData(imageData, 0, 0);
+
+  const dst = new OffscreenCanvas(dstW, dstH);
+  const dstCtx = dst.getContext('2d')!;
+  dstCtx.drawImage(src, 0, 0, dstW, dstH);
+
+  const resized = dstCtx.getImageData(0, 0, dstW, dstH);
+  return { pixels: new Uint8Array(resized.data.buffer), width: dstW, height: dstH };
+}
+
 // Handle messages from main thread
 self.onmessage = async (
   event: MessageEvent<
@@ -354,9 +394,29 @@ self.onmessage = async (
 
         let compressedBytes: Uint8Array;
 
+        // Apply resize if target dimensions are specified
+        let { pixels: workPixels, width: workWidth, height: workHeight } = {
+          pixels: req.pixels,
+          width: req.width,
+          height: req.height,
+        };
+        if (req.targetWidth || req.targetHeight) {
+          const aspect = req.width / req.height;
+          const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
+          const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
+          if (dstW !== req.width || dstH !== req.height) {
+            const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
+            workPixels = resized.pixels;
+            workWidth = resized.width;
+            workHeight = resized.height;
+          }
+        }
+
         // Handle WebP encoding via OffscreenCanvas
         if (resolvedFormat === 'webp') {
-          compressedBytes = await encodeWebp(req.pixels, req.width, req.height, req.qualityTarget ?? 85);
+          compressedBytes = await encodeWebp(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
+        } else if (resolvedFormat === 'avif') {
+          compressedBytes = await encodeAvif(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
         } else if (resolvedFormat === 'jpeg') {
           // For lossless JPEG re-encode from original bytes (no pixel round-trip quality loss)
           const useLosslessJpegBytes =
@@ -377,23 +437,23 @@ self.onmessage = async (
           } else {
             // Pixel-based JPEG encode (format conversion or lossy path)
             // Convert RGBA to RGB if needed
-            let jpegPixels = req.pixels;
+            let jpegPixels = workPixels;
             let jpegColorType = req.colorType;
 
             if (req.colorType === 6) {
-              jpegPixels = new Uint8Array(req.width * req.height * 3);
-              for (let i = 0; i < req.width * req.height; i++) {
-                jpegPixels[i * 3] = req.pixels[i * 4];
-                jpegPixels[i * 3 + 1] = req.pixels[i * 4 + 1];
-                jpegPixels[i * 3 + 2] = req.pixels[i * 4 + 2];
+              jpegPixels = new Uint8Array(workWidth * workHeight * 3);
+              for (let i = 0; i < workWidth * workHeight; i++) {
+                jpegPixels[i * 3] = workPixels[i * 4];
+                jpegPixels[i * 3 + 1] = workPixels[i * 4 + 1];
+                jpegPixels[i * 3 + 2] = workPixels[i * 4 + 2];
               }
               jpegColorType = 3; // RGB
             }
 
             compressedBytes = encodeJpegAdvanced(
               jpegPixels,
-              req.width,
-              req.height,
+              workWidth,
+              workHeight,
               jpegColorType,
               req.qualityTarget ?? 85,
               req.subsampling === '444' ? 1 : 0,
@@ -445,9 +505,9 @@ self.onmessage = async (
               };
 
               compressedBytes = encodePngAdvanced(
-                req.pixels,
-                req.width,
-                req.height,
+                workPixels,
+                workWidth,
+                workHeight,
                 req.colorType,
                 req.preset,
                 req.lossy,
@@ -461,9 +521,9 @@ self.onmessage = async (
             } else {
               // Use basic encoding
               compressedBytes = encodePng(
-                req.pixels,
-                req.width,
-                req.height,
+                workPixels,
+                workWidth,
+                workHeight,
                 req.colorType,
                 req.preset,
                 req.lossy,

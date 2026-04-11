@@ -9,8 +9,14 @@ let make = (
   ~onLosslessChange,
   ~onDownload,
   ~onDownloadAll,
+  ~onDownloadZip: unit => unit,
   ~hasCompletedItems: bool,
+  ~completedCount: int,
   ~appliedOptimizations: option<array<string>>,
+  ~outputFormat: Types.outputFormat,
+  ~onOutputFormatChange: Types.outputFormat => unit,
+  ~processingAll: bool,
+  ~onCompressAll: unit => unit,
 ) => {
   let handleSliderChange = (_e: ReactEvent.Form.t) => {
     let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
@@ -36,8 +42,33 @@ let make = (
         <div className="text-sm text-neutral-400">
           {React.string("Format: " ++ format)}
         </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-neutral-500">{React.string("Output:")}</span>
+          {[
+            ("Auto", Types.SameAsInput),
+            ("PNG", Types.ForcePng),
+            ("JPEG", Types.ForceJpeg),
+            ("WebP", Types.ForceWebp),
+            ("AVIF", Types.ForceAvif),
+          ]->Array.map(((label, fmt)) =>
+            <button
+              key=label
+              type_="button"
+              onClick={_ => onOutputFormatChange(fmt)}
+              className={
+                "text-xs px-2 py-0.5 rounded transition-colors " ++
+                if outputFormat == fmt {
+                  "bg-white text-neutral-900"
+                } else {
+                  "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                }
+              }>
+              {React.string(label)}
+            </button>
+          )->React.array}
+        </div>
         {switch appliedOptimizations {
-        | Some(optimizations) => 
+        | Some(optimizations) =>
           <div className="text-xs text-neutral-500">
             <span className="text-neutral-400">{React.string("What we did: ")}</span>
             {React.string(optimizations->Array.join(", "))}
@@ -95,12 +126,34 @@ let make = (
           className="text-sm bg-white text-neutral-900 px-3 py-1 rounded font-medium hover:bg-neutral-100 transition-colors">
           {React.string("Download")}
         </button>
+        <button
+          type_="button"
+          disabled=processingAll
+          onClick={_ => onCompressAll()}
+          className={
+            "text-sm px-3 py-1 rounded font-medium transition-colors " ++
+            if processingAll {
+              "bg-neutral-700 text-neutral-500 cursor-not-allowed"
+            } else {
+              "bg-blue-600 text-white hover:bg-blue-500"
+            }
+          }>
+          {React.string(if processingAll {"Processing..."} else {"Compress All"})}
+        </button>
         {hasCompletedItems
           ? <button
               type_="button"
               onClick={_ => onDownloadAll()}
               className="text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors">
               {React.string("Download All")}
+            </button>
+          : React.null}
+        {completedCount >= 2
+          ? <button
+              type_="button"
+              onClick={_ => onDownloadZip()}
+              className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors">
+              {React.string("Download ZIP")}
             </button>
           : React.null}
       </div>

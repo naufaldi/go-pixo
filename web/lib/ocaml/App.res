@@ -24,6 +24,9 @@ type action =
   | SetCompressionTime(option<int>)
   | RemoveItem(string)
   | ClearAll
+  | SetOutputFormat(Types.outputFormat)
+  | SetActiveCompression(string, option<Types.compressionProgress>)
+  | SetProcessingAll(bool)
 
 let generateId = (): string => {
   %raw("Math.random().toString(36).substring(2, 9)")
@@ -170,6 +173,16 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
       })
       {...state, items: [], selectedId: None}
     }
+  | SetOutputFormat(fmt) => {...state, outputFormat: fmt}
+  | SetProcessingAll(b) => {...state, processingAll: b}
+  | SetActiveCompression(id, progress) => {
+      let filtered = state.activeCompressions->Array.filter(((pid, _)) => pid != id)
+      let updated = switch progress {
+      | Some(p) => Array.concat(filtered, [(id, p)])
+      | None => filtered
+      }
+      {...state, activeCompressions: updated}
+    }
   }
 }
 
@@ -195,6 +208,9 @@ let make = () => {
       optimizeHuffman: false,
       compressionProgress: None,
       compressionTime: None,
+      outputFormat: Types.SameAsInput,
+      activeCompressions: [],
+      processingAll: false,
     },
   )
   
@@ -202,16 +218,22 @@ let make = () => {
   let processingRef = React.useRef(false)
   let itemsRef = React.useRef(state.items)
   let compressionProgressRef = React.useRef(state.compressionProgress)
-  
+  let outputFormatRef = React.useRef(state.outputFormat)
+
   React.useEffect1(() => {
     itemsRef.current = state.items
     None
   }, [state.items])
-  
+
   React.useEffect1(() => {
     compressionProgressRef.current = state.compressionProgress
     None
   }, [state.compressionProgress])
+
+  React.useEffect1(() => {
+    outputFormatRef.current = state.outputFormat
+    None
+  }, [state.outputFormat])
   
   React.useEffect0(() => {
     let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
@@ -262,9 +284,16 @@ let make = () => {
         | Some(id) =>
           let compressedBytes = %raw("new Uint8Array(data.compressedBytes)");
           let mimeType = switch itemsRef.current->Array.find(item => item.id == id) {
-          | Some(item) => switch item.kind {
-            | Types.Jpeg => "image/jpeg"
-            | Types.Png | Types.Unknown => "image/png"
+          | Some(item) =>
+            switch outputFormatRef.current {
+            | Types.SameAsInput => switch item.kind {
+              | Types.Jpeg => "image/jpeg"
+              | Types.Png | Types.Webp | Types.Unknown => "image/png"
+              }
+            | Types.ForcePng => "image/png"
+            | Types.ForceJpeg => "image/jpeg"
+            | Types.ForceWebp => "image/webp"
+            | Types.ForceAvif => "image/avif"
             }
           | None => "image/png"
           }
@@ -365,7 +394,7 @@ let make = () => {
   
   let processItem = (item: Types.queueItem): Promise.t<unit> => {
     switch item.kind {
-    | Types.Png =>
+    | Types.Png | Types.Webp =>
       dispatch(UpdateItem(item.id, item => {...item, status: Types.Decoding}))
       ImageDecode.decodeFile(item.file)
         ->Promise.then(result => {
@@ -376,7 +405,7 @@ let make = () => {
             width: Some(result.width),
             height: Some(result.height),
           }))
-          
+
           let pixels: 'a = %raw("new Uint8Array(result.pixels)")
           let presetInt = Types.presetToInt(state.preset)
           let lossy = !state.lossless
@@ -386,20 +415,31 @@ let make = () => {
           let qualityTarget = state.qualityTarget
           let zopfliIterations = state.zopfliIterations
           let originalFileBytes = %raw("new Uint8Array(result.originalFileBytes)")
-          let postCompress: ('a, string, 'a, int, int, int, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
+          let effectiveFormat = switch state.outputFormat {
+          | Types.SameAsInput => switch item.kind {
+            | Types.Jpeg => "jpeg"
+            | Types.Png | Types.Webp => "png"
+            | Types.Unknown => "png"
+            }
+          | Types.ForcePng => "png"
+          | Types.ForceJpeg => "jpeg"
+          | Types.ForceWebp => "webp"
+          | Types.ForceAvif => "avif"
+          }
+          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "png", presetInt, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, false, false, "420", false, originalFileBytes)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "png", effectiveFormat, presetInt, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, false, false, "420", false, originalFileBytes)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
               status: Types.Error("Worker not available"),
             }))
           }
-          
+
           Promise.resolve()
         })
         ->Promise.catch(_err => {
@@ -421,7 +461,7 @@ let make = () => {
             width: Some(result.width),
             height: Some(result.height),
           }))
-          
+
           let pixels: 'a = %raw("new Uint8Array(result.pixels)")
           let presetInt = Types.presetToInt(state.preset)
           let lossy = !state.lossless
@@ -431,20 +471,31 @@ let make = () => {
           let trellis = state.trellis
           let optimizeHuffman = state.optimizeHuffman
           let originalFileBytes = %raw("new Uint8Array(result.originalFileBytes)")
-          let postCompress: ('a, string, 'a, int, int, int, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
-            "(worker, id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
+          let effectiveFormat = switch state.outputFormat {
+          | Types.SameAsInput => switch item.kind {
+            | Types.Jpeg => "jpeg"
+            | Types.Png | Types.Webp => "png"
+            | Types.Unknown => "png"
+            }
+          | Types.ForcePng => "png"
+          | Types.ForceJpeg => "jpeg"
+          | Types.ForceWebp => "webp"
+          | Types.ForceAvif => "avif"
+          }
+          let postCompress: ('a, string, 'a, int, int, int, string, string, int, bool, int, bool, float, int, int, bool, bool, string, bool, 'a) => unit = %raw(
+            "(worker, id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes) => { worker.postMessage({ type: 'compress', id, pixels, width, height, colorType, format, outputFormat, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes }); }"
           )
 
           switch workerRef.current->Nullable.toOption {
           | Some(worker) =>
-            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes)
+            postCompress(worker, item.id, pixels, result.width, result.height, result.colorType, "jpeg", effectiveFormat, presetInt, lossy, maxColors, state.dithering, state.ditherStrength, state.qualityTarget, state.zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, originalFileBytes)
           | None =>
             dispatch(UpdateItem(item.id, item => {
               ...item,
               status: Types.Error("Worker not available"),
             }))
           }
-          
+
           Promise.resolve()
         })
         ->Promise.catch(_ => {
@@ -553,6 +604,7 @@ let make = () => {
   | Some(item) => switch item.kind {
     | Png => "PNG"
     | Jpeg => "JPEG"
+    | Webp => "WebP"
     | Unknown => "Unknown"
     }
   | None => "PNG"
@@ -568,6 +620,8 @@ let make = () => {
     })
     found.contents
   }
+
+  let completedCount = state.items->Array.filter(item => item.status == Types.Done)->Array.length
 
   let getAppliedOptimizations = (): option<array<string>> => {
     if !hasCompletedItems {
@@ -632,7 +686,185 @@ let make = () => {
   let handleDownloadAll = () => {
     Download.downloadAll(state.items)
   }
-  
+
+  let handleDownloadZip = () => {
+    let _ = Download.downloadAllAsZip(state.items)
+  }
+
+  let handleCompressAll = () => {
+    let pendingItems = state.items->Array.filter(item => item.status == Types.Pending)
+    if pendingItems->Array.length > 0 {
+      dispatch(SetProcessingAll(true))
+
+      let markCompressing = (id, url, w, h) =>
+        dispatch(UpdateItem(id, item => {
+          ...item,
+          status: Types.Compressing,
+          originalUrl: Some(url),
+          width: Some(w),
+          height: Some(h),
+        }))
+
+      let markDone = (id, compressedUrl, compressedSize) => {
+        dispatch(SetActiveCompression(id, None))
+        dispatch(UpdateItem(id, item => {
+          ...item,
+          status: Types.Done,
+          compressedUrl: Some(compressedUrl),
+          compressedBytes: Some(compressedSize),
+        }))
+      }
+
+      let markError = (id, msg) => {
+        dispatch(SetActiveCompression(id, None))
+        dispatch(UpdateItem(id, item => {
+          ...item,
+          status: Types.Error(msg),
+        }))
+      }
+
+      let setProcessingAllDone = (_b: bool) => dispatch(SetProcessingAll(false))
+
+      let updateProgress = (id, phase, progress) =>
+        dispatch(SetActiveCompression(id, Some({
+          isActive: true,
+          itemId: id,
+          phase,
+          progress: calculateGlobalProgress(phase, progress),
+          startTime: %raw("performance.now()"),
+          fileSize: 0,
+        })))
+
+      let presetInt = Types.presetToInt(state.preset)
+      let lossy = !state.lossless
+      let maxColors = Types.quantizationToInt(state.quantization)
+      let dithering = state.dithering
+      let ditherStrength = state.ditherStrength
+      let qualityTarget = state.qualityTarget
+      let zopfliIterations = state.zopfliIterations
+      let progressive = state.progressive
+      let trellis = state.trellis
+      let subsampling = state.subsampling
+      let optimizeHuffman = state.optimizeHuffman
+
+      let launchPool: (
+        array<Types.queueItem>,
+        int,
+        bool,
+        int,
+        bool,
+        float,
+        int,
+        int,
+        bool,
+        bool,
+        string,
+        bool,
+        (string, string, int, int) => unit,
+        (string, string, int) => unit,
+        (string, string) => unit,
+        bool => unit,
+        (string, string, int) => unit,
+      ) => unit = %raw(
+        "(items, preset, lossy, maxColors, dithering, ditherStrength, qualityTarget, zopfliIterations, progressive, trellis, subsampling, optimizeHuffman, markCompressing, markDone, markError, setProcessingAllDone, updateProgress) => {
+          const poolSize = Math.max(2, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 1));
+          let active = 0;
+          let index = 0;
+
+          function processNext() {
+            while (active < poolSize && index < items.length) {
+              const item = items[index++];
+              active++;
+              const itemId = item.id;
+
+              const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+
+              worker.onmessage = async (event) => {
+                const data = event.data;
+                if (data.type === 'ready') {
+                  try {
+                    const { decodeFile } = await import('./interop/imageDecode.ts');
+                    const result = await decodeFile(item.file);
+                    markCompressing(itemId, result.previewUrl, result.width, result.height);
+                    const format = item.kind === 'Jpeg' ? 'jpeg' : 'png';
+                    worker.postMessage({
+                      type: 'compress',
+                      id: itemId,
+                      pixels: new Uint8Array(result.pixels),
+                      width: result.width,
+                      height: result.height,
+                      colorType: result.colorType,
+                      format,
+                      preset,
+                      lossy,
+                      maxColors,
+                      dithering,
+                      ditherStrength,
+                      qualityTarget,
+                      zopfliIterations,
+                      progressive,
+                      trellis,
+                      subsampling,
+                      optimizeHuffman,
+                      originalFileBytes: new Uint8Array(result.originalFileBytes),
+                    });
+                  } catch(e) {
+                    markError(itemId, e.message || 'Decode failed');
+                    worker.terminate();
+                    active--;
+                    processNext();
+                    if (active === 0) setProcessingAllDone(false);
+                  }
+                } else if (data.type === 'progress') {
+                  updateProgress(itemId, data.phase || '', Math.round(data.progress || 0));
+                } else if (data.type === 'compressed') {
+                  const bytes = new Uint8Array(data.compressedBytes);
+                  const mime = item.kind === 'Jpeg' ? 'image/jpeg' : 'image/png';
+                  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+                  markDone(itemId, url, bytes.length);
+                  worker.terminate();
+                  active--;
+                  processNext();
+                  if (active === 0) setProcessingAllDone(false);
+                } else if (data.type === 'error') {
+                  markError(itemId, data.error || 'Compression failed');
+                  worker.terminate();
+                  active--;
+                  processNext();
+                  if (active === 0) setProcessingAllDone(false);
+                }
+              };
+
+              worker.postMessage({ type: 'init' });
+            }
+          }
+
+          processNext();
+        }"
+      )
+
+      launchPool(
+        pendingItems,
+        presetInt,
+        lossy,
+        maxColors,
+        dithering,
+        ditherStrength,
+        qualityTarget,
+        zopfliIterations,
+        progressive,
+        trellis,
+        subsampling,
+        optimizeHuffman,
+        markCompressing,
+        markDone,
+        markError,
+        setProcessingAllDone,
+        updateProgress,
+      )
+    }
+  }
+
   <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100 pb-20">
     <header className="pt-8 pb-6 px-6 text-center">
       <h1 className="text-4xl font-black tracking-tight text-neutral-100 mb-2">
@@ -688,6 +920,7 @@ let make = () => {
         items={state.items}
         selectedId={state.selectedId}
         compressionProgress={state.compressionProgress}
+        activeCompressions={state.activeCompressions}
         onSelect={id => dispatch(SelectItem(Some(id)))}
         onRemove={id => dispatch(RemoveItem(id))}
         onClearAll={() => dispatch(ClearAll)}
@@ -702,8 +935,14 @@ let make = () => {
       onLosslessChange={lossless => dispatch(SetLossless(lossless))}
       onDownload={handleDownload}
       onDownloadAll={handleDownloadAll}
+      onDownloadZip={handleDownloadZip}
       hasCompletedItems={hasCompletedItems}
+      completedCount={completedCount}
       appliedOptimizations={getAppliedOptimizations()}
+      outputFormat={state.outputFormat}
+      onOutputFormatChange={fmt => dispatch(SetOutputFormat(fmt))}
+      processingAll={state.processingAll}
+      onCompressAll={handleCompressAll}
     />
   </div>
 }

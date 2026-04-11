@@ -64,6 +64,7 @@ let make = (
   ~items: array<Types.queueItem>,
   ~selectedId: option<string>,
   ~compressionProgress: option<Types.compressionProgress>,
+  ~activeCompressions: array<(string, Types.compressionProgress)>,
   ~onSelect: string => unit,
   ~onRemove: string => unit,
   ~onClearAll: unit => unit,
@@ -119,8 +120,15 @@ let make = (
                  </span>
                  {switch item.status {
                  | Compressing =>
-                   switch compressionProgress {
-                   | Some(progress) when progress.itemId == item.id =>
+                   let activeProgress = switch compressionProgress {
+                   | Some(progress) when progress.itemId == item.id => Some(progress)
+                   | _ =>
+                     activeCompressions
+                     ->Array.find(((pid, _)) => pid == item.Types.id)
+                     ->Option.map(((_, p)) => p)
+                   }
+                   switch activeProgress {
+                   | Some(progress) =>
                      let elapsed = %raw("performance.now()") -. progress.startTime
                      <div className="flex flex-col gap-1">
                        <div className="flex items-center gap-2">
@@ -144,7 +152,7 @@ let make = (
                          </span>
                        </div>
                      </div>
-                   | _ =>
+                   | None =>
                      <span className="text-xs text-blue-400 animate-pulse">
                        {React.string("Compressing...")}
                      </span>
