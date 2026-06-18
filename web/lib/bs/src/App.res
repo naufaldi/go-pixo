@@ -59,16 +59,6 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
   }
 }
 
-let calculateGlobalProgress = (phase: string, subProgress: int): int => {
-  switch phase {
-  | "preprocess" => 0 + subProgress * 10 / 100
-  | "filtering" => 10 + subProgress * 40 / 100
-  | "deflate" => 50 + subProgress * 45 / 100
-  | "finalize" => 95 + subProgress * 5 / 100
-  | _ => subProgress
-  }
-}
-
 let reducer = (state: Types.appState, action: action): Types.appState => {
   switch action {
   | SetWasmReady(ready) => {...state, wasmReady: ready}
@@ -259,6 +249,28 @@ let make = () => {
     compressionProgressRef.current = state.compressionProgress
     None
   }, [state.compressionProgress])
+
+  React.useEffect1(() => {
+    switch state.compressionProgress {
+    | Some(progress) when progress.predictable =>
+      let setIntervalFn: (unit => unit, int) => int = %raw("(fn, ms) => setInterval(fn, ms)")
+      let clearIntervalFn: int => unit = %raw("id => clearInterval(id)")
+      let tick = () => {
+        switch compressionProgressRef.current {
+        | Some(current) when current.predictable =>
+          let now = %raw("performance.now()")
+          let advanced = Progress.advancePredicted(current, now)
+          if advanced.progress > current.progress {
+            dispatch(SetCompressionProgress(Some(advanced)))
+          }
+        | _ => ()
+        }
+      }
+      let intervalId = setIntervalFn(tick, 100)
+      Some(() => clearIntervalFn(intervalId))
+    | _ => None
+    }
+  }, [state.compressionProgress])
   
   React.useEffect0(() => {
     let setOnMessage: ('a, 'b) => unit = %raw("(worker, handler) => { worker.onmessage = handler }")
@@ -285,20 +297,31 @@ let make = () => {
       | "progress" =>
         let id: option<string> = %raw("typeof data.id === 'string' ? data.id : undefined");
         let phase: option<string> = %raw("typeof data.phase === 'string' ? data.phase : undefined");
-        let subProgress: option<int> = %raw("typeof data.progress === 'number' ? Math.round(data.progress) : undefined");
-        switch (id, phase, subProgress) {
-        | (Some(id), Some(phase), Some(subProgress)) =>
+        let globalProgress: option<int> = %raw("typeof data.progress === 'number' ? Math.round(data.progress) : undefined");
+        let predictable: bool = %raw("data.predictable === true");
+        let phaseTarget: option<int> = %raw("typeof data.phaseTarget === 'number' ? Math.round(data.phaseTarget) : undefined");
+        switch (id, phase, globalProgress) {
+        | (Some(id), Some(phase), Some(globalProgress)) =>
           let fileSize = switch itemsRef.current->Array.find(item => item.id == id) {
           | Some(item) => item.originalBytes
           | None => 0
           };
-          let globalProgress = calculateGlobalProgress(phase, subProgress)
-          dispatch(SetCompressionProgress(Some({
-            isActive: true,
-            itemId: id,
+          let now = %raw("performance.now()")
+          let target = switch phaseTarget {
+          | Some(value) => value
+          | None => globalProgress
+          }
+          let updated = Progress.applyWorkerUpdate(
+            compressionProgressRef.current,
             phase,
-            progress: globalProgress,
-            startTime: %raw("performance.now()"),
+            globalProgress,
+            predictable,
+            target,
+            now,
+          )
+          dispatch(SetCompressionProgress(Some({
+            ...updated,
+            itemId: id,
             fileSize,
           })))
         | _ => ()
@@ -412,6 +435,11 @@ let make = () => {
             width: Some(result.width),
             height: Some(result.height),
           }))
+
+          let now = %raw("performance.now()")
+          dispatch(SetCompressionProgress(Some(
+            Progress.seedProgress(item.id, item.originalBytes, now),
+          )))
 
           let currentState = stateRef.current
           let settings = CompressionSettings.settingsForState(currentState)

@@ -67,6 +67,11 @@ type compressionProgress = {
   progress: int,
   startTime: float,
   fileSize: int,
+  lastRealProgress: int,
+  lastRealUpdateTime: float,
+  phaseStartTime: float,
+  phaseTarget: int,
+  predictable: bool,
 }
 
 type appState = {

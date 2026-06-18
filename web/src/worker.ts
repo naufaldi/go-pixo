@@ -4,6 +4,7 @@ import {
   type InputFormat,
   type ResolvedFormat,
 } from './interop/compressionSettings';
+import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
 
 interface CompressionRequest {
   id: string;
@@ -45,6 +46,8 @@ interface ProgressMessage {
   id: string;
   phase: string;
   progress: number;
+  predictable?: boolean;
+  phaseTarget?: number;
 }
 
 // WASM state
@@ -414,30 +417,82 @@ self.onmessage = async (
 
         let compressedBytes: Uint8Array;
 
+        const postProgress = (
+          phase: string,
+          progress: number,
+          options?: { predictable?: boolean; phaseTarget?: number },
+        ) => {
+          self.postMessage({
+            type: "progress",
+            id: req.id,
+            phase,
+            progress,
+            predictable: options?.predictable,
+            phaseTarget: options?.phaseTarget,
+          } as ProgressMessage);
+        };
+
+        postProgress(STAGE.PREPARING.label, INITIAL_PROGRESS, {
+          predictable: true,
+          phaseTarget: STAGE.RESIZING.end,
+        });
+
         // Apply resize if target dimensions are specified
         let { pixels: workPixels, width: workWidth, height: workHeight } = {
           pixels: req.pixels,
           width: req.width,
           height: req.height,
         };
-        if (req.targetWidth || req.targetHeight) {
+        const needsResize =
+          (req.targetWidth !== undefined || req.targetHeight !== undefined) &&
+          (() => {
+            const aspect = req.width / req.height;
+            const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
+            const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
+            return dstW !== req.width || dstH !== req.height;
+          })();
+
+        if (needsResize) {
+          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.start, {
+            predictable: true,
+            phaseTarget: STAGE.RESIZING.end,
+          });
           const aspect = req.width / req.height;
           const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
           const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
-          if (dstW !== req.width || dstH !== req.height) {
-            const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
-            workPixels = resized.pixels;
-            workWidth = resized.width;
-            workHeight = resized.height;
-          }
+          const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
+          workPixels = resized.pixels;
+          workWidth = resized.width;
+          workHeight = resized.height;
+          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.end);
         }
+
+        const sendPngProgress = (phase: string, subProgress: number) => {
+          const globalProgress = mapPngPhaseToGlobal(phase, subProgress);
+          postProgress(phase, globalProgress, {
+            predictable: true,
+            phaseTarget: mapPngPhaseToGlobal(phase, 100),
+          });
+        };
+
+        const postEncodingStart = () => {
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.start, {
+            predictable: true,
+            phaseTarget: STAGE.ENCODING.end - 1,
+          });
+        };
 
         // Handle WebP encoding via OffscreenCanvas
         if (resolvedFormat === 'webp') {
+          postEncodingStart();
           compressedBytes = await encodeWebp(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else if (resolvedFormat === 'avif') {
+          postEncodingStart();
           compressedBytes = await encodeAvif(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else if (resolvedFormat === 'jpeg') {
+          postEncodingStart();
           if (useLosslessJpegBytes) {
             compressedBytes = recompressJpeg(
               req.originalFileBytes!,
@@ -476,22 +531,14 @@ self.onmessage = async (
               req.preset,
             );
           }
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else {
           if (useLosslessPngBytes) {
-            const sendProgress = (phase: string, progress: number) => {
-              self.postMessage({
-                type: "progress",
-                id: req.id,
-                phase,
-                progress,
-              } as ProgressMessage);
-            };
-
             compressedBytes = recompressPngLossless(
               req.originalFileBytes!,
               req.preset,
               req.zopfliIterations ?? 0,
-              sendProgress,
+              sendPngProgress,
             );
           } else {
             // Determine if we should use advanced encoding
@@ -501,16 +548,6 @@ self.onmessage = async (
               req.qualityTarget !== undefined;
 
             if (useAdvanced) {
-              // Use advanced encoding with progress reporting
-              const sendProgress = (phase: string, progress: number) => {
-                self.postMessage({
-                  type: "progress",
-                  id: req.id,
-                  phase,
-                  progress,
-                } as ProgressMessage);
-              };
-
               compressedBytes = encodePngAdvanced(
                 workPixels,
                 workWidth,
@@ -523,10 +560,10 @@ self.onmessage = async (
                 req.ditherStrength ?? 0.5,
                 req.qualityTarget ?? 75,
                 req.zopfliIterations ?? 0,
-                sendProgress,
+                sendPngProgress,
               );
             } else {
-              // Use basic encoding
+              postEncodingStart();
               compressedBytes = encodePng(
                 workPixels,
                 workWidth,
@@ -537,9 +574,15 @@ self.onmessage = async (
                 req.maxColors,
                 req.dithering,
               );
+              postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
             }
           }
         }
+
+        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.start, {
+          predictable: true,
+          phaseTarget: STAGE.FINALIZING.end,
+        });
 
         const duration = Date.now() - startTime;
 
@@ -572,6 +615,8 @@ self.onmessage = async (
           compressedBytes?.length ?? null,
           duration + "ms",
         );
+
+        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.end);
 
         self.postMessage({
           type: "compressed",

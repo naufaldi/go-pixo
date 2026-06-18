@@ -164,13 +164,13 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-lg font-semibold text-white">
+            <span className="text-lg font-semibold text-white" dataTestId="compression-percent">
               {React.string(`${Int.toString(progress.progress)}%`)}
             </span>
           </div>
         </div>
-        <p className="text-neutral-300 text-base font-medium mb-2 capitalize">
-          {React.string(progress.phase)}
+        <p className="text-neutral-300 text-base font-medium mb-2 capitalize" dataTestId="compression-phase">
+          {React.string(Progress.phaseLabel(progress.phase))}
         </p>
         <p className="text-neutral-400 text-sm mb-4">
           {React.string(formatSize(originalBytes))}
