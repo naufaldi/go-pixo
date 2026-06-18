@@ -17,21 +17,15 @@ RUN go mod download || true
 # Copy Go source code
 COPY src/ src/
 
-# Build WASM module
-RUN GOOS=js GOARCH=wasm go build -o web/public/main.wasm ./src/cmd/wasm
+# Copy web app and build scripts
+COPY scripts/ scripts/
+COPY web/ web/
 
-# Copy web directory
+# Build WASM module and matching Go runtime helper
+RUN ./scripts/build-wasm.sh
+
 WORKDIR /app/web
-COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
-
-# Copy web source code
-COPY web/src/ src/
-COPY web/public/ public/
-COPY web/index.html ./
-COPY web/vite.config.ts ./
-COPY web/tsconfig.json ./
-COPY web/rescript.json ./
 
 # Build web frontend
 RUN bun run build

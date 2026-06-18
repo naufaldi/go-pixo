@@ -5,6 +5,7 @@ import {
   type ResolvedFormat,
 } from './interop/compressionSettings';
 import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
+import { unwrapWasmResult } from './interop/wasmResult';
 
 interface CompressionRequest {
   id: string;
@@ -124,11 +125,7 @@ function encodePng(
     maxColors,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 // Encode PNG using WASM with advanced parameters
@@ -144,6 +141,11 @@ function encodePngAdvanced(
   ditherStrength: number = 0.5,
   qualityTarget: number = 75,
   zopfliIterations: number = 0,
+  filterStrategy: number = 0,
+  usePerceptual: boolean = false,
+  distanceMetric: number = 0,
+  optimalDeflate: boolean = false,
+  filterEarlyTerm: boolean = false,
   onProgress?: (phase: string, progress: number) => void,
 ): Uint8Array {
   // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
@@ -177,14 +179,15 @@ function encodePngAdvanced(
     ditherStrength,
     qualityTarget,
     zopfliIterations,
+    filterStrategy,
+    usePerceptual,
+    distanceMetric,
+    optimalDeflate,
+    filterEarlyTerm,
     onProgress,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 // Encode JPEG using WASM with advanced parameters
@@ -219,11 +222,7 @@ function encodeJpegAdvanced(
     preset,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 function recompressPngLossless(
@@ -245,11 +244,7 @@ function recompressPngLossless(
     onProgress,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 function recompressJpeg(
@@ -275,11 +270,7 @@ function recompressJpeg(
     optimizeHuffman,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 // Encode image as WebP using OffscreenCanvas
@@ -560,6 +551,11 @@ self.onmessage = async (
                 req.ditherStrength ?? 0.5,
                 req.qualityTarget ?? 75,
                 req.zopfliIterations ?? 0,
+                0,
+                false,
+                0,
+                false,
+                false,
                 sendPngProgress,
               );
             } else {

@@ -217,14 +217,13 @@ func TestSelectBruteForce_UsesCompressSingleRow(t *testing.T) {
 	prevRow := []byte{5, 15, 25, 35, 45, 55, 65, 75}
 
 	filterType, filtered := selectBruteForce(row, prevRow, 1)
+	expectedFilter, expectedFiltered := expectedBruteForceFilter(row, prevRow, 1)
 
-	if filterType < FilterNone || filterType > FilterPaeth {
-		t.Errorf("selectBruteForce returned invalid filter type %d", filterType)
+	if filterType != expectedFilter {
+		t.Fatalf("selectBruteForce filter = %d, want %d", filterType, expectedFilter)
 	}
-
-	// Filtered should be the result of applying the selected filter
-	if len(filtered) == 0 && len(row) > 0 {
-		t.Error("selectBruteForce returned empty filtered result for non-empty row")
+	if !bytes.Equal(filtered, expectedFiltered) {
+		t.Fatalf("selectBruteForce returned bytes for filter %d, want filter %d bytes", filterType, expectedFilter)
 	}
 }
 
@@ -250,8 +249,27 @@ func TestSelectBruteForce_UniformData(t *testing.T) {
 
 	// Up filter should be selected for uniform data with matching previous row
 	if filterType != FilterUp {
-		t.Logf("Expected FilterUp for uniform data, got %d", filterType)
+		t.Fatalf("Expected FilterUp for uniform data, got %d", filterType)
 	}
+}
+
+func expectedBruteForceFilter(row, prevRow []byte, bpp int) (FilterType, []byte) {
+	bestFilter := FilterNone
+	var bestFiltered []byte
+	bestSize := -1
+	bestScore := -1
+	for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
+		filtered := applyFilter(filterType, row, prevRow, bpp)
+		size := len(compressSingleRow(filtered))
+		score := SumAbsoluteValues(filtered)
+		if bestSize < 0 || size < bestSize || (size == bestSize && score < bestScore) {
+			bestSize = size
+			bestScore = score
+			bestFilter = filterType
+			bestFiltered = filtered
+		}
+	}
+	return bestFilter, bestFiltered
 }
 
 func TestBruteForceFilters_UsesLZ77(t *testing.T) {

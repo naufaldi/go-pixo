@@ -1,4 +1,6 @@
 // WASM Bridge for Go-Pixo
+import { unwrapWasmResult } from './interop/wasmResult';
+
 
 export interface GoWasmInstance {
   encodePng(
@@ -126,11 +128,7 @@ export const encodePng = (
     maxColors
   );
   
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const encodePngAdvanced = (
@@ -176,11 +174,7 @@ export const encodePngAdvanced = (
     progressCallback
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const encodeJpeg = (
@@ -202,11 +196,7 @@ export const encodeJpeg = (
     quality
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const encodeJpegAdvanced = (
@@ -238,11 +228,7 @@ export const encodeJpegAdvanced = (
     preset
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const recompressPngLossless = (
@@ -262,11 +248,7 @@ export const recompressPngLossless = (
     progressCallback
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const recompressJpeg = (
@@ -290,11 +272,7 @@ export const recompressJpeg = (
     optimizeHuffman
   );
 
-  if (typeof result === 'string' && result.startsWith('error:')) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 };
 
 export const getBytesPerPixel = (colorType: number): number => {

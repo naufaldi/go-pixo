@@ -35,8 +35,13 @@ func NewEncoder(opts Options) (*Encoder, error) {
 		dct = DetectCPUFeatures()
 	}
 
+	trellisLambda := opts.TrellisLambda
+	if opts.TrellisQuant && trellisLambda == 0 {
+		trellisLambda = float64(CalculateLambda(opts.Quality))
+	}
+
 	trellisConfig := TrellisConfig{
-		Lambda:        opts.TrellisLambda,
+		Lambda:        trellisLambda,
 		MaxIterations: 64,
 		UsePerceptual: opts.TrellisPerceptual,
 	}
@@ -416,7 +421,7 @@ func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *Quantiz
 	}
 
 	if e.Options.TrellisQuant {
-		quantized := TrellisOptimizeWithConfig(dct, qTable, e.trellisConfig)
+		quantized := TrellisOptimizeWithConfigForComponent(dct, qTable, e.trellisConfig, isLuminance)
 		return ZigzagReorder(quantized)
 	}
 

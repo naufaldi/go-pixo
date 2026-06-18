@@ -88,7 +88,7 @@ func MaxOptions(width, height int, quality uint8) Options {
 		OptimizeHuffman:   true,
 		Progressive:       true,
 		TrellisQuant:      true,
-		TrellisLambda:     1.0,
+		TrellisLambda:     0,
 		TrellisPerceptual: true,
 		RestartInterval:   nil,
 		UseSIMD:           true,

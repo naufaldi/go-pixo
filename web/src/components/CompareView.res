@@ -2,74 +2,6 @@ open React
 
 @send external getBoundingClientRect: Dom.element => {..} = "getBoundingClientRect"
 
-let formatSize = (bytes: int): string => {
-  if bytes >= 1_000_000 {
-    let mb = Math.round(Int.toFloat(bytes) /. 1000000.0 *. 10.0) /. 10.0
-    Float.toString(mb) ++ " MB"
-  } else if bytes >= 1000 {
-    let kb = Math.round(Int.toFloat(bytes) /. 1000.0 *. 10.0) /. 10.0
-    Float.toString(kb) ++ " KB"
-  } else {
-    Int.toString(bytes) ++ " bytes"
-  }
-}
-
-let isAlreadyOptimized = (original: int, compressed: int): bool => {
-  if original <= 0 {
-    false
-  } else {
-    let saved = original - compressed
-    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    saved >= 0 && percent <= 0.1
-  }
-}
-
-let calculateSavings = (original: int, compressed: int): option<(float, string)> => {
-  if original <= 0 {
-    None
-  } else {
-    let saved = original - compressed
-    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    if percent > 0.0 {
-      Some((percent, formatSize(saved)))
-    } else {
-      None
-    }
-  }
-}
-
-let savingsColor = (percent: float): string => {
-  if percent >= 30.0 {
-    "text-green-400"
-  } else if percent >= 10.0 {
-    "text-yellow-400"
-  } else {
-    "text-gray-400"
-  }
-}
-
-let formatTime = (milliseconds: int): string => {
-  let seconds = Int.toFloat(milliseconds) /. 1000.0
-  if seconds >= 60.0 {
-    let mins = Int.toFloat(Float.toInt(seconds /. 60.0))
-    let secs = Float.toFixed(~digits=1, seconds -. mins *. 60.0)
-    `${Float.toFixed(~digits=0, mins)}m ${secs}s`
-  } else {
-    `${Float.toFixed(~digits=1, seconds)}s`
-  }
-}
-
-let formatTimeElapsed = (milliseconds: float): string => {
-  let seconds = milliseconds /. 1000.0
-  if seconds >= 60.0 {
-    let mins = Int.toFloat(Float.toInt(seconds /. 60.0))
-    let secs = Float.toFixed(~digits=1, seconds -. mins *. 60.0)
-    `${Float.toFixed(~digits=0, mins)}m ${secs}s`
-  } else {
-    `${Float.toFixed(~digits=1, seconds)}s`
-  }
-}
-
 @react.component
 let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~compressionTime, ~compressionProgress: option<Types.compressionProgress>, ~onRemove) => {
   let (sliderPos, setSliderPos) = React.useState(() => 50.0)
@@ -173,7 +105,7 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
           {React.string(Progress.phaseLabel(progress.phase))}
         </p>
         <p className="text-neutral-400 text-sm mb-4">
-          {React.string(formatSize(originalBytes))}
+          {React.string(Display.formatSize(originalBytes))}
         </p>
         <div className="w-64 bg-neutral-800 rounded-full h-2 mb-4 overflow-hidden">
           <div
@@ -182,20 +114,20 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
           />
         </div>
         <p className="text-neutral-500 text-xs">
-          {React.string("Time elapsed: " ++ formatTimeElapsed(elapsed))}
+          {React.string("Time elapsed: " ++ Display.formatTimeFloat(elapsed))}
         </p>
       </div>
     | None =>
       <div className="mt-8 flex flex-col items-center justify-center h-96 bg-neutral-900/50 rounded-lg border border-neutral-800">
         <div className="w-10 h-10 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin mb-4"></div>
         <p className="text-neutral-400">{React.string("compressing")}</p>
-        <p className="text-neutral-500 text-sm mt-2">{React.string(formatSize(originalBytes))}</p>
+        <p className="text-neutral-500 text-sm mt-2">{React.string(Display.formatSize(originalBytes))}</p>
       </div>
     }
   | (Some(orig), Some(comp)) =>
     let compressedSize = compressedBytes->Option.getOr(0)
-    let savings = calculateSavings(originalBytes, compressedSize)
-    let optimized = isAlreadyOptimized(originalBytes, compressedSize)
+    let savings = Display.calculateSavings(originalBytes, compressedSize)
+    let optimized = Display.isAlreadyOptimized(originalBytes, compressedSize)
     
     <div className="mt-8">
       {if optimized {
@@ -211,11 +143,11 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
         switch savings {
         | Some((percent, saved)) =>
           <div className="flex justify-center mb-4">
-            <div className={"text-lg font-medium " ++ savingsColor(percent)}>
+            <div className={"text-lg font-medium " ++ Display.savingsColor(percent)}>
               {React.string(
                 "Saved " ++ saved ++ " (" ++ to1dp(percent) ++ "%)" ++
                 switch compressionTime {
-                | Some(time) => " in " ++ formatTime(time)
+                | Some(time) => " in " ++ Display.formatTime(time)
                 | None => ""
                 }
               )}
@@ -275,13 +207,13 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
           </div>
           
           <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-md text-sm font-medium z-20">
-            {React.string("Original: " ++ formatSize(originalBytes))}
+            {React.string("Original: " ++ Display.formatSize(originalBytes))}
           </div>
           <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
             {switch compressedBytes {
             | Some(bytes) =>
               <div className="bg-black/60 backdrop-blur-md text-white px-3 py-1.5 rounded-md text-sm font-medium">
-                {React.string("Compressed: " ++ formatSize(bytes))}
+                {React.string("Compressed: " ++ Display.formatSize(bytes))}
               </div>
             | None => React.null
             }}

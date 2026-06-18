@@ -27,4 +27,4 @@ else
     exit 1
 fi
 
-echo "WASM build complete: web/public/main.wasm and web/wasm_exec.js updated."
+echo "WASM build complete: web/public/main.wasm and web/public/wasm_exec.js updated."

@@ -18,16 +18,16 @@ Each package has its own AGENTS.md - see JIT Index below.
 go mod download
 
 # Install web dependencies  
-cd web && npm install
+cd web && bun install
 
 # Build WASM bridge
 ./scripts/build-wasm.sh
 
 # Run web dev server
-cd web && npm run dev
+cd web && bun run dev
 
 # Run all tests
-go test ./... && cd web && npm test
+go test ./... && cd web && bun test --run
 ```
 
 ## Universal Conventions
@@ -83,5 +83,5 @@ rg -n "//go:build js" src/wasm/*.go
 Before committing:
 - [ ] `go test ./...` passes
 - [ ] `golangci-lint run` passes (Go)
-- [ ] `cd web && npm run build` passes (Web)
+- [ ] `cd web && bun run build` passes (Web)
 - [ ] All tests green (Go + Web)

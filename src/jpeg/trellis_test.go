@@ -217,6 +217,20 @@ func TestTrellisOptimizeWithConfig(t *testing.T) {
 	}
 }
 
+func TestAddStateWithPruning_AppendsAndPrunes(t *testing.T) {
+	states := make([]viterbiState, 0, 2)
+	states = addStateWithPruning(states, viterbiState{cost: 3, quantizedVal: 1, runLength: 0}, 2)
+	states = addStateWithPruning(states, viterbiState{cost: 1, quantizedVal: 2, runLength: 0}, 2)
+	states = addStateWithPruning(states, viterbiState{cost: 2, quantizedVal: 3, runLength: 0}, 2)
+
+	if len(states) != 2 {
+		t.Fatalf("len(states) = %d, want 2", len(states))
+	}
+	if states[0].quantizedVal != 2 || states[1].quantizedVal != 3 {
+		t.Fatalf("states kept = [%d %d], want lowest-cost states [2 3]", states[0].quantizedVal, states[1].quantizedVal)
+	}
+}
+
 func TestTrellisConfigDefaults(t *testing.T) {
 	config := DefaultTrellisConfig
 
@@ -228,6 +242,21 @@ func TestTrellisConfigDefaults(t *testing.T) {
 	}
 	if !config.UsePerceptual {
 		t.Error("Default UsePerceptual should be true")
+	}
+}
+
+func TestNewEncoder_AutoTrellisLambda(t *testing.T) {
+	opts := MaxOptions(16, 16, 75)
+	opts.TrellisLambda = 0
+
+	encoder, err := NewEncoder(opts)
+	if err != nil {
+		t.Fatalf("NewEncoder() error = %v", err)
+	}
+
+	expected := float64(CalculateLambda(75))
+	if math.Abs(encoder.trellisConfig.Lambda-expected) > 0.0001 {
+		t.Fatalf("trellis lambda = %f, want %f", encoder.trellisConfig.Lambda, expected)
 	}
 }
 
@@ -308,8 +337,8 @@ func TestCalculateLambda(t *testing.T) {
 
 	for _, test := range tests {
 		lambda := CalculateLambda(test.quality)
-		if lambda < 0 || lambda > 10 {
-			t.Errorf("Lambda out of range for quality %d: %f", test.quality, lambda)
+		if math.Abs(float64(lambda-test.expected)) > 0.0001 {
+			t.Errorf("CalculateLambda(%d) = %f, want %f", test.quality, lambda, test.expected)
 		}
 	}
 }

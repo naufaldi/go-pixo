@@ -6,14 +6,12 @@ React + ReScript + Tailwind v4 web application for client-side PNG compression u
 
 1. Install dependencies:
 ```bash
-npm install
-# or
 bun install
 ```
 
 2. Build ReScript:
 ```bash
-npm run rescript:build
+bun run rescript:build
 ```
 
 3. Build WASM (from repo root):
@@ -23,7 +21,7 @@ npm run rescript:build
 
 4. Run dev server:
 ```bash
-npm run dev
+bun run dev
 ```
 
 This runs both ReScript watch mode and Vite dev server concurrently.
@@ -32,12 +30,12 @@ This runs both ReScript watch mode and Vite dev server concurrently.
 
 ### Unit Tests (Vitest)
 ```bash
-npm test
+bun test --run
 ```
 
 ### E2E Tests (Playwright)
 ```bash
-npm run test:e2e
+bun run test:e2e
 ```
 
 Place test images in `web/e2e/fixtures/` for conversion tests.
@@ -53,6 +51,7 @@ Place test images in `web/e2e/fixtures/` for conversion tests.
 ## Development
 
 - ReScript files compile to `.res.js` (in-source)
+- `src/` is the canonical ReScript source; generated or legacy `lib/` mirrors are ignored
 - Import ReScript modules: `import { App } from './App.res.js'`
 - WASM is loaded automatically on page load
 - Tailwind classes work directly (no config needed)
