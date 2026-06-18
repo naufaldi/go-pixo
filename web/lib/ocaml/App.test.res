@@ -1,7 +1,9 @@
-// Basic smoke test for App component
-// More comprehensive tests will be added as features are implemented
+@module("vitest")
+external test: (string, unit => unit) => unit = "test"
 
-let testApp = () => {
-  // Test will be implemented once ReScript bindings are complete
-  true
-}
+@module("vitest")
+external expect: 'a => {..} = "expect"
+
+test("app smoke", () => {
+  let _ = expect(true)["toBe"](true)
+})

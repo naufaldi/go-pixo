@@ -22,8 +22,12 @@ let make = (
   ~onTargetWidthChange: option<int> => unit,
   ~onTargetHeightChange: option<int> => unit,
 ) => {
-  let handleSliderChange = (_e: ReactEvent.Form.t) => {
-    let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
+  let handleSliderChange = (e: ReactEvent.Form.t) => {
+    let raw = ReactEvent.Form.target(e)["value"]
+    let value = switch raw {
+    | Some(s) => Int.fromString(s)->Option.getOr(1)
+    | None => 1
+    }
     switch value {
     | 0 => onPresetChange(Ultra)
     | 1 => onPresetChange(Smaller)
@@ -58,6 +62,7 @@ let make = (
             <button
               key=label
               type_="button"
+              dataTestId={"output-format-" ++ label}
               onClick={_ => onOutputFormatChange(fmt)}
               className={
                 "text-xs px-2 py-0.5 rounded transition-colors " ++
@@ -80,10 +85,15 @@ let make = (
             min="1"
             max="8000"
             onChange={e => {
-              let v = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
-              let isValid: bool = %raw("!isNaN(v) && v > 0")
-              if isValid { onTargetWidthChange(Some(v)) }
-              else { onTargetWidthChange(None) }
+              let raw = ReactEvent.Form.target(e)["value"]
+              let v = switch raw {
+              | Some(s) => Int.fromString(s)
+              | None => None
+              }
+              switch v {
+              | Some(n) when n > 0 => onTargetWidthChange(Some(n))
+              | _ => onTargetWidthChange(None)
+              }
             }}
             className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
           />
@@ -95,10 +105,15 @@ let make = (
             min="1"
             max="8000"
             onChange={e => {
-              let v = %raw("parseInt(ReactEvent.Form.target(e).value, 10)")
-              let isValid: bool = %raw("!isNaN(v) && v > 0")
-              if isValid { onTargetHeightChange(Some(v)) }
-              else { onTargetHeightChange(None) }
+              let raw = ReactEvent.Form.target(e)["value"]
+              let v = switch raw {
+              | Some(s) => Int.fromString(s)
+              | None => None
+              }
+              switch v {
+              | Some(n) when n > 0 => onTargetHeightChange(Some(n))
+              | _ => onTargetHeightChange(None)
+              }
             }}
             className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
           />
@@ -149,9 +164,9 @@ let make = (
           <input
             type_="checkbox"
             checked=lossless
-            onChange={_e => {
-              let checked = %raw("ReactEvent.Form.target(_e).checked")
-              onLosslessChange(checked)
+            onChange={e => {
+              let checked = ReactEvent.Form.target(e)["checked"]
+              onLosslessChange(checked == Some(true))
             }}
             className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
           />

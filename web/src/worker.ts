@@ -1,4 +1,9 @@
-// Web Worker for off-main-thread image compression
+import {
+  resolveOutputFormat,
+  shouldUseLosslessBytePath,
+  type InputFormat,
+  type ResolvedFormat,
+} from './interop/compressionSettings';
 
 interface CompressionRequest {
   id: string;
@@ -6,7 +11,7 @@ interface CompressionRequest {
   width: number;
   height: number;
   colorType: number;
-  format: 'png' | 'jpeg';
+  format: 'png' | 'jpeg' | 'webp';
   outputFormat?: 'same' | 'png' | 'jpeg' | 'webp' | 'avif';
   preset: number;
   lossy: boolean;
@@ -31,6 +36,7 @@ interface CompressionResponse {
   originalBytes: number;
   compressedBytesCount: number;
   ratio: number;
+  outputFormat: 'png' | 'jpeg' | 'webp' | 'avif';
   error?: string;
 }
 
@@ -387,10 +393,24 @@ self.onmessage = async (
           originalFileBytesLen > 0 ? originalFileBytesLen : req.pixels.length;
 
         // Resolve the effective output format
-        const resolvedFormat = (() => {
-          if (!req.outputFormat || req.outputFormat === 'same') return req.format;
-          return req.outputFormat;
-        })();
+        const resolvedFormat: ResolvedFormat = resolveOutputFormat(
+          req.format as InputFormat,
+          req.outputFormat ?? 'same',
+        );
+        const useLosslessPngBytes = shouldUseLosslessBytePath({
+          lossless: req.lossy === false,
+          inputFormat: req.format as InputFormat,
+          outputFormat: resolvedFormat,
+          targetWidth: req.targetWidth,
+          targetHeight: req.targetHeight,
+        }) && resolvedFormat === 'png';
+        const useLosslessJpegBytes = shouldUseLosslessBytePath({
+          lossless: req.lossy === false,
+          inputFormat: req.format as InputFormat,
+          outputFormat: resolvedFormat,
+          targetWidth: req.targetWidth,
+          targetHeight: req.targetHeight,
+        }) && resolvedFormat === 'jpeg';
 
         let compressedBytes: Uint8Array;
 
@@ -418,13 +438,6 @@ self.onmessage = async (
         } else if (resolvedFormat === 'avif') {
           compressedBytes = await encodeAvif(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
         } else if (resolvedFormat === 'jpeg') {
-          // For lossless JPEG re-encode from original bytes (no pixel round-trip quality loss)
-          const useLosslessJpegBytes =
-            req.lossy === false &&
-            req.format === 'jpeg' &&  // only when input is natively JPEG
-            req.originalFileBytes !== undefined &&
-            req.originalFileBytes.length > 0;
-
           if (useLosslessJpegBytes) {
             compressedBytes = recompressJpeg(
               req.originalFileBytes!,
@@ -464,12 +477,6 @@ self.onmessage = async (
             );
           }
         } else {
-          // Handle PNG encoding (existing logic)
-          const useLosslessPngBytes =
-            req.lossy === false &&
-            req.originalFileBytes !== undefined &&
-            req.originalFileBytes.length > 0;
-
           if (useLosslessPngBytes) {
             const sendProgress = (phase: string, progress: number) => {
               self.postMessage({
@@ -573,6 +580,7 @@ self.onmessage = async (
           originalBytes,
           compressedBytesCount: compressedBytes.length,
           ratio,
+          outputFormat: resolvedFormat,
         } as CompressionResponse);
       })().catch((err) => {
         console.error("[worker] compress failed", req.id, err);
