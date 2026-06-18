@@ -28,6 +28,7 @@ test.describe('go-pixo', () => {
 
   test('PNG file is accepted and compresses to Done status', async ({ page }) => {
     await uploadSamplePng(page)
+    await expect(page.getByTestId('compression-percent')).toBeVisible({ timeout: 15000 })
     await waitForCompression(page)
   })
 

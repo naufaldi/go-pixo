@@ -59,7 +59,7 @@ let make = (~progress: Types.compressionProgress) => {
       </div>
 
       <span className="text-neutral-300 text-sm font-medium mb-1 capitalize">
-        {React.string(progress.phase)}
+        {React.string(Progress.phaseLabel(progress.phase))}
       </span>
 
       <span className="text-neutral-400 text-xs mb-6">
