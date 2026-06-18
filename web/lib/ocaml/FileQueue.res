@@ -44,6 +44,7 @@ let kindText = (kind: Types.fileKind): string => {
   switch kind {
   | Png => "PNG"
   | Jpeg => "JPEG"
+  | Webp => "WebP"
   | Unknown => "Unknown"
   }
 }
@@ -162,13 +163,13 @@ let make = (
                   | Some(bytes) =>
                     let originalSize = item.originalBytes
                     if isAlreadyOptimized(originalSize, bytes) {
-                      <span className="text-xs font-medium text-blue-400">
-                        {React.string("Image already optimized")}
+                      <span className="text-xs font-medium text-blue-400" dataTestId="file-item-optimized">
+                        {React.string("No smaller output with current settings")}
                       </span>
                     } else {
                       let saved = originalSize - bytes
                       let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
-                      <span className={"text-xs font-medium " ++ savingsColor(percent)}>
+                      <span className={"text-xs font-medium " ++ savingsColor(percent)} dataTestId="file-item-done">
                         {React.string(
                           formatSize(bytes) ++ " (-" ++
                           Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",

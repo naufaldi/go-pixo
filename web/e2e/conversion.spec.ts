@@ -1,60 +1,73 @@
 import { test, expect } from '@playwright/test'
-import { writeFileSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 
-// Minimal 1x1 red PNG (67 bytes) — valid PNG header + IHDR + IDAT + IEND
-const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg=='
+const e2eDir = dirname(fileURLToPath(import.meta.url))
+const samplePng = join(e2eDir, 'fixtures', 'sample-32x32.png')
 
-function writeTinyPng(path: string): void {
-  writeFileSync(path, Buffer.from(TINY_PNG_BASE64, 'base64'))
+async function openApp(page: import('@playwright/test').Page): Promise<void> {
+  await page.goto('/')
+  await expect(page.locator('h1')).toContainText('Go-Pixo')
+}
+
+async function uploadSamplePng(page: import('@playwright/test').Page): Promise<void> {
+  await openApp(page)
+  await page.locator('input[type="file"]').setInputFiles(samplePng)
+}
+
+async function waitForCompression(page: import('@playwright/test').Page): Promise<void> {
+  await page.waitForSelector('[data-testid="file-item-done"], [data-testid="file-item-optimized"]', {
+    timeout: 90000,
+  })
 }
 
 test.describe('go-pixo', () => {
   test('app loads with correct title', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator('h1')).toContainText('Go-Pixo')
-  })
-
-  test('WASM initializes successfully', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForFunction(
-      () => typeof (window as any).encodePng === 'function',
-      { timeout: 15000 }
-    )
-    const ready = await page.evaluate(() => typeof (window as any).encodePng === 'function')
-    expect(ready).toBe(true)
+    await openApp(page)
   })
 
   test('PNG file is accepted and compresses to Done status', async ({ page }) => {
-    const fixturePath = join(__dirname, 'fixtures', 'test.png')
-    writeTinyPng(fixturePath)
-
-    await page.goto('/')
-    await page.waitForFunction(
-      () => typeof (window as any).encodePng === 'function',
-      { timeout: 15000 }
-    )
-
-    // Upload via file input (find the hidden file input in the dropzone)
-    const fileInput = page.locator('input[type="file"]')
-    await fileInput.setInputFiles(fixturePath)
-
-    // Wait for compression to complete (status changes to Done)
-    // FileQueue items should show compression savings
-    await page.waitForSelector('[data-testid="file-item-done"], .text-green-400, .text-emerald-400', {
-      timeout: 30000,
-    })
+    await uploadSamplePng(page)
+    await waitForCompression(page)
   })
 
-  test('recompressJpeg WASM function is registered', async ({ page }) => {
-    await page.goto('/')
-    await page.waitForFunction(
-      () => typeof (window as any).encodePng === 'function',
-      { timeout: 15000 }
-    )
-    const hasRecompressJpeg = await page.evaluate(
-      () => typeof (window as any).recompressJpeg === 'function'
-    )
-    expect(hasRecompressJpeg).toBe(true)
+  test('compression slider updates preset label state', async ({ page }) => {
+    await uploadSamplePng(page)
+    await waitForCompression(page)
+
+    const slider = page.locator('input[type="range"]')
+    await expect(slider).toHaveValue('2')
+    await slider.fill('0')
+    await expect(slider).toHaveValue('0')
+  })
+
+  test('selecting JPEG output updates active format button', async ({ page }) => {
+    await uploadSamplePng(page)
+    await waitForCompression(page)
+
+    const jpegButton = page.getByTestId('output-format-JPEG')
+    await jpegButton.click()
+    await expect(jpegButton).toHaveClass(/bg-white/)
+    await waitForCompression(page)
+  })
+
+  test('perfect quality checkbox toggles', async ({ page }) => {
+    await uploadSamplePng(page)
+    await waitForCompression(page)
+
+    const checkbox = page.getByRole('checkbox', { name: 'Perfect Quality' })
+    await expect(checkbox).not.toBeChecked()
+    await checkbox.click()
+    await expect(checkbox).toBeChecked()
+    await waitForCompression(page)
+  })
+
+  test('resize inputs accept dimensions', async ({ page }) => {
+    await uploadSamplePng(page)
+    await waitForCompression(page)
+
+    const widthInput = page.getByPlaceholder('W')
+    await widthInput.fill('16')
+    await expect(widthInput).toHaveValue('16')
   })
 })

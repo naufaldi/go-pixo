@@ -37,7 +37,6 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 
 	if lossy && maxColors > 0 && maxColors <= 256 {
 		opts.ApplyLossy(maxColors, 75, 0.5)
-		opts.ColorType = png.ColorIndexed
 	}
 
 	encoder, err := png.NewEncoderWithOptions(opts)
@@ -120,7 +119,6 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		}
 
 		opts.ApplyLossy(maxColors, qualityTarget, ditherStrength)
-		opts.ColorType = png.ColorIndexed
 	} else if dithering {
 		opts.Dithering = true
 		opts.DitheringStrength = ditherStrength

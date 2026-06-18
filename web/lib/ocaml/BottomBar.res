@@ -17,9 +17,17 @@ let make = (
   ~onOutputFormatChange: Types.outputFormat => unit,
   ~processingAll: bool,
   ~onCompressAll: unit => unit,
+  ~targetWidth: option<int>,
+  ~targetHeight: option<int>,
+  ~onTargetWidthChange: option<int> => unit,
+  ~onTargetHeightChange: option<int> => unit,
 ) => {
-  let handleSliderChange = (_e: ReactEvent.Form.t) => {
-    let value = %raw("parseInt(ReactEvent.Form.target(_e).value, 10)")
+  let handleSliderChange = (e: ReactEvent.Form.t) => {
+    let raw = ReactEvent.Form.target(e)["value"]
+    let value = switch raw {
+    | Some(s) => Int.fromString(s)->Option.getOr(1)
+    | None => 1
+    }
     switch value {
     | 0 => onPresetChange(Ultra)
     | 1 => onPresetChange(Smaller)
@@ -54,6 +62,7 @@ let make = (
             <button
               key=label
               type_="button"
+              dataTestId={"output-format-" ++ label}
               onClick={_ => onOutputFormatChange(fmt)}
               className={
                 "text-xs px-2 py-0.5 rounded transition-colors " ++
@@ -66,6 +75,49 @@ let make = (
               {React.string(label)}
             </button>
           )->React.array}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-neutral-500">{React.string("Resize:")}</span>
+          <input
+            type_="number"
+            placeholder="W"
+            value={switch targetWidth { | Some(w) => Int.toString(w) | None => "" }}
+            min="1"
+            max="8000"
+            onChange={e => {
+              let raw = ReactEvent.Form.target(e)["value"]
+              let v = switch raw {
+              | Some(s) => Int.fromString(s)
+              | None => None
+              }
+              switch v {
+              | Some(n) when n > 0 => onTargetWidthChange(Some(n))
+              | _ => onTargetWidthChange(None)
+              }
+            }}
+            className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+          />
+          <span className="text-xs text-neutral-600">{React.string("×")}</span>
+          <input
+            type_="number"
+            placeholder="H"
+            value={switch targetHeight { | Some(h) => Int.toString(h) | None => "" }}
+            min="1"
+            max="8000"
+            onChange={e => {
+              let raw = ReactEvent.Form.target(e)["value"]
+              let v = switch raw {
+              | Some(s) => Int.fromString(s)
+              | None => None
+              }
+              switch v {
+              | Some(n) when n > 0 => onTargetHeightChange(Some(n))
+              | _ => onTargetHeightChange(None)
+              }
+            }}
+            className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+          />
+          <span className="text-xs text-neutral-600">{React.string("px")}</span>
         </div>
         {switch appliedOptimizations {
         | Some(optimizations) =>
@@ -112,9 +164,9 @@ let make = (
           <input
             type_="checkbox"
             checked=lossless
-            onChange={_e => {
-              let checked = %raw("ReactEvent.Form.target(_e).checked")
-              onLosslessChange(checked)
+            onChange={e => {
+              let checked = ReactEvent.Form.target(e)["checked"]
+              onLosslessChange(checked == Some(true))
             }}
             className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
           />
