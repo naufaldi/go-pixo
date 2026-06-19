@@ -127,7 +127,8 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          timeout: 300000
+          timeout: 300s
+          command_timeout: 10m
           script: |
             set -e
             
