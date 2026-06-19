@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 permissions:
   packages: write
@@ -96,48 +97,32 @@ jobs:
     steps:
       - name: Validate deployment secrets
         id: validate-secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USERNAME: ${{ secrets.VPS_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           echo "Validating required deployment secrets..."
-          
-          # Check for required secrets
+
           REQUIRED_SECRETS=("VPS_HOST" "VPS_USERNAME" "SSH_PRIVATE_KEY")
           MISSING_SECRETS=()
-          
+
           for secret in "${REQUIRED_SECRETS[@]}"; do
             if [ -z "${!secret}" ]; then
               MISSING_SECRETS+=("$secret")
             fi
           done
-          
-          # Check if any secrets are missing
+
           if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
-            echo "❌ Missing required secrets for deployment:"
+            echo "Missing required secrets for deployment:"
             printf '   - %s\n' "${MISSING_SECRETS[@]}"
-            echo ""
-            echo "Skipping deployment. To enable automatic deployment, add the following secrets to your repository:"
-            echo "  - VPS_HOST: Your server hostname or IP"
-            echo "  - VPS_USERNAME: SSH username for deployment"
-            echo "  - SSH_PRIVATE_KEY: Private SSH key for authentication"
-            echo ""
-            echo "can_deploy=false" >> $GITHUB_OUTPUT
-          else
-            echo "✅ All required deployment secrets are present"
-            echo "can_deploy=true" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
-      - name: Check if deployment should proceed
-        id: check-deployment
-        run: |
-          if [ "${{ steps.validate-secrets.outputs.can_deploy }}" = "false" ]; then
-            echo "Deployment skipped due to missing secrets"
-            echo "should_skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "Proceeding with deployment"
-            echo "should_skip=false" >> $GITHUB_OUTPUT
-          fi
+          echo "All required deployment secrets are present"
+          echo "can_deploy=true" >> $GITHUB_OUTPUT
 
       - name: Deploy to VPS
-        if: ${{ steps.check-deployment.outputs.should_skip == 'false' }}
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -167,7 +152,13 @@ jobs:
             echo "📦 Pulling latest image..."
             docker pull ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
             docker pull ghcr.io/naufaldi/go-pixo:prod
-            
+
+            echo "Stopping legacy manual deployment..."
+            docker rm -f go-pixo-app 2>/dev/null || true
+            if [ -f docker-compose.yml ]; then
+              docker compose -f docker-compose.yml down 2>/dev/null || true
+            fi
+
             # Create docker-compose configuration
             echo "⚙️ Creating docker-compose configuration..."
             cat > docker-compose.prod.yml << 'EOL'
@@ -176,14 +167,13 @@ jobs:
             services:
               app:
                 image: ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
+                container_name: go-pixo-app
                 labels:
                   - "caddy=go-pixo.faldi.xyz"
                   - "caddy.reverse_proxy={{upstreams 3000}}"
-                  - "com.centurylinklabs.watchtower.enable=true"
                 restart: always
                 networks:
                   - edge
-                  - personal-web-private
                 healthcheck:
                   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
                   interval: 30s
@@ -194,8 +184,6 @@ jobs:
             networks:
               edge:
                 external: true
-              personal-web-private:
-                driver: bridge
             EOL
             
             # Stop existing containers
@@ -232,16 +220,10 @@ jobs:
       - name: Log deployment result
         if: always()
         run: |
-          if [ "${{ steps.check-deployment.outputs.should_skip }}" = "true" ]; then
-            echo "📝 Deployment skipped - missing required secrets"
-            echo "Set up the following secrets in your repository to enable automatic deployment:"
-            echo "  - VPS_HOST"
-            echo "  - VPS_USERNAME" 
-            echo "  - SSH_PRIVATE_KEY"
-          elif [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Deployment completed successfully!"
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "Deployment completed successfully!"
           else
-            echo "❌ Deployment failed. Check the logs above for details."
+            echo "Deployment failed. Check the logs above for details."
             echo "Common issues:"
             echo "  - SSH key authentication failed"
             echo "  - Docker registry access denied"

@@ -17,6 +17,7 @@ let make = () => {
   let itemsRef = React.useRef(state.items)
   let stateRef = React.useRef(state)
   let compressionProgressRef = React.useRef(state.compressionProgress)
+  let pendingDownloadRef = React.useRef(None: option<string>)
 
   React.useEffect1(() => {
     itemsRef.current = state.items
@@ -136,6 +137,21 @@ let make = () => {
             compressedExtension: Some(extension),
           }))
           dispatch(SetCompressionProgress(None))
+
+          switch pendingDownloadRef.current {
+          | Some(pendingId) when pendingId == id =>
+            switch itemsRef.current->Array.find(item => item.id == id) {
+            | Some(item) =>
+              let filename = CompressionSettings.buildCompressedFilename(
+                Types.Web.File.name(item.file),
+                extension,
+              )
+              Download.downloadBlob(compressedUrl, filename)
+            | None => ()
+            }
+            pendingDownloadRef.current = None
+          | _ => ()
+          }
         | None =>
           logMissingId("[app] compressed message missing id", data)
         }
@@ -145,6 +161,11 @@ let make = () => {
         switch id {
         | Some(id) =>
           logWorkerError(id, errorMsg)
+          switch pendingDownloadRef.current {
+          | Some(pendingId) when pendingId == id =>
+            pendingDownloadRef.current = None
+          | _ => ()
+          }
           dispatch(UpdateItem(id, item => {
             ...item,
             status: Types.Error(errorMsg),
@@ -430,6 +451,20 @@ let make = () => {
       Some(final)
     }
   }
+
+  let applySettingChange = (update: unit => unit) => {
+    let hadProcessed = state.items->Array.some(item =>
+      switch item.status {
+      | Types.Done | Types.Error(_) => true
+      | Types.Pending | Types.Decoding | Types.Compressing => false
+      },
+    )
+    update()
+    if hadProcessed {
+      processingRef.current = false
+      dispatch(RequeueProcessedItemsForSettings)
+    }
+  }
   
   let handleDownload = () => {
     switch selectedItem {
@@ -452,6 +487,34 @@ let make = () => {
     | None => ()
     }
   }
+
+  let handleDownloadFormat = (fmt: Types.outputFormat) => {
+    switch selectedItem {
+    | Some(item) =>
+      let targetExt =
+        CompressionSettings.extensionForFormat(
+          CompressionSettings.resolveForItem(item.kind, fmt),
+        )
+      let currentExt = switch item.compressedExtension {
+      | Some(ext) => ext
+      | None => ""
+      }
+      let canDownloadNow =
+        item.status == Types.Done &&
+        switch item.compressedUrl {
+        | Some(_) => true
+        | None => false
+        } &&
+        currentExt == targetExt
+      if canDownloadNow {
+        handleDownload()
+      } else {
+        pendingDownloadRef.current = Some(item.id)
+        applySettingChange(() => dispatch(SetOutputFormat(fmt)))
+      }
+    | None => ()
+    }
+  }
   
   let handleDownloadAll = () => {
     Download.downloadAll(state.items)
@@ -469,20 +532,6 @@ let make = () => {
       },
     )
     if hasRequeueable {
-      dispatch(RequeueProcessedItemsForSettings)
-    }
-  }
-
-  let applySettingChange = (update: unit => unit) => {
-    let hadProcessed = state.items->Array.some(item =>
-      switch item.status {
-      | Types.Done | Types.Error(_) => true
-      | Types.Pending | Types.Decoding | Types.Compressing => false
-      },
-    )
-    update()
-    if hadProcessed {
-      processingRef.current = false
       dispatch(RequeueProcessedItemsForSettings)
     }
   }
@@ -561,14 +610,12 @@ let make = () => {
           dispatch(SetQuantization(if lossless { Types.Lossless } else { Types.Colors256 }))
         })}
       onDownload={handleDownload}
+      onDownloadFormat={handleDownloadFormat}
       onDownloadAll={handleDownloadAll}
       onDownloadZip={handleDownloadZip}
       hasCompletedItems={hasCompletedItems}
       completedCount={completedCount}
       appliedOptimizations={getAppliedOptimizations()}
-      outputFormat={state.outputFormat}
-      onOutputFormatChange={fmt =>
-        applySettingChange(() => dispatch(SetOutputFormat(fmt)))}
       processingAll={state.processingAll}
       onCompressAll={handleCompressAll}
       targetWidth={state.targetWidth}
