@@ -6,6 +6,7 @@ import {
 } from './interop/compressionSettings';
 import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
 import { unwrapWasmResult } from './interop/wasmResult';
+import { assertRgbaPixelBuffer, copyImageDataPixels } from './interop/pixels';
 
 interface CompressionRequest {
   id: string;
@@ -320,7 +321,7 @@ function resizePixels(
   dstCtx.drawImage(src, 0, 0, dstW, dstH);
 
   const resized = dstCtx.getImageData(0, 0, dstW, dstH);
-  return { pixels: new Uint8Array(resized.data.buffer), width: dstW, height: dstH };
+  return { pixels: copyImageDataPixels(resized.data), width: dstW, height: dstH };
 }
 
 // Handle messages from main thread
@@ -465,6 +466,16 @@ self.onmessage = async (
             phaseTarget: mapPngPhaseToGlobal(phase, 100),
           });
         };
+
+        const needsPixelBuffer =
+          resolvedFormat === 'webp' ||
+          resolvedFormat === 'avif' ||
+          (resolvedFormat === 'jpeg' && !useLosslessJpegBytes) ||
+          (resolvedFormat === 'png' && !useLosslessPngBytes);
+
+        if (needsPixelBuffer) {
+          assertRgbaPixelBuffer(workPixels, workWidth, workHeight, req.colorType);
+        }
 
         const postEncodingStart = () => {
           postProgress(STAGE.ENCODING.label, STAGE.ENCODING.start, {
