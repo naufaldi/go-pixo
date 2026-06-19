@@ -41,6 +41,8 @@ jobs:
         run: go vet ./...
       - name: Install web dependencies
         run: cd web && bun install --frozen-lockfile
+      - name: Build ReScript
+        run: cd web && bun run rescript:build
       - name: Run web unit tests
         run: cd web && bun test --run
       - name: Install Playwright browsers
@@ -49,8 +51,6 @@ jobs:
         run: cd web && bun run test:e2e
       - name: Build WASM
         run: ./scripts/build-wasm.sh
-      - name: Type check
-        run: cd web && bun run rescript:build
       - name: Build web
         run: cd web && bun run build
 
