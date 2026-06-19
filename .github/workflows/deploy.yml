@@ -112,16 +112,30 @@ jobs:
           done
 
           if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
-            echo "Missing required secrets for deployment:"
-            printf '   - %s\n' "${MISSING_SECRETS[@]}"
+            echo "::error::Missing required secrets: ${MISSING_SECRETS[*]}"
             exit 1
           fi
 
-          echo "All required deployment secrets are present"
+          if printf '%s' "$SSH_PRIVATE_KEY" | grep -q '\\n'; then
+            echo "::error::SSH_PRIVATE_KEY contains literal \\n characters. Paste the full multiline private key with real line breaks."
+            exit 1
+          fi
+
+          KEY_FILE="$(mktemp)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          if ! ssh-keygen -y -f "$KEY_FILE" >/dev/null 2>&1; then
+            echo "::error::SSH_PRIVATE_KEY is not a valid parseable private key. Include BEGIN/END lines and real line breaks."
+            exit 1
+          fi
+
+          echo "All required deployment secrets are present and SSH_PRIVATE_KEY is parseable"
           echo "can_deploy=true" >> $GITHUB_OUTPUT
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
