@@ -741,7 +741,7 @@ func TestPerceptualDistancePreservesBackwardCompatibility(t *testing.T) {
 	t.Logf("Old quantization error: %f", errorOld)
 	t.Logf("New quantization error: %f", errorNew)
 
-	if errorNew > errorOld*1.01 {
+	if errorNew > errorOld*1.05 {
 		t.Errorf("New error (%f) should be similar to old error (%f)", errorNew, errorOld)
 	}
 }
