@@ -1,5 +1,6 @@
 import './style.css';
 import { initWasm, encodePng } from './wasm';
+import { copyImageDataPixels } from './interop/pixels';
 
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
@@ -81,7 +82,7 @@ const handleFile = async (file: File) => {
 
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
-      const pixels = new Uint8Array(imageData.data.buffer);
+      const pixels = copyImageDataPixels(imageData.data);
 
       try {
         const startTime = performance.now();

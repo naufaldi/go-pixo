@@ -536,7 +536,7 @@ let make = () => {
     }
   }
 
-  <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100 pb-20">
+  <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100 pb-36">
     <header className="pt-8 pb-6 px-6 text-center">
       <h1 className="text-4xl font-black tracking-tight text-neutral-100 mb-2">
         {React.string("Go-Pixo")}
