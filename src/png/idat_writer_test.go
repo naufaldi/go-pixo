@@ -555,6 +555,30 @@ func TestEncodeWithFallback(t *testing.T) {
 		len(random), len(result), float64(len(result))/float64(len(random))*100)
 }
 
+func TestBuildZlibData_UsesZopfliIterations(t *testing.T) {
+	data := bytes.Repeat([]byte{1, 2, 3, 4}, 512)
+	var progressValues []int
+	opts := BalancedOptions(1, 1)
+	opts.OptimalDeflate = true
+	opts.ZopfliIterations = 3
+	opts.ProgressCallback = func(phase string, progress int) {
+		if phase == "deflate" {
+			progressValues = append(progressValues, progress)
+		}
+	}
+
+	_, err := buildZlibData(data, opts)
+	if err != nil {
+		t.Fatalf("buildZlibData() error = %v", err)
+	}
+	if len(progressValues) == 0 {
+		t.Fatal("expected deflate progress callbacks")
+	}
+	if progressValues[0] != 33 {
+		t.Fatalf("first deflate progress = %d, want 33 from 3 configured iterations", progressValues[0])
+	}
+}
+
 func TestEncodeStored(t *testing.T) {
 	encoder := compress.NewDeflateEncoder()
 

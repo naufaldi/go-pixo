@@ -453,6 +453,11 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 		enableLUT = useLUT[0]
 	}
 
+	usePerceptual := opts.UsePerceptualDistance || opts.DistanceMetric == DistanceMetricRedmean
+	if !usePerceptual {
+		return Quantize(pixels, colorType, maxColors, enableLUT)
+	}
+
 	if maxColors <= 0 {
 		maxColors = 256
 	}
@@ -474,8 +479,6 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 	width := len(pixels) / bpp
 
 	indexed := make([]byte, width)
-
-	usePerceptual := opts.UsePerceptualDistance || opts.DistanceMetric == DistanceMetricRedmean
 
 	var lut *PaletteLUT
 	if enableLUT && palette.NumColors > 0 {

@@ -158,6 +158,7 @@ func selectBruteForce(row []byte, prevRow []byte, bpp int) (FilterType, []byte) 
 	var bestFilter FilterType
 	var bestFiltered []byte
 	bestSize := -1
+	bestScore := -1
 
 	filters := []struct {
 		typ FilterType
@@ -172,9 +173,11 @@ func selectBruteForce(row []byte, prevRow []byte, bpp int) (FilterType, []byte) 
 
 	for _, f := range filters {
 		filtered := f.fn()
-		size := len(filtered)
-		if bestSize < 0 || size < bestSize {
+		size := len(compressSingleRow(filtered))
+		score := SumAbsoluteValues(filtered)
+		if bestSize < 0 || size < bestSize || (size == bestSize && score < bestScore) {
 			bestSize = size
+			bestScore = score
 			bestFilter = f.typ
 			bestFiltered = filtered
 		}

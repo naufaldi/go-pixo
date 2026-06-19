@@ -32,23 +32,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter selection based on strategy
-	scanlineData := make([]byte, 0, (1+width*bpp)*height)
-	var prevRow []byte
-	for y := 0; y < height; y++ {
-		// Report progress periodically for filtering
-		if opts.ProgressCallback != nil && y%100 == 0 {
-			percent := int(float64(y) / float64(height) * 100)
-			opts.ProgressCallback("filtering", percent)
-		}
-
-		offset := y * width * bpp
-		row := pixels[offset : offset+width*bpp]
-		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
-		scanlineData = append(scanlineData, byte(filterType))
-		scanlineData = append(scanlineData, filteredRow...)
-		prevRow = row
-	}
+	scanlineData := buildFilteredScanlines(pixels, width, height, bpp, opts)
 
 	if opts.ProgressCallback != nil {
 		opts.ProgressCallback("filtering", 100)
@@ -95,8 +79,16 @@ func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 
 	var deflateData []byte
 	if opts.OptimalDeflate {
-		if opts.OptimalConfig.MaxIterations > 0 || opts.OptimalConfig.BlockSplitting {
-			deflateData, err = encoder.EncodeOptimalWithConfig(pixels, opts.OptimalConfig.MaxIterations, opts.OptimalConfig.BlockSplitting)
+		iterations := opts.OptimalConfig.MaxIterations
+		blockSplitting := opts.OptimalConfig.BlockSplitting
+		if iterations <= 0 {
+			iterations = opts.ZopfliIterations
+			if iterations > 0 {
+				blockSplitting = true
+			}
+		}
+		if iterations > 0 || blockSplitting {
+			deflateData, err = encoder.EncodeOptimalWithConfig(pixels, iterations, blockSplitting)
 		} else {
 			deflateData, err = encoder.EncodeOptimal(pixels)
 		}
@@ -139,10 +131,43 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter selection based on strategy
+	scanlineData := buildFilteredScanlines(pixels, width, height, bpp, opts)
+
+	return buildZlibData(scanlineData, opts)
+}
+
+func buildFilteredScanlines(pixels []byte, width, height, bpp int, opts Options) []byte {
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+
+	if opts.FilterStrategy == FilterStrategyParallel {
+		filters := SelectAllWithStrategy(pixels, width, height, bpp, opts.FilterStrategy)
+		for y := 0; y < height; y++ {
+			if opts.ProgressCallback != nil && y%100 == 0 {
+				percent := int(float64(y) / float64(height) * 100)
+				opts.ProgressCallback("filtering", percent)
+			}
+
+			offset := y * width * bpp
+			row := pixels[offset : offset+width*bpp]
+			var prevRow []byte
+			if y > 0 {
+				prevRow = pixels[(y-1)*width*bpp : y*width*bpp]
+			}
+			filterType := filters[y]
+			filteredRow := applyFilter(filterType, row, prevRow, bpp)
+			scanlineData = append(scanlineData, byte(filterType))
+			scanlineData = append(scanlineData, filteredRow...)
+		}
+		return scanlineData
+	}
+
 	var prevRow []byte
 	for y := 0; y < height; y++ {
+		if opts.ProgressCallback != nil && y%100 == 0 {
+			percent := int(float64(y) / float64(height) * 100)
+			opts.ProgressCallback("filtering", percent)
+		}
+
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
 		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
@@ -151,7 +176,7 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 		prevRow = row
 	}
 
-	return buildZlibData(scanlineData, opts)
+	return scanlineData
 }
 
 // ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.

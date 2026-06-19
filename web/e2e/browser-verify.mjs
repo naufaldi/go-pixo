@@ -49,19 +49,24 @@ async function waitDone(page, timeout = 90000) {
   );
 }
 
+async function selectDownloadFormat(page, label) {
+  await page.getByTestId('download-format-toggle').click();
+  await page.getByTestId(`download-as-${label}`).click();
+}
+
 async function readState(page) {
   return page.evaluate(() => {
-    const fmt = (label) =>
-      document.querySelector(`[data-testid="output-format-${label}"]`)?.className.includes('bg-white');
     return {
       itemStatus: document.querySelector('[data-testid^="file-item-"]')?.getAttribute('data-testid'),
       compressed: document.body.innerText.match(/Compressed: [^\n]+/)?.[0] ?? null,
       savings: document.body.innerText.match(/Saved [^\n]+|No smaller output[^\n]*/)?.[0] ?? null,
       slider: document.querySelector('input[type=range]')?.value,
+      presetLabel: document.body.innerText.match(/Ultra \(smallest\)|Smaller|Balanced|Faster \(quickest\)/)?.[0] ?? null,
       lossless: document.querySelector('input[type=checkbox]')?.checked,
       w: document.querySelector('input[placeholder="W"]')?.value,
       h: document.querySelector('input[placeholder="H"]')?.value,
-      activeFormat: ['Auto', 'PNG', 'JPEG', 'WebP', 'AVIF'].find((l) => fmt(l)) ?? null,
+      downloadMenu: !!document.querySelector('[data-testid="download-format-toggle"]'),
+      downloadAsJpeg: !!document.querySelector('[data-testid="download-as-JPEG"]'),
       downloadAll: [...document.querySelectorAll('button')].some((b) => b.textContent === 'Download All'),
       downloadZip: [...document.querySelectorAll('button')].some((b) => b.textContent === 'Download ZIP'),
     };
@@ -94,18 +99,18 @@ try {
   await waitDone(page);
   log('04-slider-fast', (await slider.inputValue()) === '3', { summary: await readState(page) });
 
-  for (const fmt of ['JPEG', 'WebP', 'PNG', 'Auto']) {
-    await page.getByTestId(`output-format-${fmt}`).click();
+  for (const fmt of ['JPEG', 'WebP', 'PNG']) {
+    await selectDownloadFormat(page, fmt);
     await waitDone(page);
     const s = await readState(page);
-    log(`05-format-${fmt.toLowerCase()}`, s.activeFormat === fmt && !!s.itemStatus, { summary: s });
+    log(`05-format-${fmt.toLowerCase()}`, !!s.itemStatus, { summary: s });
   }
 
-  await page.getByTestId('output-format-AVIF').click();
+  await selectDownloadFormat(page, 'AVIF');
   try {
     await waitDone(page, 45000);
     const s = await readState(page);
-    log('06-format-avif', s.activeFormat === 'AVIF' && !!s.compressed, { summary: s });
+    log('06-format-avif', !!s.compressed, { summary: s });
   } catch (e) {
     log('06-format-avif', false, { summary: String(e) });
   }
@@ -118,7 +123,7 @@ try {
   await waitDone(page);
   log('08-lossless-off', !(await cb.isChecked()), { summary: await readState(page) });
 
-  await page.getByTestId('output-format-JPEG').click();
+  await selectDownloadFormat(page, 'JPEG');
   await waitDone(page);
   await page.getByPlaceholder('W').fill('320');
   await page.getByPlaceholder('H').fill('240');

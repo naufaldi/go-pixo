@@ -42,13 +42,13 @@ test.describe('go-pixo', () => {
     await expect(slider).toHaveValue('0')
   })
 
-  test('selecting JPEG output updates active format button', async ({ page }) => {
+  test('download format menu offers JPEG and triggers recompress', async ({ page }) => {
     await uploadSamplePng(page)
     await waitForCompression(page)
 
-    const jpegButton = page.getByTestId('output-format-JPEG')
-    await jpegButton.click()
-    await expect(jpegButton).toHaveClass(/bg-white/)
+    await page.getByTestId('download-format-toggle').click()
+    await expect(page.getByTestId('download-as-JPEG')).toBeVisible()
+    await page.getByTestId('download-as-JPEG').click()
     await waitForCompression(page)
   })
 

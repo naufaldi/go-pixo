@@ -118,11 +118,11 @@ func getACCategory(val int16) int {
 }
 
 type viterbiState struct {
-	cost         float64
-	quantizedVal int16
-	prevIndex    int
-	runLength    int
-	isEOB        bool
+	cost             float64
+	quantizedVal     int16
+	parentStateIndex int
+	runLength        int
+	isEOB            bool
 }
 
 type candidateValue struct {
@@ -139,6 +139,10 @@ func TrellisOptimizeFull(dct [64]float32, quantTable [64]float32, lambda float64
 }
 
 func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config TrellisConfig) [64]int16 {
+	return TrellisOptimizeWithConfigForComponent(dct, quantTable, config, true)
+}
+
+func TrellisOptimizeWithConfigForComponent(dct [64]float32, quantTable [64]float32, config TrellisConfig, isLuminance bool) [64]int16 {
 	if config.Lambda == 0 {
 		config.Lambda = DefaultTrellisConfig.Lambda
 	}
@@ -160,11 +164,11 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 		cost := float64(rate) + config.Lambda*distortion
 
 		bestStates[0] = append(bestStates[0], viterbiState{
-			cost:         cost,
-			quantizedVal: int16(cand),
-			prevIndex:    -1,
-			runLength:    0,
-			isEOB:        false,
+			cost:             cost,
+			quantizedVal:     int16(cand),
+			parentStateIndex: -1,
+			runLength:        0,
+			isEOB:            false,
 		})
 	}
 
@@ -183,10 +187,10 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 					distortion = calculateSquaredDistortion(dct[i], float32(cand.value)*step)
 				}
 
-				var prevBest *viterbiState
+				parentStateIndex := -1
 				bestCost := math.Inf(1)
 
-				for _, state := range bestStates[i-1] {
+				for stateIndex, state := range bestStates[i-1] {
 					newRunLength := state.runLength + 1
 					if cand.value == 0 {
 						newRunLength = state.runLength + 1
@@ -196,42 +200,46 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 
 					var rate int
 					if cand.value == 0 && newRunLength >= 16 {
-						rate = estimateACRate(15, 0, true)
+						rate = estimateACRate(15, 0, isLuminance)
 					} else if cand.value == 0 {
-						rate = estimateACRate(uint8(newRunLength), 0, true)
+						rate = estimateACRate(uint8(newRunLength), 0, isLuminance)
 					} else {
 						acCategory := getACCategory(int16(cand.value))
-						rate = estimateACRate(uint8(newRunLength), uint8(acCategory), true)
+						rate = estimateACRate(uint8(newRunLength), uint8(acCategory), isLuminance)
 					}
 
 					cost := state.cost + float64(rate) + config.Lambda*distortion
 
 					if cost < bestCost {
 						bestCost = cost
-						prevState := state
-						prevBest = &prevState
+						parentStateIndex = stateIndex
 					}
 				}
 
-				if prevBest != nil {
+				if parentStateIndex >= 0 {
+					parent := bestStates[i-1][parentStateIndex]
 					newState := viterbiState{
-						cost:         bestCost,
-						quantizedVal: int16(cand.value),
-						prevIndex:    i - 1,
-						runLength:    0,
-						isEOB:        false,
+						cost:             bestCost,
+						quantizedVal:     int16(cand.value),
+						parentStateIndex: parentStateIndex,
+						runLength:        0,
+						isEOB:            false,
 					}
 					if cand.value == 0 {
-						newState.runLength = prevBest.runLength + 1
+						newState.runLength = parent.runLength + 1
 					}
 
-					addStateWithPruning(bestStates[i], newState, 8)
+					bestStates[i] = addStateWithPruning(bestStates[i], newState, 8)
 				}
 			}
 		}
 
 		if len(bestStates[i]) == 0 {
 			candidates := generateCandidates(dct[i], step, -255, 255)
+			parentStateIndex := -1
+			if len(bestStates[i-1]) > 0 {
+				parentStateIndex = 0
+			}
 			for _, cand := range candidates {
 				var distortion float64
 				if config.UsePerceptual {
@@ -240,26 +248,26 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 				} else {
 					distortion = calculateSquaredDistortion(dct[i], float32(cand)*step)
 				}
-				rate := estimateACRate(0, uint8(getACCategory(int16(cand))), true)
+				rate := estimateACRate(0, uint8(getACCategory(int16(cand))), isLuminance)
 				cost := float64(rate) + config.Lambda*distortion
 
 				bestStates[i] = append(bestStates[i], viterbiState{
-					cost:         cost,
-					quantizedVal: int16(cand),
-					prevIndex:    i - 1,
-					runLength:    0,
-					isEOB:        false,
+					cost:             cost,
+					quantizedVal:     int16(cand),
+					parentStateIndex: parentStateIndex,
+					runLength:        0,
+					isEOB:            false,
 				})
 			}
 		}
 	}
 
-	var bestFinalState *viterbiState
+	bestFinalStateIndex := -1
 	bestFinalCost := math.Inf(1)
-	for _, state := range bestStates[63] {
+	for stateIndex, state := range bestStates[63] {
 		var eobRate int
 		if state.runLength > 0 {
-			eobRate = estimateACRate(uint8(state.runLength), 0, true)
+			eobRate = estimateACRate(uint8(state.runLength), 0, isLuminance)
 		} else {
 			eobRate = 0
 		}
@@ -267,32 +275,19 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 
 		if totalCost < bestFinalCost {
 			bestFinalCost = totalCost
-			bestFinalState = &state
+			bestFinalStateIndex = stateIndex
 		}
 	}
 
-	if bestFinalState != nil {
-		currentIndex := 63
-		for currentIndex >= 0 {
-			for _, state := range bestStates[currentIndex] {
-				if state.cost == bestFinalState.cost && state.quantizedVal == bestFinalState.quantizedVal {
-					result[currentIndex] = state.quantizedVal
-					if state.prevIndex >= 0 {
-						bestFinalState = &state
-					}
-					break
-				}
-			}
-			currentIndex--
-			if currentIndex < 0 {
+	if bestFinalStateIndex >= 0 {
+		stateIndex := bestFinalStateIndex
+		for coeffIndex := 63; coeffIndex >= 0 && stateIndex >= 0; coeffIndex-- {
+			if stateIndex >= len(bestStates[coeffIndex]) {
 				break
 			}
-			for _, s := range bestStates[currentIndex] {
-				if s.quantizedVal == result[currentIndex+1] {
-					bestFinalState = &s
-					break
-				}
-			}
+			state := bestStates[coeffIndex][stateIndex]
+			result[coeffIndex] = state.quantizedVal
+			stateIndex = state.parentStateIndex
 		}
 	}
 
@@ -356,13 +351,13 @@ func generateCandidatesWithRunLength(coeff, step float32, runLength int, minVal,
 	return candidates
 }
 
-func addStateWithPruning(states []viterbiState, newState viterbiState, maxStates int) {
+func addStateWithPruning(states []viterbiState, newState viterbiState, maxStates int) []viterbiState {
 	for i, s := range states {
 		if s.quantizedVal == newState.quantizedVal && s.runLength == newState.runLength {
 			if newState.cost < s.cost {
 				states[i] = newState
 			}
-			return
+			return states
 		}
 	}
 
@@ -379,6 +374,7 @@ func addStateWithPruning(states []viterbiState, newState viterbiState, maxStates
 	if len(states) > maxStates {
 		states = states[:maxStates]
 	}
+	return states
 }
 
 func calculateDistortion(original, quantized float32, index int, usePerceptual bool) float64 {
@@ -493,10 +489,29 @@ func absInt16(v int16) int16 {
 }
 
 func CalculateLambda(quality uint8) float32 {
-	qualityFloat := float32(quality)
-	if qualityFloat >= 50 {
-		return 0.1 + (100-qualityFloat)/50*0.9
-	} else {
-		return 1.0 + (50-qualityFloat)/50*4.0
+	anchors := []struct {
+		quality uint8
+		lambda  float32
+	}{
+		{10, 5.0},
+		{25, 3.0},
+		{50, 1.0},
+		{75, 0.5},
+		{90, 0.3},
+		{100, 0.1},
 	}
+
+	if quality <= anchors[0].quality {
+		return anchors[0].lambda
+	}
+	for i := 1; i < len(anchors); i++ {
+		prev := anchors[i-1]
+		next := anchors[i]
+		if quality <= next.quality {
+			span := float32(next.quality - prev.quality)
+			position := float32(quality-prev.quality) / span
+			return prev.lambda + (next.lambda-prev.lambda)*position
+		}
+	}
+	return anchors[len(anchors)-1].lambda
 }

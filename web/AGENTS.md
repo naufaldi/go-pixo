@@ -12,25 +12,25 @@ React + Rescript + Vite frontend for image compression (client-side).
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Dev server (with hot reload)
-npm run dev
+bun run dev
 
 # Build for production
-npm run build
+bun run build
 
 # Preview build
-npm run preview
+bun run preview
 
 # Run tests
-npm test
+bun test --run
 
 # Run E2E tests
-npm run test:e2e
+bun run test:e2e
 
 # Typecheck
-npm run rescript:build
+bun run rescript:build
 ```
 
 ## Patterns & Conventions
@@ -47,6 +47,9 @@ web/e2e/
 ├── conversion.spec.ts   # Playwright E2E tests
 └── fixtures/           # Test fixtures
 ```
+
+`web/src/` is the canonical ReScript source tree. Generated or legacy mirrors under
+`web/lib/` are ignored and should not be edited.
 
 **Key Patterns**:
 - ✅ DO: Use Rescript functional components (`@react.component`)
@@ -113,5 +116,5 @@ ls web/e2e/*.spec.ts
 ## Pre-PR Checks
 
 ```bash
-npm run build && npm test && npm run test:e2e
+bun run build && bun test --run && bun run test:e2e
 ```
