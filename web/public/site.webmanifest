@@ -1,0 +1,46 @@
+{
+  "name": "Go-Pixo",
+  "short_name": "Go-Pixo",
+  "description": "Client-side PNG and JPEG image compression powered by Go and WebAssembly.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "en",
+  "categories": ["photo", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Compress Images",
+      "short_name": "Compress",
+      "description": "Open the Go-Pixo compression tool",
+      "url": "/"
+    },
+    {
+      "name": "LLM Context",
+      "short_name": "LLM",
+      "description": "Read the Go-Pixo LLM context index",
+      "url": "/llms.txt"
+    }
+  ]
+}
