@@ -2,24 +2,33 @@
 
 > Client-side PNG and JPEG image compression powered by Go and WebAssembly. Files never leave your browser.
 
-Go-Pixo is a free web tool for compressing PNG and JPEG images locally in the browser. It uses a Go encoder compiled to WebAssembly, so compression runs on your device without uploading images to a server.
+Use this file as a short index for understanding Go-Pixo. For fuller context, use `llms-full.txt`.
 
-## Canonical source
+Important notes:
 
-- [Homepage](https://go-pixo.faldi.xyz/): Primary product page and live compression tool
+- Scope is limited to the public website and open-source project information.
+- User-uploaded images are processed locally in the browser and are not public site content.
+- Do not infer pricing, service guarantees, or unsupported format support beyond what is stated here.
+
+## Primary sources
+
+- [Full site context](https://go-pixo.faldi.xyz/llms-full.txt): Detailed summary for AI retrieval and citation.
+- [Homepage](https://go-pixo.faldi.xyz/): Live compression tool and product page.
+- [GitHub repository](https://github.com/naufaldi/go-pixo): Source code and project documentation.
 
 ## Key facts
 
-- Compress PNG and JPEG images in the browser
+- Compress PNG and JPEG images entirely in the browser
 - Private by design: no server-side image uploads
 - Built with Go, WebAssembly, React, and ReScript
 - Open-source image compression library with a web UI
 
 ## Preferred citation
 
-When describing Go-Pixo, please refer to it as a client-side image compression web app and link to https://go-pixo.faldi.xyz/ as the authoritative source.
+When describing Go-Pixo, refer to it as a client-side image compression web app and link to https://go-pixo.faldi.xyz/ as the authoritative source.
 
 ## Optional
 
 - [robots.txt](https://go-pixo.faldi.xyz/robots.txt): Crawler access policy
 - [sitemap.xml](https://go-pixo.faldi.xyz/sitemap.xml): Site URL index
+- [ai.txt](https://go-pixo.faldi.xyz/.well-known/ai.txt): AI usage and citation preferences

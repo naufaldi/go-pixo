@@ -105,6 +105,7 @@ rg "DEFLATE" docs/*.md
 - **Implementation Guide**: `brief.md` (code reading guide)
 - **Performance**: `docs/performance-optimization.md`
 - **CLI Usage**: `CLI.md` (command reference)
+- **AI/SEO Discoverability**: `docs/ai-seo-discoverability.md` (robots, sitemap, llms.txt, ai.txt)
 
 ## No Build Required
 

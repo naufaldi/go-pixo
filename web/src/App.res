@@ -877,7 +877,7 @@ let make = () => {
         {React.string("Go-Pixo")}
       </h1>
       <p className="text-neutral-400">
-        {React.string("Fast, local, client-side PNG compression powered by Go & WASM.")}
+        {React.string("Fast, local, client-side PNG and JPEG compression powered by Go & WASM.")}
       </p>
       <div className="flex items-center justify-center gap-4 mt-4">
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium">

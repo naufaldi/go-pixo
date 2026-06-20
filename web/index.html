@@ -18,6 +18,12 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link
+      rel="alternate"
+      type="text/markdown"
+      href="/llms.txt"
+      title="Go-Pixo LLM context"
+    />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Go-Pixo" />
@@ -33,6 +39,10 @@
     <meta property="og:image" content="https://go-pixo.faldi.xyz/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Go-Pixo client-side image compression preview"
+    />
     <meta property="og:locale" content="en_US" />
 
     <meta name="twitter:card" content="summary_large_image" />
@@ -42,6 +52,10 @@
       content="Compress PNG and JPEG images in your browser with Go and WebAssembly. Private, fast, and free."
     />
     <meta name="twitter:image" content="https://go-pixo.faldi.xyz/og-image.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Go-Pixo client-side image compression preview"
+    />
 
     <script type="application/ld+json">
       {
@@ -52,6 +66,10 @@
         "description": "Client-side PNG and JPEG image compression powered by Go and WebAssembly.",
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Web browser",
+        "codeRepository": "https://github.com/naufaldi/go-pixo",
+        "browserRequirements": "Requires a modern browser with WebAssembly support",
+        "screenshot": "https://go-pixo.faldi.xyz/og-image.png",
+        "softwareHelp": "https://go-pixo.faldi.xyz/llms.txt",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -71,6 +89,29 @@
   </head>
   <body class="bg-neutral-950 text-neutral-100 font-sans antialiased">
     <div id="root"></div>
+    <noscript>
+      <div
+        style="
+          max-width: 42rem;
+          margin: 2rem auto;
+          padding: 1.5rem;
+          text-align: center;
+          font-family: system-ui, sans-serif;
+          color: #e5e5e5;
+        "
+      >
+        <h1 style="font-size: 1.875rem; font-weight: 800; margin-bottom: 0.5rem">
+          Go-Pixo
+        </h1>
+        <p style="color: #a3a3a3; margin-bottom: 1rem">
+          Client-side PNG and JPEG image compression powered by Go and WebAssembly.
+          Your files stay on your device—nothing is uploaded to a server.
+        </p>
+        <p style="color: #737373; font-size: 0.875rem">
+          JavaScript and WebAssembly are required to use the compression tool.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.res.js"></script>
   </body>
 </html>

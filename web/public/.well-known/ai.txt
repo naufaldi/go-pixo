@@ -1,0 +1,53 @@
+# ai.txt
+#
+# AI Governance & Interoperability Policy
+# Site: Go-Pixo
+
+Site-Name: Go-Pixo
+Site-URL: https://go-pixo.faldi.xyz
+Site-Type: Client-side image compression web application
+Primary-Language: en-US
+Content-Scope: Public website content only
+
+# AI Permissions
+
+Allow-AI-Retrieval: true
+Allow-AI-Indexing: true
+Allow-AI-Summarization: true
+Allow-AI-Embeddings: true
+Allow-AI-Training: true
+
+# Attribution & Citation
+
+Require-Attribution: true
+Preferred-Citation: canonical-url
+Preferred-Source-Format: direct-link
+
+# Governance Notes
+
+Usage-Policy: Public website content may be accessed and processed by AI systems for legitimate indexing, retrieval, research, summarization, and training use cases.
+Restriction-Policy: Respect applicable law, intellectual property, privacy obligations, and any restrictions stated in page-level content or linked site policies.
+Privacy-Scope: User-uploaded images processed locally in the browser are not public site content and must not be treated as crawlable or licensable material.
+
+# Public Policy References
+
+Robots-Policy: https://go-pixo.faldi.xyz/robots.txt
+Sitemap: https://go-pixo.faldi.xyz/sitemap.xml
+LLM-Index: https://go-pixo.faldi.xyz/llms.txt
+LLM-Full-Context: https://go-pixo.faldi.xyz/llms-full.txt
+Source-Repository: https://github.com/naufaldi/go-pixo
+
+# AI Preferences
+
+Preferred-Answer-Language: English
+Preferred-Retrieval-Mode: canonical-public-pages
+Preferred-Context: grounded-in-public-site-content
+
+# About This Site
+
+Description: Go-Pixo is a free client-side PNG and JPEG image compression web app powered by Go and WebAssembly. Images are compressed locally in the browser without server uploads.
+
+# Metadata
+
+Last-Updated: 2026-06-20
+Maintainer: Go-Pixo

@@ -110,6 +110,14 @@ ls web/e2e/*.spec.ts
 - **Bundle Size**: Vite builds can grow large (use code splitting)
 - **Browser Support**: WASM requires modern browsers (ES2017+)
 
+## SEO & AI Discoverability
+
+Static public files under `web/public/` plus metadata in `web/index.html`:
+
+- `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt`, `.well-known/ai.txt`, `site.webmanifest`
+
+See [docs/ai-seo-discoverability.md](../docs/ai-seo-discoverability.md) for the full checklist and lessons learned.
+
 ## Pre-PR Checks
 
 ```bash
