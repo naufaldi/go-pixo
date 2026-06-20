@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Go-Pixo">
+  <rect width="32" height="32" fill="#0a0a0a"/>
+  <g fill="#2dd4bf">
+    <rect x="4" y="6" width="4" height="4"/><rect x="8" y="6" width="4" height="4"/><rect x="12" y="6" width="4" height="4"/>
+    <rect x="4" y="10" width="4" height="4"/><rect x="12" y="10" width="4" height="4"/>
+    <rect x="4" y="14" width="4" height="4"/><rect x="8" y="14" width="4" height="4"/><rect x="12" y="14" width="4" height="4"/>
+    <rect x="4" y="18" width="4" height="4"/><rect x="12" y="18" width="4" height="4"/>
+    <rect x="4" y="22" width="4" height="4"/><rect x="8" y="22" width="4" height="4"/><rect x="12" y="22" width="4" height="4"/>
+  </g>
+  <g fill="#34d399">
+    <rect x="18" y="6" width="4" height="4"/><rect x="22" y="6" width="4" height="4"/><rect x="26" y="6" width="4" height="4"/>
+    <rect x="18" y="10" width="4" height="4"/><rect x="22" y="10" width="4" height="4"/>
+    <rect x="18" y="14" width="4" height="4"/><rect x="22" y="14" width="4" height="4"/><rect x="26" y="14" width="4" height="4"/>
+    <rect x="18" y="18" width="4" height="4"/><rect x="26" y="18" width="4" height="4"/>
+    <rect x="18" y="22" width="4" height="4"/><rect x="22" y="22" width="4" height="4"/><rect x="26" y="22" width="4" height="4"/>
+  </g>
+</svg>
