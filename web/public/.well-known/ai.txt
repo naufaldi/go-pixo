@@ -5,7 +5,7 @@
 
 Site-Name: Go-Pixo
 Site-URL: https://go-pixo.faldi.xyz
-Site-Type: Client-side image compression web application
+Site-Type: Client-side image compression and conversion web application
 Primary-Language: en-US
 Content-Scope: Public website content only
 
@@ -45,9 +45,9 @@ Preferred-Context: grounded-in-public-site-content
 
 # About This Site
 
-Description: Go-Pixo is a free client-side PNG and JPEG image compression web app powered by Go and WebAssembly. Images are compressed locally in the browser without server uploads.
+Description: Go-Pixo is a free client-side image compression and conversion web app powered by Go and WebAssembly. Images are processed locally in the browser without server uploads.
 
 # Metadata
 
-Last-Updated: 2026-06-20
+Last-Updated: 2026-06-22
 Maintainer: Go-Pixo

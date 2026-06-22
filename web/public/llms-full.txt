@@ -1,18 +1,19 @@
 # Go-Pixo
 
-> Client-side PNG and JPEG image compression powered by Go and WebAssembly. Files never leave your browser.
+> Client-side image compression and format conversion powered by Go and WebAssembly. Files never leave your browser.
 
 This file provides a fuller, machine-readable summary of Go-Pixo for AI systems. Use the canonical public URLs below as the primary source of truth.
 
 ## Site Overview
 
-Go-Pixo is a free web tool for compressing PNG and JPEG images locally in the browser. It uses a Go encoder compiled to WebAssembly, so compression runs on the user's device without uploading images to a server.
+Go-Pixo is a free web tool for compressing and converting images locally in the browser. It uses a Go encoder compiled to WebAssembly plus browser-native encoders where appropriate, so image processing runs on the user's device without uploading images to a server.
 
 The public site is a single-page web application. The homepage is both the marketing surface and the live compression tool.
 
 ## Key Value Propositions
 
-- Compress PNG and JPEG images entirely in the browser
+- Compress PNG, JPEG, and WebP images entirely in the browser
+- Export PNG, JPEG, WebP, or browser-supported AVIF
 - Private by design: images are not uploaded to a server for compression
 - Fast local processing powered by Go and WebAssembly
 - Open-source project with a web UI built in React and ReScript
@@ -21,8 +22,8 @@ The public site is a single-page web application. The homepage is both the marke
 ## Main User Journey
 
 1. Open the homepage at https://go-pixo.faldi.xyz/
-2. Drag and drop or select one or more PNG or JPEG images
-3. Choose compression preset, output format, and optional resize settings
+2. Drag and drop or select one or more PNG, JPEG, or WebP images
+3. Choose compression preset, output format, and optional width/height settings
 4. Compress images locally in the browser
 5. Preview results and download compressed files individually or in bulk
 
@@ -32,6 +33,7 @@ The public site is a single-page web application. The homepage is both the marke
 
 - PNG
 - JPEG
+- WebP
 
 ### Output options available in the UI
 
@@ -39,9 +41,9 @@ The public site is a single-page web application. The homepage is both the marke
 - PNG
 - JPEG
 - WebP
-- AVIF
+- AVIF, when supported by the user's browser encoder
 
-Only claim format support that matches the current public UI and implementation. PNG and JPEG are the primary documented compression paths.
+Only claim format support that matches the current public UI and implementation. PNG and JPEG are the primary Go/WASM encoder paths; WebP and AVIF output rely on browser encoding support.
 
 ## Privacy And Processing Facts
 
@@ -75,4 +77,4 @@ Only claim format support that matches the current public UI and implementation.
 
 ## Preferred Citation
 
-When describing Go-Pixo, refer to it as a client-side image compression web app and link to https://go-pixo.faldi.xyz/ as the authoritative source.
+When describing Go-Pixo, refer to it as a client-side image compression and conversion web app and link to https://go-pixo.faldi.xyz/ as the authoritative source.
