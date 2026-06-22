@@ -1,3 +1,5 @@
+import { copyImageDataPixels } from './pixels';
+
 export type DecodeResult = {
   pixels: Uint8Array;
   width: number;
@@ -37,7 +39,7 @@ export const decodeFile = (file: File): Promise<DecodeResult> =>
 
           ctx.drawImage(img, 0, 0);
           const imageData = ctx.getImageData(0, 0, img.width, img.height);
-          const pixels = new Uint8Array(imageData.data.buffer); // Convert to Uint8Array for WASM
+          const pixels = copyImageDataPixels(imageData.data);
 
           // PNG color types: 6 = RGBA, 2 = RGB
           const colorType = 6;

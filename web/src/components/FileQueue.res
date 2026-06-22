@@ -1,35 +1,3 @@
-let formatSize = (bytes: int): string => {
-  if bytes >= 1_000_000 {
-    let mb = Math.round(Int.toFloat(bytes) /. 1000000.0 *. 10.0) /. 10.0
-    Float.toString(mb) ++ " MB"
-  } else if bytes >= 1000 {
-    let kb = Math.round(Int.toFloat(bytes) /. 1000.0 *. 10.0) /. 10.0
-    Float.toString(kb) ++ " KB"
-  } else {
-    Int.toString(bytes) ++ " bytes"
-  }
-}
-
-let savingsColor = (percent: float): string => {
-  if percent >= 30.0 {
-    "text-green-400"
-  } else if percent >= 10.0 {
-    "text-yellow-400"
-  } else {
-    "text-gray-400"
-  }
-}
-
-let isAlreadyOptimized = (original: int, compressed: int): bool => {
-  if original <= 0 {
-    false
-  } else {
-    let saved = original - compressed
-    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    saved >= 0 && percent <= 0.1
-  }
-}
-
 let statusText = (status: Types.fileStatus): string => {
   switch status {
   | Pending => "Pending"
@@ -44,18 +12,18 @@ let kindText = (kind: Types.fileKind): string => {
   switch kind {
   | Png => "PNG"
   | Jpeg => "JPEG"
+  | Webp => "WebP"
   | Unknown => "Unknown"
   }
 }
 
-let formatTime = (milliseconds: float): string => {
-  let seconds = milliseconds /. 1000.0
-  if seconds >= 60.0 {
-    let mins = Int.toFloat(Float.toInt(seconds /. 60.0))
-    let secs = Float.toFixed(~digits=1, seconds -. mins *. 60.0)
-    `${Float.toFixed(~digits=0, mins)}m ${secs}s`
-  } else {
-    `${Float.toFixed(~digits=1, seconds)}s`
+let extensionText = (extension: string): string => {
+  switch extension {
+  | ".jpg" | ".jpeg" => "JPEG"
+  | ".webp" => "WebP"
+  | ".avif" => "AVIF"
+  | ".png" => "PNG"
+  | _ => "Unknown"
   }
 }
 
@@ -113,10 +81,17 @@ let make = (
                </p>
                <div className="flex items-center gap-3 mt-2">
                  <span className="text-xs text-neutral-500">
-                   {React.string(kindText(item.kind))}
+                   {React.string("Input: " ++ kindText(item.kind))}
                  </span>
+                 {switch item.compressedExtension {
+                 | Some(extension) =>
+                   <span className="text-xs text-neutral-500">
+                     {React.string("Output: " ++ extensionText(extension))}
+                   </span>
+                 | None => React.null
+                 }}
                  <span className="text-xs text-neutral-400">
-                   {React.string(formatSize(item.originalBytes))}
+                   {React.string(Display.formatSize(item.originalBytes))}
                  </span>
                  {switch item.status {
                  | Compressing =>
@@ -132,7 +107,7 @@ let make = (
                      let elapsed = %raw("performance.now()") -. progress.startTime
                      <div className="flex flex-col gap-1">
                        <div className="flex items-center gap-2">
-                         <span className="text-xs text-blue-400 font-medium">
+                         <span className="text-xs text-blue-400 font-medium" dataTestId="file-compression-percent">
                            {React.string("Compressing " ++ Int.toString(progress.progress) ++ "%")}
                          </span>
                          <div className="w-16 bg-neutral-800 rounded-full h-1.5 overflow-hidden">
@@ -143,12 +118,12 @@ let make = (
                          </div>
                        </div>
                        <div className="flex items-center gap-2 text-xs text-neutral-500">
-                         <span className="capitalize">
-                           {React.string(progress.phase)}
+                         <span className="capitalize" dataTestId="file-compression-phase">
+                           {React.string(Progress.phaseLabel(progress.phase))}
                          </span>
                          <span>{React.string(" - ")}</span>
                          <span>
-                           {React.string(formatTime(elapsed))}
+                          {React.string(Display.formatTimeFloat(elapsed))}
                          </span>
                        </div>
                      </div>
@@ -161,16 +136,16 @@ let make = (
                   switch item.compressedBytes {
                   | Some(bytes) =>
                     let originalSize = item.originalBytes
-                    if isAlreadyOptimized(originalSize, bytes) {
-                      <span className="text-xs font-medium text-blue-400">
-                        {React.string("Image already optimized")}
+                    if Display.isAlreadyOptimized(originalSize, bytes) {
+                      <span className="text-xs font-medium text-blue-400" dataTestId="file-item-optimized">
+                        {React.string("No smaller output with current settings")}
                       </span>
                     } else {
                       let saved = originalSize - bytes
                       let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
-                      <span className={"text-xs font-medium " ++ savingsColor(percent)}>
+                      <span className={"text-xs font-medium " ++ Display.savingsColor(percent)} dataTestId="file-item-done">
                         {React.string(
-                          formatSize(bytes) ++ " (-" ++
+                          Display.formatSize(bytes) ++ " (-" ++
                           Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
                         )}
                       </span>

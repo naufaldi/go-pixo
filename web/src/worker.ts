@@ -1,4 +1,13 @@
-// Web Worker for off-main-thread image compression
+import {
+  resolveOutputFormat,
+  shouldUseLosslessBytePath,
+  type InputFormat,
+  type ResolvedFormat,
+} from './interop/compressionSettings';
+import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
+import { unwrapWasmResult } from './interop/wasmResult';
+import { assertRgbaPixelBuffer, copyImageDataPixels } from './interop/pixels';
+import { resolveJpegEncodeOptions } from './interop/jpegOptions';
 
 interface CompressionRequest {
   id: string;
@@ -6,7 +15,7 @@ interface CompressionRequest {
   width: number;
   height: number;
   colorType: number;
-  format: 'png' | 'jpeg';
+  format: 'png' | 'jpeg' | 'webp';
   outputFormat?: 'same' | 'png' | 'jpeg' | 'webp' | 'avif';
   preset: number;
   lossy: boolean;
@@ -31,6 +40,7 @@ interface CompressionResponse {
   originalBytes: number;
   compressedBytesCount: number;
   ratio: number;
+  outputFormat: 'png' | 'jpeg' | 'webp' | 'avif';
   error?: string;
 }
 
@@ -39,6 +49,8 @@ interface ProgressMessage {
   id: string;
   phase: string;
   progress: number;
+  predictable?: boolean;
+  phaseTarget?: number;
 }
 
 // WASM state
@@ -115,11 +127,7 @@ function encodePng(
     maxColors,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 // Encode PNG using WASM with advanced parameters
@@ -135,6 +143,11 @@ function encodePngAdvanced(
   ditherStrength: number = 0.5,
   qualityTarget: number = 75,
   zopfliIterations: number = 0,
+  filterStrategy: number = 0,
+  usePerceptual: boolean = false,
+  distanceMetric: number = 0,
+  optimalDeflate: boolean = false,
+  filterEarlyTerm: boolean = false,
   onProgress?: (phase: string, progress: number) => void,
 ): Uint8Array {
   // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
@@ -168,14 +181,15 @@ function encodePngAdvanced(
     ditherStrength,
     qualityTarget,
     zopfliIterations,
+    filterStrategy,
+    usePerceptual,
+    distanceMetric,
+    optimalDeflate,
+    filterEarlyTerm,
     onProgress,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 // Encode JPEG using WASM with advanced parameters
@@ -210,11 +224,7 @@ function encodeJpegAdvanced(
     preset,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 function recompressPngLossless(
@@ -236,11 +246,7 @@ function recompressPngLossless(
     onProgress,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
-
-  return result as Uint8Array;
+  return unwrapWasmResult(result);
 }
 
 function recompressJpeg(
@@ -266,11 +272,36 @@ function recompressJpeg(
     optimizeHuffman,
   );
 
-  if (typeof result === "string" && result.startsWith("error:")) {
-    throw new Error(result);
-  }
+  return unwrapWasmResult(result);
+}
 
-  return result as Uint8Array;
+function compositeRgbaToRgbWhite(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+): Uint8Array {
+  const rgb = new Uint8Array(width * height * 3);
+  for (let i = 0; i < width * height; i++) {
+    const src = i * 4;
+    const dst = i * 3;
+    const alpha = pixels[src + 3];
+
+    if (alpha === 255) {
+      rgb[dst] = pixels[src];
+      rgb[dst + 1] = pixels[src + 1];
+      rgb[dst + 2] = pixels[src + 2];
+    } else if (alpha === 0) {
+      rgb[dst] = 255;
+      rgb[dst + 1] = 255;
+      rgb[dst + 2] = 255;
+    } else {
+      const opacity = alpha / 255;
+      rgb[dst] = Math.round(pixels[src] * opacity + 255 * (1 - opacity));
+      rgb[dst + 1] = Math.round(pixels[src + 1] * opacity + 255 * (1 - opacity));
+      rgb[dst + 2] = Math.round(pixels[src + 2] * opacity + 255 * (1 - opacity));
+    }
+  }
+  return rgb;
 }
 
 // Encode image as WebP using OffscreenCanvas
@@ -320,7 +351,7 @@ function resizePixels(
   dstCtx.drawImage(src, 0, 0, dstW, dstH);
 
   const resized = dstCtx.getImageData(0, 0, dstW, dstH);
-  return { pixels: new Uint8Array(resized.data.buffer), width: dstW, height: dstH };
+  return { pixels: copyImageDataPixels(resized.data), width: dstW, height: dstH };
 }
 
 // Handle messages from main thread
@@ -387,12 +418,46 @@ self.onmessage = async (
           originalFileBytesLen > 0 ? originalFileBytesLen : req.pixels.length;
 
         // Resolve the effective output format
-        const resolvedFormat = (() => {
-          if (!req.outputFormat || req.outputFormat === 'same') return req.format;
-          return req.outputFormat;
-        })();
+        const resolvedFormat: ResolvedFormat = resolveOutputFormat(
+          req.format as InputFormat,
+          req.outputFormat ?? 'same',
+        );
+        const useLosslessPngBytes = shouldUseLosslessBytePath({
+          lossless: req.lossy === false,
+          inputFormat: req.format as InputFormat,
+          outputFormat: resolvedFormat,
+          targetWidth: req.targetWidth,
+          targetHeight: req.targetHeight,
+        }) && resolvedFormat === 'png';
+        const useLosslessJpegBytes = shouldUseLosslessBytePath({
+          lossless: req.lossy === false,
+          inputFormat: req.format as InputFormat,
+          outputFormat: resolvedFormat,
+          targetWidth: req.targetWidth,
+          targetHeight: req.targetHeight,
+        }) && resolvedFormat === 'jpeg';
 
         let compressedBytes: Uint8Array;
+
+        const postProgress = (
+          phase: string,
+          progress: number,
+          options?: { predictable?: boolean; phaseTarget?: number },
+        ) => {
+          self.postMessage({
+            type: "progress",
+            id: req.id,
+            phase,
+            progress,
+            predictable: options?.predictable,
+            phaseTarget: options?.phaseTarget,
+          } as ProgressMessage);
+        };
+
+        postProgress(STAGE.PREPARING.label, INITIAL_PROGRESS, {
+          predictable: true,
+          phaseTarget: STAGE.RESIZING.end,
+        });
 
         // Apply resize if target dimensions are specified
         let { pixels: workPixels, width: workWidth, height: workHeight } = {
@@ -400,55 +465,113 @@ self.onmessage = async (
           width: req.width,
           height: req.height,
         };
-        if (req.targetWidth || req.targetHeight) {
+        const needsResize =
+          (req.targetWidth !== undefined || req.targetHeight !== undefined) &&
+          (() => {
+            const aspect = req.width / req.height;
+            const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
+            const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
+            return dstW !== req.width || dstH !== req.height;
+          })();
+
+        if (needsResize) {
+          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.start, {
+            predictable: true,
+            phaseTarget: STAGE.RESIZING.end,
+          });
           const aspect = req.width / req.height;
           const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
           const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
-          if (dstW !== req.width || dstH !== req.height) {
-            const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
-            workPixels = resized.pixels;
-            workWidth = resized.width;
-            workHeight = resized.height;
-          }
+          const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
+          workPixels = resized.pixels;
+          workWidth = resized.width;
+          workHeight = resized.height;
+          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.end);
         }
+
+        const sendPngProgress = (phase: string, subProgress: number) => {
+          const globalProgress = mapPngPhaseToGlobal(phase, subProgress);
+          postProgress(phase, globalProgress, {
+            predictable: true,
+            phaseTarget: mapPngPhaseToGlobal(phase, 100),
+          });
+        };
+
+        const needsPixelBuffer =
+          resolvedFormat === 'webp' ||
+          resolvedFormat === 'avif' ||
+          (resolvedFormat === 'jpeg' && !useLosslessJpegBytes) ||
+          (resolvedFormat === 'png' && !useLosslessPngBytes);
+
+        if (needsPixelBuffer) {
+          assertRgbaPixelBuffer(workPixels, workWidth, workHeight, req.colorType);
+        }
+
+        const postEncodingStart = () => {
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.start, {
+            predictable: true,
+            phaseTarget: STAGE.ENCODING.end - 1,
+          });
+        };
+
+        const postJpegEncodingStart = () => {
+          postProgress('encoding-jpeg', STAGE.ENCODING.start, {
+            predictable: false,
+            phaseTarget: STAGE.ENCODING.start,
+          });
+        };
 
         // Handle WebP encoding via OffscreenCanvas
         if (resolvedFormat === 'webp') {
+          postEncodingStart();
           compressedBytes = await encodeWebp(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else if (resolvedFormat === 'avif') {
+          postEncodingStart();
           compressedBytes = await encodeAvif(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else if (resolvedFormat === 'jpeg') {
-          // For lossless JPEG re-encode from original bytes (no pixel round-trip quality loss)
-          const useLosslessJpegBytes =
-            req.lossy === false &&
-            req.format === 'jpeg' &&  // only when input is natively JPEG
-            req.originalFileBytes !== undefined &&
-            req.originalFileBytes.length > 0;
-
+          postJpegEncodingStart();
           if (useLosslessJpegBytes) {
+            const jpegOptions = resolveJpegEncodeOptions({
+              inputFormat: req.format as InputFormat,
+              outputFormat: resolvedFormat,
+              width: req.width,
+              height: req.height,
+              preset: req.preset,
+              progressive: req.progressive ?? false,
+              trellis: req.trellis ?? false,
+              optimizeHuffman: req.optimizeHuffman ?? false,
+            });
             compressedBytes = recompressJpeg(
               req.originalFileBytes!,
-              req.preset,
+              jpegOptions.preset,
               req.qualityTarget ?? 85,
-              req.progressive ?? false,
-              req.trellis ?? false,
-              req.optimizeHuffman ?? false,
+              jpegOptions.progressive,
+              jpegOptions.trellis,
+              jpegOptions.optimizeHuffman,
             );
           } else {
             // Pixel-based JPEG encode (format conversion or lossy path)
-            // Convert RGBA to RGB if needed
+            // JPEG cannot store alpha, so RGBA input is composited on white.
             let jpegPixels = workPixels;
             let jpegColorType = req.colorType;
 
             if (req.colorType === 6) {
-              jpegPixels = new Uint8Array(workWidth * workHeight * 3);
-              for (let i = 0; i < workWidth * workHeight; i++) {
-                jpegPixels[i * 3] = workPixels[i * 4];
-                jpegPixels[i * 3 + 1] = workPixels[i * 4 + 1];
-                jpegPixels[i * 3 + 2] = workPixels[i * 4 + 2];
-              }
+              jpegPixels = compositeRgbaToRgbWhite(workPixels, workWidth, workHeight);
               jpegColorType = 3; // RGB
             }
+
+            const jpegOptions = resolveJpegEncodeOptions({
+              inputFormat: req.format as InputFormat,
+              outputFormat: resolvedFormat,
+              width: workWidth,
+              height: workHeight,
+              preset: req.preset,
+              progressive: req.progressive ?? false,
+              trellis: req.trellis ?? false,
+              optimizeHuffman: req.optimizeHuffman ?? false,
+            });
 
             compressedBytes = encodeJpegAdvanced(
               jpegPixels,
@@ -457,34 +580,20 @@ self.onmessage = async (
               jpegColorType,
               req.qualityTarget ?? 85,
               req.subsampling === '444' ? 1 : 0,
-              req.progressive ?? false,
-              req.trellis ?? false,
-              req.optimizeHuffman ?? false,
-              req.preset,
+              jpegOptions.progressive,
+              jpegOptions.trellis,
+              jpegOptions.optimizeHuffman,
+              jpegOptions.preset,
             );
           }
+          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
         } else {
-          // Handle PNG encoding (existing logic)
-          const useLosslessPngBytes =
-            req.lossy === false &&
-            req.originalFileBytes !== undefined &&
-            req.originalFileBytes.length > 0;
-
           if (useLosslessPngBytes) {
-            const sendProgress = (phase: string, progress: number) => {
-              self.postMessage({
-                type: "progress",
-                id: req.id,
-                phase,
-                progress,
-              } as ProgressMessage);
-            };
-
             compressedBytes = recompressPngLossless(
               req.originalFileBytes!,
               req.preset,
               req.zopfliIterations ?? 0,
-              sendProgress,
+              sendPngProgress,
             );
           } else {
             // Determine if we should use advanced encoding
@@ -494,16 +603,6 @@ self.onmessage = async (
               req.qualityTarget !== undefined;
 
             if (useAdvanced) {
-              // Use advanced encoding with progress reporting
-              const sendProgress = (phase: string, progress: number) => {
-                self.postMessage({
-                  type: "progress",
-                  id: req.id,
-                  phase,
-                  progress,
-                } as ProgressMessage);
-              };
-
               compressedBytes = encodePngAdvanced(
                 workPixels,
                 workWidth,
@@ -516,10 +615,15 @@ self.onmessage = async (
                 req.ditherStrength ?? 0.5,
                 req.qualityTarget ?? 75,
                 req.zopfliIterations ?? 0,
-                sendProgress,
+                0,
+                false,
+                0,
+                false,
+                false,
+                sendPngProgress,
               );
             } else {
-              // Use basic encoding
+              postEncodingStart();
               compressedBytes = encodePng(
                 workPixels,
                 workWidth,
@@ -530,9 +634,15 @@ self.onmessage = async (
                 req.maxColors,
                 req.dithering,
               );
+              postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
             }
           }
         }
+
+        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.start, {
+          predictable: true,
+          phaseTarget: STAGE.FINALIZING.end,
+        });
 
         const duration = Date.now() - startTime;
 
@@ -566,6 +676,8 @@ self.onmessage = async (
           duration + "ms",
         );
 
+        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.end);
+
         self.postMessage({
           type: "compressed",
           id: req.id,
@@ -573,6 +685,7 @@ self.onmessage = async (
           originalBytes,
           compressedBytesCount: compressedBytes.length,
           ratio,
+          outputFormat: resolvedFormat,
         } as CompressionResponse);
       })().catch((err) => {
         console.error("[worker] compress failed", req.id, err);

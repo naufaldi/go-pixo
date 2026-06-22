@@ -37,7 +37,6 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 
 	if lossy && maxColors > 0 && maxColors <= 256 {
 		opts.ApplyLossy(maxColors, 75, 0.5)
-		opts.ColorType = png.ColorIndexed
 	}
 
 	encoder, err := png.NewEncoderWithOptions(opts)
@@ -120,7 +119,6 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		}
 
 		opts.ApplyLossy(maxColors, qualityTarget, ditherStrength)
-		opts.ColorType = png.ColorIndexed
 	} else if dithering {
 		opts.Dithering = true
 		opts.DitheringStrength = ditherStrength
@@ -183,6 +181,8 @@ func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality
 		opts = jpeg.BalancedOptions(width, height, quality)
 	case 2:
 		opts = jpeg.MaxOptions(width, height, quality)
+	case 4:
+		opts = jpeg.MaxOptions(width, height, quality)
 	default:
 		opts = jpeg.BalancedOptions(width, height, quality)
 	}
@@ -190,6 +190,9 @@ func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality
 	opts.ColorType = jpegColorType
 	opts.Progressive = progressive
 	opts.TrellisQuant = trellis
+	if trellis {
+		optimizeHuffman = false
+	}
 	opts.OptimizeHuffman = optimizeHuffman
 
 	if subsampling == 1 {
@@ -245,12 +248,17 @@ func RecompressJpeg(inputJPEG []byte, preset int, quality uint8, progressive boo
 		opts = jpeg.BalancedOptions(1, 1, quality)
 	case 2:
 		opts = jpeg.MaxOptions(1, 1, quality)
+	case 4:
+		opts = jpeg.MaxOptions(1, 1, quality)
 	default:
 		opts = jpeg.BalancedOptions(1, 1, quality)
 	}
 
 	opts.Progressive = progressive
 	opts.TrellisQuant = trellis
+	if trellis {
+		optimizeHuffman = false
+	}
 	opts.OptimizeHuffman = optimizeHuffman
 
 	return jpeg.RecompressJPEGBytes(inputJPEG, opts)
