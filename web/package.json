@@ -14,7 +14,11 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:browser-verify": "node e2e/browser-verify.mjs"
+    "test:browser-verify": "node e2e/browser-verify.mjs",
+    "benchmark:fixture": "node e2e/benchmark/generate-fixture.mjs",
+    "benchmark:metrics-test": "node --test e2e/benchmark/metrics.unit.mjs",
+    "benchmark:e2e": "node e2e/benchmark/run-benchmark.mjs",
+    "benchmark:e2e:quick": "node e2e/benchmark/run-benchmark.mjs --iterations=1"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
