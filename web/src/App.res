@@ -532,6 +532,64 @@ let make = () => {
       dispatch(RequeueProcessedItemsForSettings)
     }
   }
+
+  let clampResizeDimension = value => {
+    if value < 1 {
+      1
+    } else if value > 8000 {
+      8000
+    } else {
+      value
+    }
+  }
+
+  let selectedAspectRatio = switch selectedItem {
+  | Some(item) =>
+    switch (item.width, item.height) {
+    | (Some(width), Some(height)) when width > 0 && height > 0 =>
+      Some(Int.toFloat(width) /. Int.toFloat(height))
+    | _ => None
+    }
+  | None => None
+  }
+
+  let handleTargetWidthChange = (width: option<int>) => {
+    applySettingChange(() => {
+      switch width {
+      | Some(rawWidth) =>
+        let nextWidth = clampResizeDimension(rawWidth)
+        let nextHeight = switch selectedAspectRatio {
+        | Some(aspect) =>
+          Some(clampResizeDimension(Int.fromFloat(Math.round(Int.toFloat(nextWidth) /. aspect))))
+        | None => None
+        }
+        dispatch(SetTargetWidth(Some(nextWidth)))
+        dispatch(SetTargetHeight(nextHeight))
+      | None =>
+        dispatch(SetTargetWidth(None))
+        dispatch(SetTargetHeight(None))
+      }
+    })
+  }
+
+  let handleTargetHeightChange = (height: option<int>) => {
+    applySettingChange(() => {
+      switch height {
+      | Some(rawHeight) =>
+        let nextHeight = clampResizeDimension(rawHeight)
+        let nextWidth = switch selectedAspectRatio {
+        | Some(aspect) =>
+          Some(clampResizeDimension(Int.fromFloat(Math.round(Int.toFloat(nextHeight) *. aspect))))
+        | None => None
+        }
+        dispatch(SetTargetWidth(nextWidth))
+        dispatch(SetTargetHeight(Some(nextHeight)))
+      | None =>
+        dispatch(SetTargetWidth(None))
+        dispatch(SetTargetHeight(None))
+      }
+    })
+  }
   
   let handleDownload = () => {
     switch selectedItem {
@@ -639,6 +697,8 @@ let make = () => {
           compressedUrl={item.compressedUrl}
           originalBytes={item.originalBytes}
           compressedBytes={item.compressedBytes}
+          width={item.width}
+          height={item.height}
           compressionTime={item.compressionTime}
           compressionProgress={itemProgress}
           onRemove={() => dispatch(RemoveItem(item.id))}
@@ -687,10 +747,8 @@ let make = () => {
       onCompressAll={handleCompressAll}
       targetWidth={state.targetWidth}
       targetHeight={state.targetHeight}
-      onTargetWidthChange={w =>
-        applySettingChange(() => dispatch(SetTargetWidth(w)))}
-      onTargetHeightChange={h =>
-        applySettingChange(() => dispatch(SetTargetHeight(h)))}
+      onTargetWidthChange={handleTargetWidthChange}
+      onTargetHeightChange={handleTargetHeightChange}
     />
   </div>
 }

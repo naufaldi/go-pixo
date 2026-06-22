@@ -157,6 +157,41 @@ async function readCompressedImagePixel(
   }, { x, y })
 }
 
+async function readCompressedImageMetadata(
+  page: import('@playwright/test').Page,
+): Promise<{ type: string; width: number; height: number; size: number }> {
+  return page.locator('img[alt="Compressed"]').evaluate(async (img: HTMLImageElement) => {
+    const blob = await fetch(img.src).then((response) => response.blob())
+    const bitmap = await createImageBitmap(blob)
+    return { type: blob.type, width: bitmap.width, height: bitmap.height, size: blob.size }
+  })
+}
+
+async function readCompareLayout(
+  page: import('@playwright/test').Page,
+): Promise<{
+  frame: { width: number; height: number }
+  original: { width: number; height: number }
+  compressed: { width: number; height: number }
+}> {
+  return page.locator('img[alt="Compressed"]').evaluate((compressed: HTMLImageElement) => {
+    const original = document.querySelector<HTMLImageElement>('img[alt="Original"]')
+    const frame = compressed.parentElement
+    if (original == null || frame == null) {
+      throw new Error('compare frame images not found')
+    }
+
+    const frameRect = frame.getBoundingClientRect()
+    const originalRect = original.getBoundingClientRect()
+    const compressedRect = compressed.getBoundingClientRect()
+    return {
+      frame: { width: frameRect.width, height: frameRect.height },
+      original: { width: originalRect.width, height: originalRect.height },
+      compressed: { width: compressedRect.width, height: compressedRect.height },
+    }
+  })
+}
+
 const MIN_PRESET_SLIDER_WIDTH_PX = 120
 
 test.describe('go-pixo', () => {
@@ -294,7 +329,7 @@ test.describe('go-pixo', () => {
     await expectSelectedCompressedImage(page, 'image/webp', 'webp')
 
     await page.getByPlaceholder('W').fill('128')
-    await page.getByPlaceholder('H').fill('96')
+    await expect(page.getByPlaceholder('H')).toHaveValue('128')
     await waitForTwoCompressions(page)
     await waitForIdle(page)
     const resized = await page
@@ -304,7 +339,7 @@ test.describe('go-pixo', () => {
         const bitmap = await createImageBitmap(blob)
         return { width: bitmap.width, height: bitmap.height, type: blob.type }
       })
-    expect(resized).toEqual({ width: 128, height: 96, type: 'image/webp' })
+    expect(resized).toEqual({ width: 128, height: 128, type: 'image/webp' })
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -362,6 +397,46 @@ test.describe('go-pixo', () => {
     const widthInput = page.getByPlaceholder('W')
     await widthInput.fill('16')
     await expect(widthInput).toHaveValue('16')
+  })
+
+  test('resize width preserves non-square image aspect ratio and valid output dimensions', async ({ page }) => {
+    await openApp(page)
+    await uploadGeneratedPng(page, { name: 'wide-ratio.png', width: 400, height: 200 })
+    await waitForCompression(page)
+    await waitForIdle(page)
+
+    await page.getByPlaceholder('W').fill('100')
+    await expect(page.getByPlaceholder('W')).toHaveValue('100')
+    await expect(page.getByPlaceholder('H')).toHaveValue('50')
+    await waitForCompression(page)
+    await waitForIdle(page)
+
+    const resized = await readCompressedImageMetadata(page)
+    expect(resized.width).toBe(100)
+    expect(resized.height).toBe(50)
+    expect(resized.size).toBeGreaterThan(0)
+
+    const layout = await readCompareLayout(page)
+    expect(layout.frame.height).toBeGreaterThan(100)
+    expect(layout.original.height).toBeGreaterThan(100)
+    expect(layout.compressed.height).toBeGreaterThan(100)
+  })
+
+  test('resize width keeps square image aspect ratio', async ({ page }) => {
+    await openApp(page)
+    await uploadGeneratedPng(page, { name: 'square-ratio.png', width: 100, height: 100 })
+    await waitForCompression(page)
+    await waitForIdle(page)
+
+    await page.getByPlaceholder('W').fill('100')
+    await expect(page.getByPlaceholder('W')).toHaveValue('100')
+    await expect(page.getByPlaceholder('H')).toHaveValue('100')
+    await waitForCompression(page)
+    await waitForIdle(page)
+
+    const resized = await readCompressedImageMetadata(page)
+    expect(resized.width).toBe(100)
+    expect(resized.height).toBe(100)
   })
 
   test('bottom bar keeps preset slider usable after multi-file completion', async ({ page }) => {
