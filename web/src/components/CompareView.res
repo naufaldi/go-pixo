@@ -3,7 +3,7 @@ open React
 @send external getBoundingClientRect: Dom.element => {..} = "getBoundingClientRect"
 
 @react.component
-let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~compressionTime, ~compressionProgress: option<Types.compressionProgress>, ~onRemove) => {
+let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~width: option<int>, ~height: option<int>, ~compressionTime, ~compressionProgress: option<Types.compressionProgress>, ~onRemove) => {
   let (sliderPos, setSliderPos) = React.useState(() => 50.0)
   let sliderRef = React.useRef(Nullable.null)
   let containerRef = React.useRef(Nullable.null)
@@ -11,6 +11,17 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
 
   let styleHeight500 =
     ReactDOM.Style._dictToStyle(Dict.fromArray([("height", "500px")]))
+
+  let compareFrameStyle = switch (width, height) {
+  | (Some(imageWidth), Some(imageHeight)) when imageWidth > 0 && imageHeight > 0 =>
+    let aspect = Int.toFloat(imageWidth) /. Int.toFloat(imageHeight)
+    let maxWidth = Int.fromFloat(Math.max(1.0, Math.round(500.0 *. aspect)))
+    ReactDOM.Style._dictToStyle(Dict.fromArray([
+      ("aspectRatio", Int.toString(imageWidth) ++ " / " ++ Int.toString(imageHeight)),
+      ("width", "min(100%, " ++ Int.toString(maxWidth) ++ "px)"),
+    ]))
+  | _ => styleHeight500
+  }
 
   let to1dp = (value: float): string => {
     let rounded = Math.round(value *. 10.0) /. 10.0
@@ -166,7 +177,7 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~com
         onTouchMove=handleTouchMove
         onTouchStart=handleTouchStart
         onTouchEnd=handleTouchEnd>
-        <div className="relative w-full bg-neutral-900" style={styleHeight500}>
+        <div className="relative w-full mx-auto bg-neutral-900" style={compareFrameStyle}>
           /* Background: Compressed Image (Right Side) */
           <img src=comp alt="Compressed" className="absolute inset-0 w-full h-full object-contain" />
           
