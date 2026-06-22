@@ -56,6 +56,8 @@ type queueItem = {
   width: option<int>,
   height: option<int>,
   compressionTime: option<int>,
+  compressedMime: option<string>,
+  compressedExtension: option<string>,
 }
 
 type compressionProgress = {
@@ -65,6 +67,11 @@ type compressionProgress = {
   progress: int,
   startTime: float,
   fileSize: int,
+  lastRealProgress: int,
+  lastRealUpdateTime: float,
+  phaseStartTime: float,
+  phaseTarget: int,
+  predictable: bool,
 }
 
 type appState = {
@@ -139,5 +146,50 @@ let fileKindFromMime = (mime: string, name: string): fileKind => {
     Webp
   } else {
     Unknown
+  }
+}
+
+let kindToInputFormat = (kind: fileKind): string => {
+  switch kind {
+  | Jpeg => "jpeg"
+  | Webp => "webp"
+  | Png | Unknown => "png"
+  }
+}
+
+let outputFormatToChoice = (fmt: outputFormat): string => {
+  switch fmt {
+  | SameAsInput => "same"
+  | ForcePng => "png"
+  | ForceJpeg => "jpeg"
+  | ForceWebp => "webp"
+  | ForceAvif => "avif"
+  }
+}
+
+let presetToKey = (preset: preset): string => {
+  switch preset {
+  | Ultra => "ultra"
+  | Smaller => "smaller"
+  | Balanced => "balanced"
+  | Faster => "faster"
+  }
+}
+
+let mimeForResolvedFormat = (format: string): string => {
+  switch format {
+  | "jpeg" => "image/jpeg"
+  | "webp" => "image/webp"
+  | "avif" => "image/avif"
+  | _ => "image/png"
+  }
+}
+
+let extensionForResolvedFormat = (format: string): string => {
+  switch format {
+  | "jpeg" => ".jpg"
+  | "webp" => ".webp"
+  | "avif" => ".avif"
+  | _ => ".png"
   }
 }

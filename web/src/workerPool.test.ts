@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 
 // Mock the Worker global before importing WorkerPool
 const mockWorkerInstances: any[] = []
@@ -40,11 +40,11 @@ class MockWorker {
   }
 }
 
-vi.stubGlobal('Worker', MockWorker)
-
-// Use vi.mock to handle the dynamic Worker URL inside WorkerPool
-vi.mock('./workerPool', async (importOriginal) => {
-  return await importOriginal()
+const originalWorker = globalThis.Worker
+Object.defineProperty(globalThis, 'Worker', {
+  configurable: true,
+  writable: true,
+  value: MockWorker,
 })
 
 import { WorkerPool } from './workerPool'
@@ -52,6 +52,14 @@ import { WorkerPool } from './workerPool'
 describe('WorkerPool', () => {
   beforeEach(() => {
     mockWorkerInstances.length = 0
+  })
+
+  afterAll(() => {
+    Object.defineProperty(globalThis, 'Worker', {
+      configurable: true,
+      writable: true,
+      value: originalWorker,
+    })
   })
 
   it('submits a task and resolves with Uint8Array', async () => {
