@@ -4,7 +4,7 @@ services:
   app:
     image: ghcr.io/naufaldi/go-pixo:prod
     labels:
-      - "caddy=go-pixo.faldi.xyz"
+      - "caddy=go-pixo.naufaldi.com"
       - "caddy.reverse_proxy={{upstreams 3000}}"
       - "com.centurylinklabs.watchtower.enable=true"
     restart: always

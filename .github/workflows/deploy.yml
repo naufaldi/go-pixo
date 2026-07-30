@@ -165,7 +165,7 @@ jobs:
               app:
                 image: ghcr.io/naufaldi/go-pixo:${{ needs.commit-hash.outputs.commit_hash }}
                 labels:
-                  - "caddy=go-pixo.faldi.xyz"
+                  - "caddy=go-pixo.naufaldi.com"
                   - "caddy.reverse_proxy={{upstreams 3000}}"
                   - "com.centurylinklabs.watchtower.enable=true"
                 restart: always
@@ -212,7 +212,7 @@ jobs:
             docker container prune -f
             
             echo "✅ Deployment completed successfully!"
-            echo "🌐 Application should be available at: http://go-pixo.faldi.xyz"
+            echo "🌐 Application should be available at: http://go-pixo.naufaldi.com"
             echo ""
             echo "Commit: ${{ needs.commit-hash.outputs.commit_hash }}"
             echo "Deployed at: $(date -u)"
