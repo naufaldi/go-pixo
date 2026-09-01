@@ -16,8 +16,9 @@ test("Cloudflare config deploys the Vite build as an SPA", async () => {
   assert.equal("main" in config, false);
   assert.deepEqual(config.routes, [
     {
-      pattern: "go-pixo.naufaldi.com",
-      custom_domain: true,
+      pattern: "go-pixo.naufaldi.com/*",
+      zone_name: "naufaldi.com",
     },
   ]);
+  assert.equal(config.workers_dev, true);
 });

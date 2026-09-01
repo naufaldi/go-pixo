@@ -6,10 +6,11 @@
     "directory": "./web/dist",
     "not_found_handling": "single-page-application"
   },
+  "workers_dev": true,
   "routes": [
     {
-      "pattern": "go-pixo.naufaldi.com",
-      "custom_domain": true
+      "pattern": "go-pixo.naufaldi.com/*",
+      "zone_name": "naufaldi.com"
     }
   ]
 }
