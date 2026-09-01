@@ -14,4 +14,10 @@ test("Cloudflare config deploys the Vite build as an SPA", async () => {
     not_found_handling: "single-page-application",
   });
   assert.equal("main" in config, false);
+  assert.deepEqual(config.routes, [
+    {
+      pattern: "go-pixo.naufaldi.com",
+      custom_domain: true,
+    },
+  ]);
 });
