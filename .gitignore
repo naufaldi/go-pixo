@@ -1,2 +1,50 @@
 # CLI example output directory (see CLI.md)
 compress/
+
+# Build artifacts
+dist/
+web/dist/
+web/public/main.wasm
+web/public/wasm_exec.js
+
+# Go build artifacts
+*.exe
+*.exe~
+*.test
+*.out
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*~
+\#*
+.*.sw?
+.tmp/
+
+# Dependencies
+node_modules/
+vendor/
+
+# Docker
+.docker/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.dev.vars*
+.wrangler/
