@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
+    "build:wasm": "cd .. && ./scripts/build-wasm.sh",
     "build": "rescript build && vite build",
+    "build:cloudflare": "npm run build:wasm && npm run build",
+    "deploy:dry-run": "npm run build:cloudflare && wrangler deploy --config ../wrangler.jsonc --dry-run",
+    "deploy": "npm run build:cloudflare && wrangler deploy --config ../wrangler.jsonc",
     "preview": "vite preview",
     "rescript:build": "rescript build",
     "rescript:watch": "rescript watch",
@@ -35,7 +39,8 @@
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "wrangler": "4.127.1"
   },
   "dependencies": {
     "fflate": "^0.8.2",
