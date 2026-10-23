@@ -97,6 +97,32 @@ func TestToColorWithCountSlice(t *testing.T) {
 	}
 }
 
+func TestToColorWithCountSliceDeterministicTies(t *testing.T) {
+	colorMap := map[Color]int{
+		{255, 255, 255}: 9,
+		{1, 2, 2}:       3,
+		{1, 2, 1}:       3,
+		{1, 1, 255}:     3,
+		{0, 255, 255}:   3,
+		{0, 0, 0}:       1,
+	}
+	want := []ColorWithCount{
+		{Color{255, 255, 255}, 9},
+		{Color{0, 255, 255}, 3},
+		{Color{1, 1, 255}, 3},
+		{Color{1, 2, 1}, 3},
+		{Color{1, 2, 2}, 3},
+		{Color{0, 0, 0}, 1},
+	}
+
+	// Repeated map iteration must not change the input order for median cut.
+	for i := 0; i < 16; i++ {
+		if got := ToColorWithCountSlice(colorMap); !reflect.DeepEqual(got, want) {
+			t.Fatalf("iteration %d: got %v, want count descending then RGB ascending %v", i, got, want)
+		}
+	}
+}
+
 func TestUniqueColorCount(t *testing.T) {
 	tests := []struct {
 		name      string

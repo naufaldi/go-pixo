@@ -2,6 +2,7 @@ package png
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -719,29 +720,45 @@ func BenchmarkQuantizeWithOptionsPerceptual(b *testing.B) {
 func TestPerceptualDistancePreservesBackwardCompatibility(t *testing.T) {
 	pixels := generateTestPixels(50, 50)
 
-	indexedOld, paletteOld := Quantize(pixels, 2, 256, true)
-
-	opts := Options{
-		UsePerceptualDistance: false,
-		DistanceMetric:        DistanceMetricEuclidean,
-	}
-	indexedNew, paletteNew := QuantizeWithOptions(pixels, 2, 256, opts, true)
-
-	if len(indexedOld) != len(indexedNew) {
-		t.Errorf("Index length differs: old=%d, new=%d", len(indexedOld), len(indexedNew))
+	tests := []struct {
+		name   string
+		useLUT bool
+	}{
+		{name: "linear", useLUT: false},
+		{name: "LUT", useLUT: true},
 	}
 
-	if paletteOld.NumColors != paletteNew.NumColors {
-		t.Errorf("Palette size differs: old=%d, new=%d", paletteOld.NumColors, paletteNew.NumColors)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexedOld, paletteOld := Quantize(pixels, 2, 256, tt.useLUT)
 
-	errorOld := calculateQuantizationError(pixels, indexedOld, &paletteOld, 2)
-	errorNew := calculateQuantizationError(pixels, indexedNew, &paletteNew, 2)
+			// Zero-value options must retain Euclidean quantization.
+			indexedNew, paletteNew := QuantizeWithOptions(pixels, 2, 256, Options{}, tt.useLUT)
 
-	t.Logf("Old quantization error: %f", errorOld)
-	t.Logf("New quantization error: %f", errorNew)
+			if len(indexedOld) != len(indexedNew) {
+				t.Errorf("Index length differs: old=%d, new=%d", len(indexedOld), len(indexedNew))
+			}
 
-	if errorNew > errorOld*1.01 {
-		t.Errorf("New error (%f) should be similar to old error (%f)", errorNew, errorOld)
+			if paletteOld.NumColors != paletteNew.NumColors {
+				t.Errorf("Palette size differs: old=%d, new=%d", paletteOld.NumColors, paletteNew.NumColors)
+			}
+
+			if !slices.Equal(paletteOld.Colors, paletteNew.Colors) {
+				t.Error("Default options changed the quantized palette")
+			}
+			if !slices.Equal(indexedOld, indexedNew) {
+				t.Error("Default options changed the palette indices")
+			}
+
+			errorOld := calculateQuantizationError(pixels, indexedOld, &paletteOld, 2)
+			errorNew := calculateQuantizationError(pixels, indexedNew, &paletteNew, 2)
+
+			t.Logf("Old quantization error: %f", errorOld)
+			t.Logf("New quantization error: %f", errorNew)
+
+			if errorNew > errorOld*1.01 {
+				t.Errorf("New error (%f) should be similar to old error (%f)", errorNew, errorOld)
+			}
+		})
 	}
 }
