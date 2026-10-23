@@ -1,9 +1,10 @@
 import {
-  resolveOutputFormat,
-  shouldUseLosslessBytePath,
+  resolveResizeDimensions,
   type InputFormat,
-  type ResolvedFormat,
+  type OutputFormatChoice,
 } from './interop/compressionSettings';
+import { compressWithCandidates } from './interop/codecsCompression';
+import { encodeAvif, encodeWebp } from './interop/codecs';
 import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
 import { unwrapWasmResult } from './interop/wasmResult';
 import { assertRgbaPixelBuffer, copyImageDataPixels } from './interop/pixels';
@@ -15,8 +16,8 @@ interface CompressionRequest {
   width: number;
   height: number;
   colorType: number;
-  format: 'png' | 'jpeg' | 'webp';
-  outputFormat?: 'same' | 'png' | 'jpeg' | 'webp' | 'avif';
+  format: InputFormat;
+  outputFormat?: OutputFormatChoice;
   preset: number;
   lossy: boolean;
   maxColors: number;
@@ -249,32 +250,6 @@ function recompressPngLossless(
   return unwrapWasmResult(result);
 }
 
-function recompressJpeg(
-  jpegBytes: Uint8Array,
-  preset: number,
-  quality: number = 85,
-  progressive: boolean = false,
-  trellis: boolean = false,
-  optimizeHuffman: boolean = false,
-): Uint8Array {
-  // @ts-ignore - recompressJpeg is exposed by Go WASM on the worker global
-  if (!(self as any).recompressJpeg) {
-    throw new Error("recompressJpeg not available");
-  }
-
-  // @ts-ignore
-  const result = (self as any).recompressJpeg(
-    jpegBytes,
-    preset,
-    quality,
-    progressive,
-    trellis,
-    optimizeHuffman,
-  );
-
-  return unwrapWasmResult(result);
-}
-
 function compositeRgbaToRgbWhite(
   pixels: Uint8Array,
   width: number,
@@ -304,32 +279,6 @@ function compositeRgbaToRgbWhite(
   return rgb;
 }
 
-// Encode image as WebP using OffscreenCanvas
-async function encodeWebp(pixels: Uint8Array, width: number, height: number, quality: number): Promise<Uint8Array> {
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d')!;
-  // pixels is RGBA from the decoder
-  const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer, pixels.byteOffset, pixels.byteLength), width, height);
-  ctx.putImageData(imageData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
-  const arrayBuffer = await blob.arrayBuffer();
-  return new Uint8Array(arrayBuffer);
-}
-
-// Encode image as AVIF using OffscreenCanvas
-async function encodeAvif(pixels: Uint8Array, width: number, height: number, quality: number): Promise<Uint8Array> {
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d')!;
-  const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer, pixels.byteOffset, pixels.byteLength), width, height);
-  ctx.putImageData(imageData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
-  if (blob.size === 0) {
-    throw new Error('AVIF encoding is not supported in this browser. Try WebP or JPEG instead.');
-  }
-  const arrayBuffer = await blob.arrayBuffer();
-  return new Uint8Array(arrayBuffer);
-}
-
 function resizePixels(
   pixels: Uint8Array,
   srcW: number,
@@ -354,351 +303,65 @@ function resizePixels(
   return { pixels: copyImageDataPixels(resized.data), width: dstW, height: dstH };
 }
 
-// Handle messages from main thread
-self.onmessage = async (
-  event: MessageEvent<
-    | {
-        type: "compress";
-        data?: CompressionRequest;
+// Every codec result is selected together with its actual format.
+self.onmessage = async (event: MessageEvent) => {
+  const msg=event.data;
+  if (msg?.type==='init') {
+    try { await initWasm(); self.postMessage({type:'ready'}); }
+    catch(error) { self.postMessage({type:'error',error:error instanceof Error ? error.message : 'Failed to initialize WASM'}); }
+    return;
+  }
+  if (msg?.type!=='compress') return;
+  const req: CompressionRequest=msg.data ?? msg;
+  if (!req || typeof req.id!=='string') {
+    self.postMessage({type:'error',error:'Invalid compress message'}); return;
+  }
+  const postProgress=(phase: string,progress: number,options?: {predictable?: boolean; phaseTarget?: number})=>{
+    self.postMessage({type:'progress',id:req.id,phase,progress,...options} as ProgressMessage);
+  };
+  try {
+    if (!wasmReady) throw new Error('WASM not initialized');
+    console.debug('[worker] compress start', req.id);
+    const size=resolveResizeDimensions(req.width,req.height,req.targetWidth,req.targetHeight);
+    assertRgbaPixelBuffer(req.pixels,req.width,req.height,req.colorType);
+    const quality=req.qualityTarget ?? 85;
+    if (!Number.isFinite(quality) || quality<0 || quality>100) throw new Error('Quality must be between 0 and 100');
+    postProgress(STAGE.PREPARING.label,INITIAL_PROGRESS,{predictable:true,phaseTarget:STAGE.RESIZING.end});
+    let work={pixels:req.pixels,width:req.width,height:req.height};
+    if (size.resized) {
+      postProgress(STAGE.RESIZING.label,STAGE.RESIZING.start,{predictable:true,phaseTarget:STAGE.RESIZING.end});
+      work=resizePixels(req.pixels,req.width,req.height,size.width,size.height);
+    }
+    const pngProgress=(phase: string,progress: number)=>postProgress(phase,mapPngPhaseToGlobal(phase,progress),{
+      predictable:true,phaseTarget:mapPngPhaseToGlobal(phase,100),
+    });
+    const result=await compressWithCandidates({
+      ...req,width:work.width,height:work.height,resized:size.resized,
+    },async (format,fast)=>{
+      postProgress(STAGE.ENCODING.label,STAGE.ENCODING.start,{predictable:false,phaseTarget:STAGE.ENCODING.end-1});
+      if (format==='webp') return encodeWebp(work.pixels,work.width,work.height,quality);
+      if (format==='avif') return encodeAvif(work.pixels,work.width,work.height,quality,!req.lossy,fast?8:req.preset===2?8:req.preset===4?5:6);
+      if (format==='jpeg') {
+        const options=resolveJpegEncodeOptions({
+          inputFormat:req.format,outputFormat:format,width:work.width,height:work.height,preset:req.preset,
+          progressive:req.progressive ?? false,trellis:req.trellis ?? false,optimizeHuffman:req.optimizeHuffman ?? false,
+        });
+        return encodeJpegAdvanced(compositeRgbaToRgbWhite(work.pixels,work.width,work.height),work.width,work.height,3,
+          quality,req.subsampling==='444'?1:0,options.progressive,options.trellis,options.optimizeHuffman,options.preset);
       }
-    | ({
-        type: "compress";
-      } & CompressionRequest)
-    | {
-        type: "init";
+      if (!req.lossy && !size.resized && req.format==='png' && req.originalFileBytes?.length) {
+        return recompressPngLossless(req.originalFileBytes,req.preset,req.zopfliIterations ?? 0,pngProgress);
       }
-  >,
-) => {
-  const msg: any = event.data as any;
-  const type: string = msg?.type;
-  console.debug("[worker] message", type, msg?.id ?? msg?.data?.id ?? null);
-
-  switch (type) {
-    case "init":
-      try {
-        console.debug("[worker] init requested");
-        await initWasm();
-        self.postMessage({ type: "ready" });
-      } catch (err) {
-        self.postMessage({
-          type: "error",
-          error:
-            err instanceof Error ? err.message : "Failed to initialize WASM",
-        });
-      }
-      break;
-
-    case "compress":
-      // Support both `{type:'compress', data:{...}}` and `{type:'compress', ...fields}`
-      const req: CompressionRequest | undefined = msg?.data ?? msg;
-
-      if (!req || typeof req.id !== "string") {
-        self.postMessage({
-          type: "error",
-          error: "Invalid compress message",
-        });
-        return;
-      }
-
-      if (!wasmReady) {
-        self.postMessage({
-          type: "error",
-          id: req.id,
-          error: "WASM not initialized",
-        });
-        return;
-      }
-
-      // Wrap in async IIFE to support await (needed for WebP encoding)
-      (async () => {
-        console.debug("[worker] compress start", req.id);
-        const startTime = Date.now();
-        const originalFileBytesLen = req.originalFileBytes?.length ?? 0;
-        const originalBytes =
-          originalFileBytesLen > 0 ? originalFileBytesLen : req.pixels.length;
-
-        // Resolve the effective output format
-        const resolvedFormat: ResolvedFormat = resolveOutputFormat(
-          req.format as InputFormat,
-          req.outputFormat ?? 'same',
-        );
-        const useLosslessPngBytes = shouldUseLosslessBytePath({
-          lossless: req.lossy === false,
-          inputFormat: req.format as InputFormat,
-          outputFormat: resolvedFormat,
-          targetWidth: req.targetWidth,
-          targetHeight: req.targetHeight,
-        }) && resolvedFormat === 'png';
-        const useLosslessJpegBytes = shouldUseLosslessBytePath({
-          lossless: req.lossy === false,
-          inputFormat: req.format as InputFormat,
-          outputFormat: resolvedFormat,
-          targetWidth: req.targetWidth,
-          targetHeight: req.targetHeight,
-        }) && resolvedFormat === 'jpeg';
-
-        let compressedBytes: Uint8Array;
-
-        const postProgress = (
-          phase: string,
-          progress: number,
-          options?: { predictable?: boolean; phaseTarget?: number },
-        ) => {
-          self.postMessage({
-            type: "progress",
-            id: req.id,
-            phase,
-            progress,
-            predictable: options?.predictable,
-            phaseTarget: options?.phaseTarget,
-          } as ProgressMessage);
-        };
-
-        postProgress(STAGE.PREPARING.label, INITIAL_PROGRESS, {
-          predictable: true,
-          phaseTarget: STAGE.RESIZING.end,
-        });
-
-        // Apply resize if target dimensions are specified
-        let { pixels: workPixels, width: workWidth, height: workHeight } = {
-          pixels: req.pixels,
-          width: req.width,
-          height: req.height,
-        };
-        const needsResize =
-          (req.targetWidth !== undefined || req.targetHeight !== undefined) &&
-          (() => {
-            const aspect = req.width / req.height;
-            const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
-            const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
-            return dstW !== req.width || dstH !== req.height;
-          })();
-
-        if (needsResize) {
-          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.start, {
-            predictable: true,
-            phaseTarget: STAGE.RESIZING.end,
-          });
-          const aspect = req.width / req.height;
-          const dstW = req.targetWidth || Math.round((req.targetHeight!) * aspect);
-          const dstH = req.targetHeight || Math.round((req.targetWidth!) / aspect);
-          const resized = resizePixels(req.pixels, req.width, req.height, dstW, dstH);
-          workPixels = resized.pixels;
-          workWidth = resized.width;
-          workHeight = resized.height;
-          postProgress(STAGE.RESIZING.label, STAGE.RESIZING.end);
-        }
-
-        const sendPngProgress = (phase: string, subProgress: number) => {
-          const globalProgress = mapPngPhaseToGlobal(phase, subProgress);
-          postProgress(phase, globalProgress, {
-            predictable: true,
-            phaseTarget: mapPngPhaseToGlobal(phase, 100),
-          });
-        };
-
-        const needsPixelBuffer =
-          resolvedFormat === 'webp' ||
-          resolvedFormat === 'avif' ||
-          (resolvedFormat === 'jpeg' && !useLosslessJpegBytes) ||
-          (resolvedFormat === 'png' && !useLosslessPngBytes);
-
-        if (needsPixelBuffer) {
-          assertRgbaPixelBuffer(workPixels, workWidth, workHeight, req.colorType);
-        }
-
-        const postEncodingStart = () => {
-          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.start, {
-            predictable: true,
-            phaseTarget: STAGE.ENCODING.end - 1,
-          });
-        };
-
-        const postJpegEncodingStart = () => {
-          postProgress('encoding-jpeg', STAGE.ENCODING.start, {
-            predictable: false,
-            phaseTarget: STAGE.ENCODING.start,
-          });
-        };
-
-        // Handle WebP encoding via OffscreenCanvas
-        if (resolvedFormat === 'webp') {
-          postEncodingStart();
-          compressedBytes = await encodeWebp(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
-          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
-        } else if (resolvedFormat === 'avif') {
-          postEncodingStart();
-          compressedBytes = await encodeAvif(workPixels, workWidth, workHeight, req.qualityTarget ?? 85);
-          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
-        } else if (resolvedFormat === 'jpeg') {
-          postJpegEncodingStart();
-          if (useLosslessJpegBytes) {
-            const jpegOptions = resolveJpegEncodeOptions({
-              inputFormat: req.format as InputFormat,
-              outputFormat: resolvedFormat,
-              width: req.width,
-              height: req.height,
-              preset: req.preset,
-              progressive: req.progressive ?? false,
-              trellis: req.trellis ?? false,
-              optimizeHuffman: req.optimizeHuffman ?? false,
-            });
-            compressedBytes = recompressJpeg(
-              req.originalFileBytes!,
-              jpegOptions.preset,
-              req.qualityTarget ?? 85,
-              jpegOptions.progressive,
-              jpegOptions.trellis,
-              jpegOptions.optimizeHuffman,
-            );
-          } else {
-            // Pixel-based JPEG encode (format conversion or lossy path)
-            // JPEG cannot store alpha, so RGBA input is composited on white.
-            let jpegPixels = workPixels;
-            let jpegColorType = req.colorType;
-
-            if (req.colorType === 6) {
-              jpegPixels = compositeRgbaToRgbWhite(workPixels, workWidth, workHeight);
-              jpegColorType = 3; // RGB
-            }
-
-            const jpegOptions = resolveJpegEncodeOptions({
-              inputFormat: req.format as InputFormat,
-              outputFormat: resolvedFormat,
-              width: workWidth,
-              height: workHeight,
-              preset: req.preset,
-              progressive: req.progressive ?? false,
-              trellis: req.trellis ?? false,
-              optimizeHuffman: req.optimizeHuffman ?? false,
-            });
-
-            compressedBytes = encodeJpegAdvanced(
-              jpegPixels,
-              workWidth,
-              workHeight,
-              jpegColorType,
-              req.qualityTarget ?? 85,
-              req.subsampling === '444' ? 1 : 0,
-              jpegOptions.progressive,
-              jpegOptions.trellis,
-              jpegOptions.optimizeHuffman,
-              jpegOptions.preset,
-            );
-          }
-          postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
-        } else {
-          if (useLosslessPngBytes) {
-            compressedBytes = recompressPngLossless(
-              req.originalFileBytes!,
-              req.preset,
-              req.zopfliIterations ?? 0,
-              sendPngProgress,
-            );
-          } else {
-            // Determine if we should use advanced encoding
-            const useAdvanced =
-              (req.zopfliIterations !== undefined && req.zopfliIterations > 0) ||
-              req.ditherStrength !== undefined ||
-              req.qualityTarget !== undefined;
-
-            if (useAdvanced) {
-              compressedBytes = encodePngAdvanced(
-                workPixels,
-                workWidth,
-                workHeight,
-                req.colorType,
-                req.preset,
-                req.lossy,
-                req.maxColors,
-                req.dithering,
-                req.ditherStrength ?? 0.5,
-                req.qualityTarget ?? 75,
-                req.zopfliIterations ?? 0,
-                0,
-                false,
-                0,
-                false,
-                false,
-                sendPngProgress,
-              );
-            } else {
-              postEncodingStart();
-              compressedBytes = encodePng(
-                workPixels,
-                workWidth,
-                workHeight,
-                req.colorType,
-                req.preset,
-                req.lossy,
-                req.maxColors,
-                req.dithering,
-              );
-              postProgress(STAGE.ENCODING.label, STAGE.ENCODING.end - 1);
-            }
-          }
-        }
-
-        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.start, {
-          predictable: true,
-          phaseTarget: STAGE.FINALIZING.end,
-        });
-
-        const duration = Date.now() - startTime;
-
-        // Size guard: if compressed is larger than original file, return original bytes
-        // Note: skipped for cross-format conversions (e.g. PNG→JPEG) since sizes differ
-        if (
-          resolvedFormat === req.format &&
-          req.originalFileBytes &&
-          req.originalFileBytes.length > 0 &&
-          compressedBytes.length > req.originalFileBytes.length
-        ) {
-          console.debug(
-            "[worker] compression resulted in larger file, returning original bytes",
-            req.id,
-            compressedBytes.length,
-            ">",
-            req.originalFileBytes.length,
-          );
-          compressedBytes = req.originalFileBytes;
-        }
-
-        const ratio =
-          originalBytes > 0
-            ? (compressedBytes.length / originalBytes) * 100
-            : 0;
-
-        console.debug(
-          "[worker] compress done",
-          req.id,
-          compressedBytes?.length ?? null,
-          duration + "ms",
-        );
-
-        postProgress(STAGE.FINALIZING.label, STAGE.FINALIZING.end);
-
-        self.postMessage({
-          type: "compressed",
-          id: req.id,
-          compressedBytes: compressedBytes,
-          originalBytes,
-          compressedBytesCount: compressedBytes.length,
-          ratio,
-          outputFormat: resolvedFormat,
-        } as CompressionResponse);
-      })().catch((err) => {
-        console.error("[worker] compress failed", req.id, err);
-        self.postMessage({
-          type: "error",
-          id: req.id,
-          error: err instanceof Error ? err.message : "Compression failed",
-        });
-      });
-      break;
-    default:
-      console.warn("[worker] unknown message type", type, msg);
+      // Auto's PNG fallback is a quick lossless encode, with no palette search.
+      if (fast) return encodePng(work.pixels,work.width,work.height,6,2,false,0,false);
+      return encodePngAdvanced(work.pixels,work.width,work.height,6,req.preset,req.lossy,req.maxColors,req.dithering,
+        req.ditherStrength ?? 0.5,quality,req.zopfliIterations ?? 0,0,false,0,false,false,pngProgress);
+    });
+    postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end,{predictable:true,phaseTarget:STAGE.FINALIZING.end});
+    const originalBytes=req.originalFileBytes?.length || req.pixels.length;
+    self.postMessage({type:'compressed',id:req.id,...result,originalBytes,compressedBytesCount:result.compressedBytes.length,
+      ratio:originalBytes ? result.compressedBytes.length/originalBytes*100 : 0} as CompressionResponse);
+  } catch(error) {
+    self.postMessage({type:'error',id:req.id,error:error instanceof Error ? error.message : 'Compression failed'});
   }
 };
-
-console.log("Compression worker initialized");

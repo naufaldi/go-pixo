@@ -20,6 +20,12 @@ type fileKind =
   | Png
   | Jpeg
   | Webp
+  | Avif
+  | Gif
+  | Bmp
+  | Svg
+  | Heic
+  | Tiff
   | Unknown
 
 type preset =
@@ -39,6 +45,7 @@ type quantizationLevel =
 
 type outputFormat =
   | SameAsInput
+  | AutoSmallest
   | ForcePng
   | ForceJpeg
   | ForceWebp
@@ -46,6 +53,7 @@ type outputFormat =
 
 type queueItem = {
   id: string,
+  generation: int,
   file: Web.File.t,
   kind: fileKind,
   status: fileStatus,
@@ -75,6 +83,7 @@ type compressionProgress = {
 }
 
 type appState = {
+  downloadError: option<string>,
   wasmReady: bool,
   dragActive: bool,
   items: array<queueItem>,
@@ -138,28 +147,46 @@ let isLossless = (quantization: quantizationLevel): bool => {
 }
 
 let fileKindFromMime = (mime: string, name: string): fileKind => {
-  if mime->String.includes("png") || name->String.endsWith(".png") {
-    Png
-  } else if mime->String.includes("jpeg") || mime->String.includes("jpg") || name->String.endsWith(".jpg") || name->String.endsWith(".jpeg") {
-    Jpeg
-  } else if mime->String.includes("webp") || name->String.endsWith(".webp") {
-    Webp
-  } else {
-    Unknown
-  }
+  let mime = mime->String.toLowerCase
+  let name = name->String.toLowerCase
+  if mime == "image/png" || name->String.endsWith(".png") { Png }
+  else if mime == "image/jpeg" || mime == "image/jpg" || name->String.endsWith(".jpg") || name->String.endsWith(".jpeg") { Jpeg }
+  else if mime == "image/webp" || name->String.endsWith(".webp") { Webp }
+  else if mime == "image/avif" || name->String.endsWith(".avif") { Avif }
+  else if mime == "image/gif" || name->String.endsWith(".gif") { Gif }
+  else if mime == "image/bmp" || name->String.endsWith(".bmp") { Bmp }
+  else if mime == "image/svg+xml" || name->String.endsWith(".svg") { Svg }
+  else if mime == "image/heic" || mime == "image/heif" || name->String.endsWith(".heic") || name->String.endsWith(".heif") { Heic }
+  else if mime == "image/tiff" || name->String.endsWith(".tif") || name->String.endsWith(".tiff") { Tiff }
+  else { Unknown }
 }
 
 let kindToInputFormat = (kind: fileKind): string => {
   switch kind {
+  | Png => "png"
   | Jpeg => "jpeg"
   | Webp => "webp"
-  | Png | Unknown => "png"
+  | Avif => "avif"
+  | Gif => "gif"
+  | Bmp => "bmp"
+  | Svg => "svg"
+  | Heic => "heic"
+  | Tiff => "tiff"
+  | Unknown => "unknown"
+  }
+}
+
+let kindLabel = (kind: fileKind): string => {
+  switch kind {
+  | Png => "PNG" | Jpeg => "JPEG" | Webp => "WebP" | Avif => "AVIF"
+  | Gif => "GIF" | Bmp => "BMP" | Svg => "SVG" | Heic => "HEIC" | Tiff => "TIFF" | Unknown => "Unknown"
   }
 }
 
 let outputFormatToChoice = (fmt: outputFormat): string => {
   switch fmt {
   | SameAsInput => "same"
+  | AutoSmallest => "auto"
   | ForcePng => "png"
   | ForceJpeg => "jpeg"
   | ForceWebp => "webp"
@@ -193,3 +220,5 @@ let extensionForResolvedFormat = (format: string): string => {
   | _ => ".png"
   }
 }
+
+let acceptedImageTypes = "image/png,image/jpeg,image/webp,image/avif,image/gif,image/bmp,image/svg+xml,image/heic,image/heif,image/tiff,.png,.jpg,.jpeg,.webp,.avif,.gif,.bmp,.svg,.heic,.heif,.tif,.tiff"

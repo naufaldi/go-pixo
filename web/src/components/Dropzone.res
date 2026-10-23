@@ -28,14 +28,15 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
     if files->Nullable.isNullable == false {
       let fileArray = %raw("Array.from(files)")
       onFileSelect(fileArray)
+      let _ = %raw("e.target.value = ''")
     }
   }
   
   <div
     className={if dragActive {
-      "border-2 border-dashed border-neutral-400 rounded-lg p-20 text-center transition-colors bg-neutral-900"
+      "border-2 border-dashed border-neutral-400 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors bg-neutral-900"
     } else {
-      "border-2 border-dashed border-neutral-700 rounded-lg p-20 text-center transition-colors hover:border-neutral-500 cursor-pointer"
+      "border-2 border-dashed border-neutral-700 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors hover:border-neutral-500 cursor-pointer"
     }}
     onDragEnter=onDragEnter
     onDragOver=onDragOver
@@ -45,12 +46,12 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
     onKeyDown=handleKeyDown
     tabIndex=0
     role="button"
-    ariaLabel="Drop PNG or JPEG files here, or click to select files">
+    ariaLabel="Drop images here, or click to select files">
     <input
       ref={ReactDOM.Ref.domRef(fileInputRef)}
       type_="file"
       multiple=true
-      accept="image/png,image/jpeg,image/jpg"
+      accept=Types.acceptedImageTypes
       onChange=handleFileChange
       className="hidden"
     />
@@ -61,7 +62,7 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
         </svg>
       </div>
       <p className="text-lg font-medium text-neutral-200">
-        {React.string("Drop PNG or JPEG files here")}
+        {React.string("Drop images here")}
       </p>
       <p className="text-sm text-neutral-400">
         {React.string("or paste from clipboard")}

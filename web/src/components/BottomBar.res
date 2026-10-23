@@ -12,6 +12,8 @@ let presetLabel = (preset: preset): string => {
 @react.component
 let make = (
   ~format: string,
+  ~outputFormat: outputFormat,
+  ~onOutputFormatChange: outputFormat => unit,
   ~preset,
   ~lossless: bool,
   ~onPresetChange,
@@ -22,6 +24,7 @@ let make = (
   ~onDownloadZip: unit => unit,
   ~hasCompletedItems: bool,
   ~completedCount: int,
+  ~failedCount: int,
   ~appliedOptimizations: option<array<string>>,
   ~processingAll: bool,
   ~onCompressAll: unit => unit,
@@ -65,16 +68,32 @@ let make = (
     dataTestId="bottom-bar"
     className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-4 py-3 z-50">
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0 flex-1">
-          <div className="text-sm text-neutral-400 shrink-0">
-            {React.string("Output: " ++ format)}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <label className="flex items-center gap-2 text-sm text-neutral-400">
+            <span>{React.string("Convert:")}</span>
+            <select ariaLabel="Output format" value={Types.outputFormatToChoice(outputFormat)} onChange={e => {
+              let value = ReactEvent.Form.target(e)["value"]->Option.getOr("same")
+              onOutputFormatChange(switch value {
+                | "auto" => AutoSmallest | "png" => ForcePng | "jpeg" => ForceJpeg
+                | "webp" => ForceWebp | "avif" => ForceAvif | _ => SameAsInput
+              })
+            }} className="max-w-44 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-neutral-200">
+              <option value="same">{React.string("Same as input")}</option>
+              <option value="auto">{React.string("Auto (smallest tested)")}</option>
+              <option value="png">{React.string("PNG")}</option>
+              <option value="jpeg">{React.string("JPEG")}</option>
+              <option value="webp">{React.string("WebP")}</option>
+              <option value="avif">{React.string("AVIF")}</option>
+            </select>
+          </label>
+          <span className="text-xs text-neutral-500">{React.string("Output: " ++ format)}</span>
+          <div className="flex items-center gap-2 shrink-0" title="Each image keeps its own aspect ratio">
             <span className="text-xs text-neutral-500">{React.string("Resize:")}</span>
             <input
               type_="number"
               placeholder="W"
+              ariaLabel="Target width"
               value={switch targetWidth { | Some(w) => Int.toString(w) | None => "" }}
               min="1"
               max="8000"
@@ -95,6 +114,7 @@ let make = (
             <input
               type_="number"
               placeholder="H"
+              ariaLabel="Target height"
               value={switch targetHeight { | Some(h) => Int.toString(h) | None => "" }}
               min="1"
               max="8000"
@@ -115,15 +135,15 @@ let make = (
           </div>
           {switch appliedOptimizations {
           | Some(optimizations) =>
-            <div className="text-xs text-neutral-500 min-w-0 max-w-md truncate">
+            <div className="basis-full min-w-0 break-words text-xs text-neutral-500">
               <span className="text-neutral-400">{React.string("What we did: ")}</span>
               {React.string(optimizations->Array.join(", "))}
             </div>
           | None => React.null
           }}
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <label className="flex items-center gap-2 cursor-pointer">
+        <div className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-1">
+          <label className="flex items-center gap-2 cursor-pointer" title="Lossless encoding; resize changes image dimensions">
             <input
               type_="checkbox"
               checked=lossless
@@ -147,6 +167,7 @@ let make = (
               type_="button"
               dataTestId="download-format-toggle"
               ariaExpanded={downloadMenuOpen}
+              ariaLabel="Choose download format"
               onClick={_ => setDownloadMenuOpen(prev => !prev)}
               className="text-sm bg-white text-neutral-900 px-2 py-1 rounded-r font-medium hover:bg-neutral-100 transition-colors">
               {React.string("▾")}
@@ -187,21 +208,28 @@ let make = (
           {hasCompletedItems
             ? <button
                 type_="button"
+                disabled=processingAll
                 onClick={_ => onDownloadAll()}
-                className="text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors">
-                {React.string("Download All")}
+                className="text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors disabled:cursor-wait disabled:opacity-50">
+                {React.string(if failedCount > 0 { "Download successful files (" ++ Int.toString(completedCount) ++ ")" } else { "Download All" })}
               </button>
             : React.null}
-          {completedCount >= 2
+          {completedCount + failedCount >= 2 && hasCompletedItems
             ? <button
                 type_="button"
+                disabled=processingAll
                 onClick={_ => onDownloadZip()}
-                className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors">
-                {React.string("Download ZIP")}
+                className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors disabled:cursor-wait disabled:opacity-50">
+                {React.string(if failedCount > 0 { "Download ZIP (" ++ Int.toString(completedCount) ++ " successful)" } else { "Download ZIP" })}
               </button>
             : React.null}
         </div>
       </div>
+      {if processingAll && hasCompletedItems {
+        <p className="text-xs text-neutral-400">{React.string("Batch downloads are available when every file finishes.")}</p>
+      } else if failedCount > 0 {
+        <p className="text-xs text-amber-400">{React.string(Int.toString(failedCount) ++ (if failedCount == 1 { " failed file excluded from downloads." } else { " failed files excluded from downloads." }))}</p>
+      } else { React.null }}
       <div className="w-full max-w-lg mx-auto px-2">
         <div className="text-center mb-1">
           <span className="text-xs text-neutral-300 font-medium">

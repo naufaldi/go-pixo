@@ -1,8 +1,11 @@
 type action =
+  | SetDownloadError(option<string>)
   | SetWasmReady(bool)
   | SetDragActive(bool)
   | AddItems(array<Types.queueItem>)
   | UpdateItem(string, Types.queueItem => Types.queueItem)
+  | UpdateTask(string, int, Types.queueItem => Types.queueItem)
+  | SetTaskProgress(string, int, option<Types.compressionProgress>)
   | SelectItem(option<string>)
   | SetPreset(Types.preset)
   | SetLossless(bool)
@@ -27,13 +30,14 @@ type action =
   | RequeueProcessedItemsForSettings
 
 let generateId = (): string => {
-  %raw("Math.random().toString(36).substring(2, 9)")
+  %raw("crypto.randomUUID()")
 }
 
 let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
   let kind = Types.fileKindFromMime(Types.Web.File.type_(file), Types.Web.File.name(file))
   {
     id: generateId(),
+    generation: 0,
     file,
     kind,
     status: Types.Pending,
@@ -50,6 +54,7 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
 }
 
 let initialState: Types.appState = {
+  downloadError: None,
   wasmReady: false,
   dragActive: false,
   items: [],
@@ -95,6 +100,7 @@ let revokeItemUrls = (item: Types.queueItem) => {
 
 let reducer = (state: Types.appState, action: action): Types.appState => {
   switch action {
+  | SetDownloadError(downloadError) => {...state, downloadError}
   | SetWasmReady(ready) => {...state, wasmReady: ready}
   | SetDragActive(active) => {...state, dragActive: active}
   | AddItems(newItems) => {
@@ -125,6 +131,27 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
       | Some(_) => {...state, items}
       | None => state
       }
+    }
+  | UpdateTask(id, generation, updater) => {
+      let items = state.items->Array.map(item => {
+        if item.id == id && item.generation == generation {
+          let next = updater(item)
+          revokeChangedUrl(item.originalUrl, next.originalUrl)
+          revokeChangedUrl(item.compressedUrl, next.compressedUrl)
+          next
+        } else { item }
+      })
+      {...state, items}
+    }
+  | SetTaskProgress(id, generation, progress) => {
+      if state.items->Array.some(item => item.id == id && item.generation == generation) {
+        let filtered = state.activeCompressions->Array.filter(((pid, _)) => pid != id)
+        let activeCompressions = switch progress {
+        | Some(p) => Array.concat(filtered, [(id, p)])
+        | None => filtered
+        }
+        {...state, activeCompressions}
+      } else { state }
     }
   | SelectItem(id) => {...state, selectedId: id}
   | SetPreset(preset) => {...state, preset}
@@ -161,11 +188,11 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
       } else {
         state.selectedId
       }
-      {...state, items: newItems, selectedId: newSelectedId}
+      {...state, items: newItems, selectedId: newSelectedId, activeCompressions: state.activeCompressions->Array.filter(((pid, _)) => pid != id)}
     }
   | ClearAll => {
       state.items->Array.forEach(revokeItemUrls)
-      {...state, items: [], selectedId: None}
+      {...state, items: [], selectedId: None, activeCompressions: [], compressionProgress: None, processingAll: false, downloadError: None}
     }
   | SetOutputFormat(fmt) => {...state, outputFormat: fmt}
   | SetProcessingAll(b) => {...state, processingAll: b}
@@ -180,21 +207,18 @@ let reducer = (state: Types.appState, action: action): Types.appState => {
       })
       {
         ...state,
-        items: state.items->Array.map(item =>
-          switch item.status {
-          | Types.Done | Types.Error(_) => {
-              ...item,
-              status: Types.Pending,
-              compressedUrl: None,
-              compressedBytes: None,
-              compressionTime: None,
-              compressedMime: None,
-              compressedExtension: None,
-            }
-          | Types.Pending | Types.Decoding | Types.Compressing => item
-          },
-        ),
+        items: state.items->Array.map(item => {
+          ...item,
+          generation: item.generation + 1,
+          status: Types.Pending,
+          compressedUrl: None,
+          compressedBytes: None,
+          compressionTime: None,
+          compressedMime: None,
+          compressedExtension: None,
+        }),
         compressionProgress: None,
+        activeCompressions: [],
         processingAll: false,
       }
     }

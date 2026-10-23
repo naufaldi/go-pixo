@@ -8,14 +8,7 @@ let statusText = (status: Types.fileStatus): string => {
   }
 }
 
-let kindText = (kind: Types.fileKind): string => {
-  switch kind {
-  | Png => "PNG"
-  | Jpeg => "JPEG"
-  | Webp => "WebP"
-  | Unknown => "Unknown"
-  }
-}
+let kindText = Types.kindLabel
 
 let extensionText = (extension: string): string => {
   switch extension {
@@ -79,7 +72,7 @@ let make = (
                <p className="text-sm font-medium text-neutral-200 truncate pr-8">
                  {React.string(Types.Web.File.name(item.file))}
                </p>
-               <div className="flex items-center gap-3 mt-2">
+               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-2">
                  <span className="text-xs text-neutral-500">
                    {React.string("Input: " ++ kindText(item.kind))}
                  </span>
@@ -145,8 +138,9 @@ let make = (
                       let percent = Int.toFloat(saved) /. Int.toFloat(originalSize) *. 100.0
                       <span className={"text-xs font-medium " ++ Display.savingsColor(percent)} dataTestId="file-item-done">
                         {React.string(
-                          Display.formatSize(bytes) ++ " (-" ++
-                          Float.toString(Math.round(percent *. 10.0) /. 10.0) ++ "%)",
+                          Display.formatSize(bytes) ++ " (" ++
+                          (if saved >= 0 { "-" } else { "+" }) ++
+                          Float.toString(Math.round(Math.abs(percent) *. 10.0) /. 10.0) ++ "%)",
                         )}
                       </span>
                     }

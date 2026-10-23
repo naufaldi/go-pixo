@@ -1,115 +1,151 @@
-// Worker pool for parallel image compression
-// Each pooled worker owns its own WASM instance
-
-type CompressTask = {
-  data: any; // CompressionRequest fields merged with { type: 'compress' }
-  resolve: (bytes: Uint8Array) => void;
-  reject: (err: Error) => void;
-  onProgress: (phase: string, progress: number) => void;
+// A worker owns one WASM instance. The app also bounds decoding to capacity.
+export type CompressionResult = { compressedBytes: Uint8Array; outputFormat: string };
+type CompressionRequest = { id: string; [field: string]: unknown };
+type ProgressCallback = (phase: string, progress: number, predictable?: boolean, phaseTarget?: number) => void;
+type Task = {
+  data: CompressionRequest;
+  resolve: (result: CompressionResult) => void;
+  reject: (error: Error) => void;
+  onProgress: ProgressCallback;
 };
+type Slot = { worker: Worker; ready: boolean; task: Task | null; timer?: ReturnType<typeof setTimeout> };
 
-class PooledWorker {
-  private worker: Worker;
-  private currentTask: CompressTask | null = null;
-  private ready = false;
-  private readyResolve?: () => void;
-  private readyPromise: Promise<void>;
-
-  constructor() {
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-    this.readyPromise = new Promise(r => { this.readyResolve = r; });
-
-    this.worker.onmessage = (event) => {
-      const data = event.data as any;
-      if (data.type === 'ready') {
-        this.ready = true;
-        this.readyResolve?.();
-      } else if (data.type === 'progress' && this.currentTask) {
-        this.currentTask.onProgress(data.phase, data.progress);
-      } else if (data.type === 'compressed' && this.currentTask) {
-        const task = this.currentTask;
-        this.currentTask = null;
-        task.resolve(new Uint8Array(data.compressedBytes));
-      } else if (data.type === 'error' && this.currentTask) {
-        const task = this.currentTask;
-        this.currentTask = null;
-        task.reject(new Error(data.error || 'Compression failed'));
-      }
-    };
-
-    this.worker.postMessage({ type: 'init' });
-  }
-
-  async waitReady(): Promise<void> {
-    return this.readyPromise;
-  }
-
-  get isIdle(): boolean {
-    return this.ready && this.currentTask === null;
-  }
-
-  run(task: CompressTask): void {
-    this.currentTask = task;
-    this.worker.postMessage({ type: 'compress', ...task.data });
-  }
-
-  terminate(): void {
-    this.worker.terminate();
-  }
+export function recommendedConcurrency(): number {
+  const hardware = typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency;
+  const memory = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return (hardware != null && hardware <= 2) || (memory != null && memory <= 2) ? 1 : 2;
 }
 
 export class WorkerPool {
-  private workers: PooledWorker[];
-  private queue: CompressTask[] = [];
-  private poolSize: number;
+  readonly capacity: number;
+  private workers: Slot[] = [];
+  private queue: Task[] = [];
+  private stopped: Error | null = null;
 
-  constructor(size?: number) {
-    this.poolSize = size ?? Math.max(2, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 1));
-    // Initialize workers lazily — create them on first use
-    this.workers = [];
+  constructor(size = recommendedConcurrency()) {
+    this.capacity = Math.max(1, Math.min(2, Math.floor(size) || 1));
   }
 
-  private ensureWorkers(): void {
-    while (this.workers.length < this.poolSize) {
-      this.workers.push(new PooledWorker());
+  private startWorkers(): void {
+    while (!this.stopped && this.workers.length < this.capacity) {
+      const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+      const slot: Slot = { worker, ready: false, task: null };
+      this.workers.push(slot);
+      slot.timer = setTimeout(() => this.fail(new Error('Worker initialization timed out')), 30_000);
+      worker.onmessage = event => this.receive(slot, event.data);
+      worker.onerror = event => {
+        event.preventDefault();
+        this.fail(new Error(event.message || 'Compression worker crashed'));
+      };
+      worker.onmessageerror = () => this.fail(new Error('Failed to read worker response'));
+      worker.postMessage({ type: 'init' });
     }
   }
 
-  private dispatch(): void {
-    if (this.queue.length === 0) return;
-    const idle = this.workers.find(w => w.isIdle);
-    if (!idle) return;
-    const task = this.queue.shift()!;
-    idle.run(task);
+  private receive(slot: Slot, data: any): void {
+    if (this.stopped || !data || typeof data !== 'object') return;
+    if (data.type === 'ready' && !slot.ready) {
+      clearTimeout(slot.timer);
+      slot.ready = true;
+      this.dispatch();
+      return;
+    }
+    if (data.type === 'error' && data.id == null) {
+      this.fail(new Error(data.error || 'Worker initialization failed'));
+      return;
+    }
+    const task = slot.task;
+    // Late messages must never complete a different operation in the same slot.
+    if (!task || data.id !== task.data.id) return;
+    if (data.type === 'progress') {
+      if (typeof data.phase === 'string' && Number.isFinite(data.progress)) {
+        task.onProgress(data.phase, Math.max(0, Math.min(99, Math.round(data.progress))), data.predictable === true, data.phaseTarget);
+      }
+      return;
+    }
+    if (data.type !== 'compressed' && data.type !== 'error') return;
+    clearTimeout(slot.timer);
+    slot.task = null;
+    if (data.type === 'error') task.reject(new Error(data.error || 'Compression failed'));
+    else {
+      try {
+        if (!['png', 'jpeg', 'webp', 'avif'].includes(data.outputFormat) || data.compressedBytes == null) {
+          throw new Error('Invalid compression worker result');
+        }
+        const compressedBytes = new Uint8Array(data.compressedBytes);
+        if (compressedBytes.byteLength === 0) throw new Error('Compression returned an empty image');
+        task.resolve({ compressedBytes, outputFormat: data.outputFormat });
+      } catch (error) {
+        task.reject(error instanceof Error ? error : new Error('Invalid compression worker result'));
+      }
+    }
+    this.dispatch();
   }
 
-  async submit(data: any, onProgress: (phase: string, progress: number) => void): Promise<Uint8Array> {
-    this.ensureWorkers();
-    // Wait for at least one worker to be ready
-    await Promise.race(this.workers.map(w => w.waitReady()));
+  private dispatch(): void {
+    if (this.stopped) return;
+    for (const slot of this.workers) {
+      if (!slot.ready || slot.task || !this.queue.length) continue;
+      const task = this.queue.shift()!;
+      slot.task = task;
+      // A fixed deadline also catches workers that stop emitting progress.
+      slot.timer = setTimeout(() => this.fail(new Error('Compression worker timed out')), 300_000);
+      try {
+        const buffers = [task.data.pixels, task.data.originalFileBytes]
+          .filter((value): value is Uint8Array => value instanceof Uint8Array)
+          .map(value => value.buffer)
+          .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
+        slot.worker.postMessage({ ...task.data, type: 'compress' }, [...new Set(buffers)]);
+      } catch (error) {
+        this.fail(error instanceof Error ? error : new Error('Failed to start compression'));
+        return;
+      }
+    }
+  }
 
+  submit(data: CompressionRequest, onProgress: ProgressCallback): Promise<CompressionResult> {
+    if (this.stopped) return Promise.reject(this.stopped);
     return new Promise((resolve, reject) => {
-      const task: CompressTask = {
-        data,
-        resolve: (bytes) => {
-          resolve(bytes);
-          this.dispatch(); // process next in queue
-        },
-        reject: (err) => {
-          reject(err);
-          this.dispatch();
-        },
-        onProgress,
-      };
-      this.queue.push(task);
-      this.dispatch();
+      this.queue.push({ data, onProgress, resolve, reject });
+      try { this.startWorkers(); this.dispatch(); }
+      catch (error) { this.fail(error instanceof Error ? error : new Error('Worker initialization failed')); }
     });
   }
 
-  terminate(): void {
-    this.workers.forEach(w => w.terminate());
-    this.workers = [];
+  cancel(id: string): void {
+    const cancelled = new Error('Compression cancelled');
+    this.queue = this.queue.filter(task => {
+      if (task.data.id !== id) return true;
+      task.reject(cancelled);
+      return false;
+    });
+    const slot = this.workers.find(candidate => candidate.task?.data.id === id);
+    if (slot) {
+      clearTimeout(slot.timer);
+      slot.worker.terminate();
+      slot.task!.reject(cancelled);
+      slot.task = null;
+      this.workers = this.workers.filter(candidate => candidate !== slot);
+      try { this.startWorkers(); this.dispatch(); }
+      catch (error) { this.fail(error instanceof Error ? error : new Error('Worker initialization failed')); }
+    }
   }
+
+  private fail(error: Error): void {
+    if (this.stopped) return;
+    this.stopped = error;
+    const queued = this.queue.splice(0);
+    for (const slot of this.workers) {
+      clearTimeout(slot.timer);
+      slot.worker.terminate();
+      if (slot.task) queued.push(slot.task);
+      slot.task = null;
+    }
+    this.workers = [];
+    queued.forEach(task => task.reject(error));
+  }
+
+  terminate(): void { this.fail(new Error('Worker pool terminated')); }
 }
 
 export const globalPool = new WorkerPool();

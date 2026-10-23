@@ -1,6 +1,6 @@
 # go-pixo
 
-Client-side PNG compression in **standard Go**, runnable in the browser via **Go → WebAssembly (WASM)**.
+Private image compression and conversion in the browser. PNG/JPEG use Go → WebAssembly (WASM); modern codecs run locally in browser workers. Images are never uploaded.
 
 ## What this repo is
 
@@ -16,16 +16,11 @@ Client-side PNG compression in **standard Go**, runnable in the browser via **Go
 
 ### Installation
 
-1. Initialize Go module (done):
-   ```bash
-   go mod init github.com/mac/go-pixo
-   ```
-
-2. Install web dependencies:
-   ```bash
-   cd web
-   bun install
-   ```
+Install the locked web dependencies:
+```bash
+cd web
+bun install --frozen-lockfile
+```
 
 ### Building WASM
 
@@ -41,6 +36,25 @@ Use the provided build script to compile the Go code to WebAssembly and copy the
 cd web
 bun run dev
 ```
+
+The dev command builds Go WASM, then starts ReScript watch and Vite. Development does not register an offline service worker.
+
+### Running locally with offline support
+
+From the repository root:
+
+```bash
+./scripts/build-wasm.sh
+cd web
+bun run build
+bunx vite preview --host 127.0.0.1 --port 4173 --strictPort
+```
+
+Open `http://127.0.0.1:4173` online and wait for **Ready offline** before disconnecting. The production build precaches the complete emitted asset list, including Go WASM and lazy codec JS/WASM. Installation verifies each asset's content hash; one missing or mismatched file prevents readiness. Browser installation is optional, using the browser's install/add-to-home-screen menu.
+
+Offline support requires HTTPS or localhost, service workers, Cache Storage and available browser storage. A first-ever visit without a connection cannot work. Clearing site data or browser storage eviction can remove offline files; reconnect to prepare again. Selected files and results stay in memory and are lost on reload. They are never put in the app cache. Updates wait until all Go-Pixo tabs/windows close, so an active batch keeps its matching code and codecs.
+
+See [web/README.md](web/README.md) for format limits, production browser tests and the cache/update design.
 
 ## Project Structure
 
@@ -61,4 +75,4 @@ This repository started by copying documentation and project scaffolding from th
 
 ## License
 
-MIT
+Go Pixo source is MIT licensed. Bundled third-party codecs retain their own licenses; see [NOTICE.md](NOTICE.md) and [distributed codec notices](web/public/licenses/third-party.txt).

@@ -16,9 +16,7 @@ RUN go mod download || true
 
 # Copy Go source code
 COPY src/ src/
-
-# Build WASM module
-RUN GOOS=js GOARCH=wasm go build -o web/public/main.wasm ./src/cmd/wasm
+COPY scripts/build-wasm.sh scripts/build-wasm.sh
 
 # Copy web directory
 WORKDIR /app/web
@@ -30,8 +28,13 @@ COPY web/src/ src/
 COPY web/public/ public/
 COPY web/index.html ./
 COPY web/vite.config.ts ./
+COPY web/build/ build/
 COPY web/tsconfig.json ./
 COPY web/rescript.json ./
+
+# Build after copying public assets so committed WASM cannot replace this build.
+# The shared script also copies the matching Go JavaScript runtime.
+RUN cd /app && sh scripts/build-wasm.sh
 
 # Build web frontend
 RUN bun run build

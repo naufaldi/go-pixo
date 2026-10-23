@@ -13,6 +13,10 @@ describe('compressionSettings', () => {
     expect(resolveOutputFormat('png', 'jpeg')).toBe('jpeg');
     expect(resolveOutputFormat('jpeg', 'same')).toBe('jpeg');
     expect(resolveOutputFormat('webp', 'same')).toBe('webp');
+    expect(resolveOutputFormat('avif', 'same')).toBe('avif');
+    expect(resolveOutputFormat('gif', 'same')).toBe('png');
+    expect(resolveOutputFormat('tiff', 'same')).toBe('png');
+    expect(resolveOutputFormat('png', 'auto')).toBe('png');
   });
 
   it('builds compressed filenames with output extension', () => {

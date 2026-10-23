@@ -1,7 +1,7 @@
 {
   "name": "Go-Pixo",
   "short_name": "Go-Pixo",
-  "description": "Client-side image compression and format conversion powered by Go and WebAssembly.",
+  "description": "Private image compression and conversion. Works offline after the app finishes preparing its files.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

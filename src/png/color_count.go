@@ -9,7 +9,7 @@ type colorKey struct {
 
 // CountColors counts the frequency of each unique color in the pixel data.
 // colorType: 2=RGB, 6=RGBA
-// Returns a map of Color to count, sorted by count descending.
+// Returns an unordered map of Color to count.
 func CountColors(pixels []byte, colorType int) map[Color]int {
 	colorMap := make(map[Color]int)
 
@@ -48,7 +48,7 @@ func CountColorsWithAlpha(pixels []byte, colorType int) map[ColorWithCount]int {
 	return colorMap
 }
 
-// ToColorWithCountSlice converts a color count map to a sorted slice.
+// ToColorWithCountSlice sorts by count descending, then RGB ascending for ties.
 func ToColorWithCountSlice(colorMap map[Color]int) []ColorWithCount {
 	result := make([]ColorWithCount, 0, len(colorMap))
 
@@ -60,7 +60,18 @@ func ToColorWithCountSlice(colorMap map[Color]int) []ColorWithCount {
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Count > result[j].Count
+		a, b := result[i], result[j]
+		if a.Count != b.Count {
+			return a.Count > b.Count
+		}
+		// Median cut must receive the same order regardless of map iteration.
+		if a.R != b.R {
+			return a.R < b.R
+		}
+		if a.G != b.G {
+			return a.G < b.G
+		}
+		return a.B < b.B
 	})
 
 	return result
