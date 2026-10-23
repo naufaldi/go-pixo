@@ -5,6 +5,7 @@ type decodeResult = {
   width: int,
   height: int,
   colorType: int,
+  inputFormat: string,
   previewUrl: string,
   originalFileBytes: array<int>,
 }

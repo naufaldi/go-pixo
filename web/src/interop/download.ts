@@ -69,10 +69,16 @@ export const downloadAllAsZip = async (items: QueueItem[]): Promise<void> => {
     })
   );
 
-  // Build fflate file map
-  const files: Record<string, Uint8Array> = {};
+  // Reserve each name, including names that already contain a duplicate suffix.
+  const files: Record<string, Uint8Array> = Object.create(null);
   for (const entry of fileEntries) {
-    files[entry.name] = entry.data;
+    const dot = entry.name.lastIndexOf('.');
+    const base = dot > 0 ? entry.name.slice(0, dot) : entry.name;
+    const extension = dot > 0 ? entry.name.slice(dot) : '';
+    let name = entry.name;
+    let suffix = 2;
+    while (Object.hasOwn(files, name)) name = `${base} (${suffix++})${extension}`;
+    files[name] = entry.data;
   }
 
   return new Promise((resolve, reject) => {

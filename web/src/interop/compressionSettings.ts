@@ -1,24 +1,62 @@
+import { assertSafeDimensions } from './imageFormats';
+
 export type ResolvedFormat = 'png' | 'jpeg' | 'webp' | 'avif';
 
 export type OutputFormatChoice =
   | 'same'
+  | 'auto'
   | 'png'
   | 'jpeg'
   | 'webp'
   | 'avif';
 
-export type InputFormat = 'png' | 'jpeg' | 'webp';
+export type InputFormat = 'png' | 'jpeg' | 'webp' | 'avif' | 'gif' | 'bmp' | 'svg' | 'heic' | 'tiff' | 'unknown';
 
 export function resolveOutputFormat(
   inputFormat: InputFormat,
   outputFormat: OutputFormatChoice,
 ): ResolvedFormat {
-  if (outputFormat === 'same') {
+  if (outputFormat === 'same' || outputFormat === 'auto') {
     if (inputFormat === 'jpeg') return 'jpeg';
     if (inputFormat === 'webp') return 'webp';
+    if (inputFormat === 'avif') return 'avif';
     return 'png';
   }
   return outputFormat;
+}
+
+export function compressionCandidates(input: InputFormat, output: OutputFormatChoice, lossless: boolean): ResolvedFormat[] {
+  const same=resolveOutputFormat(input,'same');
+  if (output==='auto') {
+    const modern=lossless ? 'avif' : 'webp';
+    const current=lossless && (same==='jpeg' || same==='webp') ? 'png' : same;
+    return modern===current ? [modern] : [modern,current];
+  }
+  const resolved=resolveOutputFormat(input,output);
+  if (lossless && (resolved==='jpeg' || resolved==='webp')) {
+    throw new Error(`${resolved.toUpperCase()} encoding is lossy. Choose PNG or AVIF, or enable lossy compression.`);
+  }
+  return [resolved];
+}
+
+export function resolveResizeDimensions(width: number, height: number, targetWidth?: number, targetHeight?: number) {
+  assertSafeDimensions(width,height);
+  if (targetWidth!==undefined && (!Number.isSafeInteger(targetWidth) || targetWidth<=0)) throw new Error('Invalid resize width');
+  if (targetHeight!==undefined && (!Number.isSafeInteger(targetHeight) || targetHeight<=0)) throw new Error('Invalid resize height');
+  const w=targetWidth ?? (targetHeight===undefined ? width : Math.max(1,Math.round(targetHeight*width/height)));
+  const h=targetHeight ?? (targetWidth===undefined ? height : Math.max(1,Math.round(targetWidth*height/width)));
+  assertSafeDimensions(w,h);
+  return {width:w,height:h,resized:w!==width || h!==height};
+}
+
+export type CompressionResult = {compressedBytes: Uint8Array; outputFormat: ResolvedFormat};
+
+export function selectCompressionResult(candidates: CompressionResult[], original?: CompressionResult, resized = false): CompressionResult {
+  const results=original && !resized ? [original,...candidates] : candidates;
+  const best=results.reduce<CompressionResult | undefined>((best,result) =>
+    result.compressedBytes.length>0 && (!best || result.compressedBytes.length<best.compressedBytes.length) ? result : best, undefined);
+  if (!best) throw new Error('No valid compression result');
+  return best;
 }
 
 export function mimeForFormat(format: ResolvedFormat): string {
