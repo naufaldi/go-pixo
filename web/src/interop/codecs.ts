@@ -90,14 +90,20 @@ export async function decodeAvif(bytes: Uint8Array): Promise<DecodedPixels> {
 export async function encodeWebp(pixels: Uint8Array, width: number, height: number, quality: number): Promise<Uint8Array> {
   assertSafeDimensions(width,height); assertRgbaPixelBuffer(pixels,width,height);
   const canvas=new OffscreenCanvas(width,height);
-  const ctx=canvas.getContext('2d'); if (!ctx) throw new Error('Canvas is unavailable');
-  ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels),width,height),0,0);
-  const blob=await canvas.convertToBlob({type:'image/webp',quality:quality/100});
-  const bytes=new Uint8Array(await blob.arrayBuffer());
-  if (blob.type!=='image/webp' || sniffInputFormat(bytes)!=='webp') {
-    throw new Error('This browser cannot encode WebP. Choose PNG, JPEG or AVIF.');
+  try {
+    const ctx=canvas.getContext('2d'); if (!ctx) throw new Error('Canvas is unavailable');
+    // putImageData consumes the view synchronously; request storage stays owned
+    // by this worker and is never detached while the encoder uses the canvas.
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer as ArrayBuffer,pixels.byteOffset,pixels.byteLength),width,height),0,0);
+    const blob=await canvas.convertToBlob({type:'image/webp',quality:quality/100});
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    if (blob.type!=='image/webp' || sniffInputFormat(bytes)!=='webp') {
+      throw new Error('This browser cannot encode WebP. Choose PNG, JPEG or AVIF.');
+    }
+    return bytes;
+  } finally {
+    canvas.width=0; canvas.height=0;
   }
-  return bytes;
 }
 
 export async function decodeTiff(bytes: Uint8Array): Promise<DecodedPixels> {

@@ -91,6 +91,46 @@ describe('decode cancellation resources', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('waits for header-based admission before either native or bundled rasterization', async () => {
+    for (const bytes of [png, tiff]) {
+      let admit!: () => void;
+      const admitted = new Promise<void>(resolve => { admit = resolve });
+      const reserve = vi.fn(() => admitted);
+      const controller = new AbortController();
+      const outcome = decodeFile(new File(['image'], 'input'), controller.signal, {lossy: true, admit: reserve}).catch(error => error.name);
+      PendingReader.instances.at(-1)!.complete(bytes);
+      await flush();
+      expect(reserve).toHaveBeenCalledWith(32);
+      expect(PendingImage.instances).toHaveLength(0);
+      expect(PendingDecoder.instances).toHaveLength(0);
+      admit(); await flush();
+      expect(bytes === png ? PendingImage.instances : PendingDecoder.instances).toHaveLength(1);
+      controller.abort();
+      expect(await outcome).toBe('AbortError');
+      PendingImage.instances = []; PendingDecoder.instances = [];
+    }
+  });
+
+  it.each(['png','jpeg','webp'])('prepares unchanged lossless %s bytes and an owned original preview without rasterizing', async format => {
+    const bytes = format === 'png' ? png : format === 'jpeg'
+      ? new Uint8Array([255,216,255,192,0,7,8,0,1,0,1])
+      : new Uint8Array([82,73,70,70,18,0,0,0,87,69,66,80,86,80,56,76,5,0,0,0,47,0,0,0,0,0]);
+    const canvas = vi.spyOn(document, 'createElement');
+    const reserve = vi.fn(async () => {});
+    const outcome = decodeFile(new File(['image'], 'input'), undefined, {lossy: false, outputFormat: 'same', admit: reserve});
+    PendingReader.instances[0].complete(bytes); await flush();
+    expect(PendingImage.instances).toHaveLength(0);
+    expect(PendingDecoder.instances).toHaveLength(0);
+    const result = await outcome;
+    expect(result.originalFileBytes.buffer).toBe(bytes.buffer);
+    expect(result.pixels).toBeUndefined();
+    expect([result.width,result.height,result.previewUrl]).toEqual([1,1,'blob:decode']);
+    expect(reserve).toHaveBeenCalledWith(format === 'png' ? 32 : 0);
+    expect(canvas).not.toHaveBeenCalled();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    canvas.mockRestore();
+  });
+
   it('does not start reading an already aborted request', async () => {
     const controller = new AbortController(); controller.abort();
     await expect(decodeFile(new File(['image'], 'input'), controller.signal)).rejects.toMatchObject({name: 'AbortError'});
@@ -107,11 +147,16 @@ describe('decode cancellation resources', () => {
   it('releases native image and canvas resources after success while retaining the owned preview', async () => {
     const canvas = document.createElement('canvas');
     vi.spyOn(document, 'createElement').mockReturnValueOnce(canvas);
-    vi.spyOn(canvas, 'getContext').mockReturnValue({drawImage() {}, getImageData: () => ({data: new Uint8ClampedArray([1,2,3,4])})} as any);
+    const data = new Uint8ClampedArray([9,8,1,2,3,4,7,6]).subarray(2,6);
+    vi.spyOn(canvas, 'getContext').mockReturnValue({drawImage() {}, getImageData: () => ({data})} as any);
     const outcome = decodeFile(new File(['image'], 'input'));
     PendingReader.instances[0].complete(png); await flush();
     PendingImage.instances[0].onload?.();
-    expect((await outcome).previewUrl).toBe('blob:decode');
+    const result = await outcome;
+    expect(result.previewUrl).toBe('blob:decode');
+    expect(result.pixels!.buffer).toBe(data.buffer);
+    expect(result.pixels!.byteOffset).toBe(2);
+    expect(Array.from(result.pixels!)).toEqual([1,2,3,4]);
     expect(PendingImage.instances[0].src).toBe('');
     expect([canvas.width, canvas.height]).toEqual([0, 0]);
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();

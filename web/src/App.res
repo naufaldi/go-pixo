@@ -14,6 +14,7 @@ type taskRegistry
 @send external hasTask: (taskRegistry, string) => bool = "has"
 @send external isRemoved: (taskRegistry, string) => bool = "isRemoved"
 @send external reserveTask: (taskRegistry, string, string) => Download.abortSignal = "reserve"
+@send external admitTask: (taskRegistry, string, int) => Promise.t<unit> = "admit"
 @send external removeTask: (taskRegistry, string) => unit = "remove"
 @send external abortTasks: taskRegistry => unit = "abortAll"
 @send external settleTask: (taskRegistry, string) => unit = "settle"
@@ -77,7 +78,13 @@ let make = () => {
     let started = now()
     dispatch(UpdateTask(item.id, item.generation, current => {...current, status: Types.Decoding}))
     dispatch(SetTaskProgress(item.id, item.generation, Some(Progress.seedProgress(item.id, item.originalBytes, started))))
-    ImageDecode.decodeFile(item.file, signal)
+    ImageDecode.decodeFile(item.file, signal, {
+      lossy: !settingsState.lossless,
+      outputFormat: Types.outputFormatToChoice(settingsState.outputFormat),
+      targetWidth: settingsState.targetWidth,
+      targetHeight: settingsState.targetHeight,
+      admit: bytes => admitTask(tasks, key, bytes),
+    })
     ->Promise.then(result => {
       if !isCurrent(item, epoch) {
         BlobUrl.revokeObjectURL(result.previewUrl)

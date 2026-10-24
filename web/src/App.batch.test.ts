@@ -46,6 +46,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('bounded batch UI', () => {
+  it('holds a large image workspace through compression, then lets the waiting image rasterize', async () => {
+    const actual = await vi.importActual<typeof import('./interop/imageDecode')>('./interop/imageDecode');
+    const bytes = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,15,160,0,0,11,184,8,6,0,0,0,0,0,0,0]); // 4000 x 3000
+    class Reader {
+      result = bytes.buffer; readyState = 2;
+      onload?: () => void;
+      readAsArrayBuffer() { this.onload?.() }
+    }
+    class Image {
+      static instances: Image[] = [];
+      naturalWidth = 4000; naturalHeight = 3000; src = '';
+      onload?: () => void; onerror?: () => void;
+      constructor() { Image.instances.push(this) }
+    }
+    vi.stubGlobal('FileReader', Reader); vi.stubGlobal('Image', Image);
+    decodeFile.mockImplementation(actual.decodeFile);
+    const {container} = render(createElement(App));
+    addFiles(container, ['large-one.png','large-two.png']);
+    await waitFor(() => expect(decodeFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(Image.instances).toHaveLength(1));
+    // Keep the synthetic raster tiny. The worker double isolates admission from codec allocation.
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({drawImage() {}, getImageData: () => ({data: new Uint8ClampedArray(4)})} as any);
+    await act(async () => Image.instances[0].onload?.());
+    await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1));
+    expect(Image.instances).toHaveLength(1); // Decode completion alone cannot release the budget.
+    await act(async () => AppWorker.instances[0].complete('png'));
+    await waitFor(() => expect(Image.instances).toHaveLength(2));
+  });
+
   it.each(['read', 'native', 'bundled'].flatMap(stage => ['remove', 'clear', 'unmount'].map(action => ({stage, action}))))('$action during actual $stage decoding releases resources and promptly refills admission', async ({stage, action}) => {
     const actual = await vi.importActual<typeof import('./interop/imageDecode')>('./interop/imageDecode')
     const bytes = stage === 'bundled'

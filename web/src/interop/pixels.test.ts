@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRgbaPixelBuffer,
   copyImageDataPixels,
+  ownedImageDataPixels,
   copyTypedArrayView,
   expectedRgbaPixelLength,
 } from './pixels';
@@ -47,3 +48,11 @@ describe('pixels', () => {
     );
   });
 });
+
+it('adopts exclusively owned ImageData storage without copying or losing its offset', () => {
+  const storage = new Uint8ClampedArray([9,8,1,2,3,4,7,6])
+  const pixels = ownedImageDataPixels(storage.subarray(2,6))
+  expect(pixels.buffer).toBe(storage.buffer)
+  expect(pixels.byteOffset).toBe(2)
+  expect(Array.from(pixels)).toEqual([1,2,3,4])
+})

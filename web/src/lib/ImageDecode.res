@@ -1,7 +1,7 @@
 open Types
 
 type decodeResult = {
-  pixels: array<int>,
+  pixels: option<array<int>>,
   width: int,
   height: int,
   colorType: int,
@@ -10,6 +10,14 @@ type decodeResult = {
   originalFileBytes: array<int>,
 }
 
+type decodeOptions = {
+  lossy: bool,
+  outputFormat: string,
+  targetWidth: option<int>,
+  targetHeight: option<int>,
+  admit: int => Promise.t<unit>,
+}
+
 @module("../interop/imageDecode")
-external decodeFile: (Web.File.t, Download.abortSignal) => Promise.t<decodeResult> = "decodeFile"
+external decodeFile: (Web.File.t, Download.abortSignal, decodeOptions) => Promise.t<decodeResult> = "decodeFile"
 
