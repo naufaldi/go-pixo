@@ -19,6 +19,10 @@ type IHDRData struct {
 
 // NewIHDRData creates a validated IHDRData for the given image dimensions and format.
 func NewIHDRData(width, height int, bitDepth, colorType uint8) (*IHDRData, error) {
+	// Validate the original ints before narrowing; uint32 can wrap a huge width to 1.
+	if width <= 0 || height <= 0 || width > 0x7fffffff || height > 0x7fffffff {
+		return nil, ErrInvalidDimensions
+	}
 	ihdr := &IHDRData{
 		Width:       uint32(width),
 		Height:      uint32(height),
