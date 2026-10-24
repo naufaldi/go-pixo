@@ -1,5 +1,8 @@
 package png
 
+// Small jobs avoid cache allocation and palette copying entirely.
+const paletteCacheMinPixels = 1024
+
 // QuantizeWithKmeans converts true-color pixels to indexed palette using K-means refinement.
 // This function provides 5-15% improvement in visual quality for photographic content.
 // Returns indexed pixels (1 byte per pixel) and refined palette.
@@ -31,11 +34,19 @@ func QuantizeWithKmeans(pixels []byte, colorType int, maxColors int, iterations 
 	bpp := BytesPerPixel(ColorType(colorType))
 	width := len(pixels) / bpp
 
-	lut := NewFullPaletteLUT(&palette)
+	var lut *PaletteLUT
+	if width >= paletteCacheMinPixels && palette.NumColors > 1 {
+		lut = NewFullPaletteLUT(&palette)
+	}
 
 	for i := 0; i < width; i++ {
 		offset := i * bpp
-		indexed[i] = lut.Lookup(pixels[offset], pixels[offset+1], pixels[offset+2], 255)
+		c := Color{R: pixels[offset], G: pixels[offset+1], B: pixels[offset+2]}
+		if lut != nil {
+			indexed[i] = lut.Lookup(c.R, c.G, c.B, 255)
+		} else {
+			indexed[i] = uint8(palette.FindNearest(c))
+		}
 	}
 
 	return indexed, palette
@@ -43,7 +54,8 @@ func QuantizeWithKmeans(pixels []byte, colorType int, maxColors int, iterations 
 
 // Quantize converts true-color pixels to indexed palette.
 // Returns indexed pixels (1 byte per pixel) and palette.
-// If useLUT is true (default), uses full PaletteLUT (256^3) for O(1) lookups with identical results.
+// If useLUT is true (default), sufficiently large jobs memoize exact RGB searches.
+// The cache is bounded; misses use linear search with identical results.
 // Set useLUT to false to use linear search (for testing/benchmarking).
 func Quantize(pixels []byte, colorType int, maxColors int, useLUT ...bool) ([]byte, Palette) {
 	enableLUT := true
@@ -74,7 +86,7 @@ func Quantize(pixels []byte, colorType int, maxColors int, useLUT ...bool) ([]by
 	indexed := make([]byte, width)
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		lut = NewFullPaletteLUT(palette)
 	}
 
@@ -95,8 +107,7 @@ func Quantize(pixels []byte, colorType int, maxColors int, useLUT ...bool) ([]by
 	return indexed, *palette
 }
 
-// QuantizeFast is equivalent to Quantize but always uses the LUT for O(1) lookups.
-// This is the recommended function for production use.
+// QuantizeFast is equivalent to Quantize with bounded memoization enabled.
 func QuantizeFast(pixels []byte, colorType int, maxColors int) ([]byte, Palette) {
 	return Quantize(pixels, colorType, maxColors, true)
 }
@@ -189,7 +200,7 @@ func QuantizeToPalette(pixels []byte, colorType int, palette Palette, useLUT ...
 	indexed := make([]byte, width)
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		lut = NewFullPaletteLUT(&palette)
 	}
 
@@ -210,7 +221,8 @@ func QuantizeToPalette(pixels []byte, colorType int, palette Palette, useLUT ...
 	return indexed
 }
 
-// QuantizeWithDithering applies quantization with Floyd-Steinberg dithering.
+// QuantizeWithDithering preserves the legacy one-dimensional 7/16 error carry.
+// It retains only the next pixel error, not an image-sized diffusion buffer.
 func QuantizeWithDithering(pixels []byte, colorType int, maxColors int, useLUT ...bool) ([]byte, Palette) {
 	enableLUT := true
 	if len(useLUT) > 0 {
@@ -237,28 +249,19 @@ func QuantizeWithDithering(pixels []byte, colorType int, maxColors int, useLUT .
 	bpp := BytesPerPixel(ColorType(colorType))
 	width := len(pixels) / bpp
 
-	pixelData := make([][3]int, width)
-	for i := 0; i < width; i++ {
-		offset := i * bpp
-		pixelData[i] = [3]int{
-			int(pixels[offset]),
-			int(pixels[offset+1]),
-			int(pixels[offset+2]),
-		}
-	}
-
 	indexed := make([]byte, width)
-	errors := make([][3]int, width+2)
+	var carriedError [3]int
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		lut = NewFullPaletteLUT(palette)
 	}
 
 	for i := 0; i < width; i++ {
-		r := pixelData[i][0] + errors[i][0]
-		g := pixelData[i][1] + errors[i][1]
-		b := pixelData[i][2] + errors[i][2]
+		offset := i * bpp
+		r := int(pixels[offset]) + carriedError[0]
+		g := int(pixels[offset+1]) + carriedError[1]
+		b := int(pixels[offset+2]) + carriedError[2]
 
 		r = clamp(r)
 		g = clamp(g)
@@ -284,16 +287,9 @@ func QuantizeWithDithering(pixels []byte, colorType int, maxColors int, useLUT .
 
 		indexed[i] = uint8(paletteIdx)
 
-		if i+1 < width {
-			errors[i+1][0] += errR * 7 / 16
-			errors[i+1][1] += errG * 7 / 16
-			errors[i+1][2] += errB * 7 / 16
-		}
-		if i+1 < len(errors) {
-			errors[i+1][0] = clamp(errors[i+1][0])
-			errors[i+1][1] = clamp(errors[i+1][1])
-			errors[i+1][2] = clamp(errors[i+1][2])
-		}
+		// Preserve the legacy positive-only carry to the next linear pixel.
+		// This helper has no row width; row-aware diffusion is a separate change.
+		carriedError = [3]int{clamp(errR * 7 / 16), clamp(errG * 7 / 16), clamp(errB * 7 / 16)}
 	}
 
 	return indexed, *palette
@@ -353,8 +349,8 @@ func calculatePerceptualQuantizationError(pixels []byte, indexed []byte, palette
 // QuantizePerceptual converts true-color pixels to indexed palette using perceptual distance metric.
 // Uses Redmean distance which provides better visual quality for skin tones and gradients.
 // Returns indexed pixels (1 byte per pixel) and palette.
-// If useLUT is true (default), uses perceptual PaletteLUT for O(1) lookups.
-// Set useLUT to false to use linear search (slower but consistent).
+// If useLUT is true (default), sufficiently large jobs memoize exact searches.
+// Set useLUT to false to always use linear search.
 func QuantizePerceptual(pixels []byte, colorType int, maxColors int, useLUT ...bool) ([]byte, Palette) {
 	enableLUT := true
 	if len(useLUT) > 0 {
@@ -384,7 +380,7 @@ func QuantizePerceptual(pixels []byte, colorType int, maxColors int, useLUT ...b
 	indexed := make([]byte, width)
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		lut = NewPerceptualPaletteLUT(palette)
 	}
 
@@ -405,8 +401,7 @@ func QuantizePerceptual(pixels []byte, colorType int, maxColors int, useLUT ...b
 	return indexed, *palette
 }
 
-// QuantizeFastPerceptual is equivalent to QuantizePerceptual but always uses the LUT for O(1) lookups.
-// This is the recommended function for production use when perceptual distance is desired.
+// QuantizeFastPerceptual enables bounded memoization for QuantizePerceptual.
 func QuantizeFastPerceptual(pixels []byte, colorType int, maxColors int) ([]byte, Palette) {
 	return QuantizePerceptual(pixels, colorType, maxColors, true)
 }
@@ -424,7 +419,7 @@ func QuantizeToPalettePerceptual(pixels []byte, colorType int, palette Palette, 
 	indexed := make([]byte, width)
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		lut = NewPerceptualPaletteLUT(&palette)
 	}
 
@@ -478,7 +473,7 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 	usePerceptual := opts.UsePerceptualDistance || opts.DistanceMetric == DistanceMetricRedmean
 
 	var lut *PaletteLUT
-	if enableLUT && palette.NumColors > 0 {
+	if enableLUT && width >= paletteCacheMinPixels && palette.NumColors > 1 {
 		if usePerceptual {
 			lut = NewPerceptualPaletteLUT(palette)
 		} else {
