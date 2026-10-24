@@ -1,4 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
+import {jpegWithExif} from './test/jpeg';
 const codecs = vi.hoisted(() => ({encodeWebp: vi.fn(), encodeAvif: vi.fn()}));
 vi.mock('./interop/codecs', () => codecs);
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() });
@@ -120,4 +121,18 @@ it('keeps the 30 second Go initialization deadline after transport readiness', a
     expect(messages.find(message => message.type === 'error')).toMatchObject({error: expect.stringMatching(/timed out/)});
     expect(vi.getTimerCount()).toBe(0);
   } finally { vi.useRealTimers() }
+});
+
+it('validates JPEG byte-only requests against display dimensions without canvas or Go', async () => {
+  const bytes=jpegWithExif(3000,4000,6);
+  const {scope,fetch,messages,send}=await worker();
+  await send('jpeg',bytes,{width:4000,height:3000,targetWidth:4000});
+  const output=messages.find(message => message.type==='compressed');
+  expect(Array.from(output.compressedBytes)).toEqual(Array.from(bytes));
+  expect(scope.Go).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+});
+it('rejects storage dimensions masquerading as display dimensions on a JPEG byte request', async () => {
+  const {messages,send}=await worker();
+  await send('jpeg',jpegWithExif(3000,4000,6),{width:3000,height:4000,targetWidth:3000});
+  expect(messages.find(message => message.type==='error')?.error).toMatch(/pixel/i);
 });

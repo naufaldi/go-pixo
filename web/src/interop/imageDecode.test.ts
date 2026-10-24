@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { decodeFile } from './imageDecode';
+import {jpegWithExif} from '../test/jpeg';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -129,6 +130,41 @@ describe('decode cancellation resources', () => {
     expect(canvas).not.toHaveBeenCalled();
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
     canvas.mockRestore();
+  });
+
+  it('returns JPEG display dimensions to the UI and worker without rasterizing unchanged bytes', async () => {
+    const bytes=jpegWithExif(3000,4000,6);
+    const outcome=decodeFile(new File(['image'],'rotated.jpg'),undefined,{lossy:false,targetWidth:4000});
+    PendingReader.instances[0].complete(bytes); await flush();
+    // Avoid a pending decoder obscuring the wrong-path failure.
+    expect(PendingImage.instances).toHaveLength(0);
+    const result=await outcome;
+    expect(result).toMatchObject({width:4000,height:3000,previewUrl:'blob:decode'});
+    expect(result.pixels).toBeUndefined();
+  });
+
+  it('reserves stored JPEG pixels before a display-axis downsize starts native decoding', async () => {
+    const controller=new AbortController();
+    const reserve=vi.fn(async () => {});
+    const outcome=decodeFile(new File(['image'],'rotated.jpg'),controller.signal,{lossy:false,targetWidth:3000,admit:reserve})
+      .catch(error => error.name);
+    PendingReader.instances[0].complete(jpegWithExif(3000,4000,6)); await flush();
+    expect(reserve).toHaveBeenCalledWith(384_000_000);
+    expect(PendingImage.instances).toHaveLength(1);
+    controller.abort(); expect(await outcome).toBe('AbortError');
+  });
+
+  it('rejects a native JPEG display mismatch before allocating its canvas', async () => {
+    const canvas=vi.spyOn(document,'createElement');
+    try {
+      const outcome=decodeFile(new File(['image'],'rotated.jpg'),undefined,{lossy:true}).catch(error => error.message);
+      PendingReader.instances[0].complete(jpegWithExif(3,4,6)); await flush();
+      const image=PendingImage.instances[0]; image.naturalWidth=3; image.naturalHeight=4;
+      image.onload?.();
+      expect(await outcome).toMatch(/EXIF preflight/);
+      expect(canvas).not.toHaveBeenCalled();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:decode');
+    } finally { canvas.mockRestore(); }
   });
 
   it('does not start reading an already aborted request', async () => {

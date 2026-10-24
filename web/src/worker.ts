@@ -8,7 +8,7 @@ import { encodeAvif, encodeWebp } from './interop/codecs';
 import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
 import { unwrapWasmResult } from './interop/wasmResult';
 import { assertRgbaPixelBuffer, ownedImageDataPixels } from './interop/pixels';
-import { inspectImage } from './interop/imageFormats';
+import { imageDisplayDimensions, inspectImage } from './interop/imageFormats';
 import { imageOperation } from './interop/imageOperation';
 import { resolveJpegEncodeOptions } from './interop/jpegOptions';
 
@@ -341,8 +341,9 @@ self.onmessage = async (event: MessageEvent) => {
     const size=resolveResizeDimensions(req.width,req.height,req.targetWidth,req.targetHeight);
     const source = !req.pixels && req.originalFileBytes?.length ? inspectImage(req.originalFileBytes) : undefined;
     const operation = source ? imageOperation(source, req) : undefined;
+    const sourceDisplay = source ? imageDisplayDimensions(source) : undefined;
     if (req.pixels) assertRgbaPixelBuffer(req.pixels,req.width,req.height,req.colorType);
-    else if (!operation || operation.kind === 'pixels' || source?.width !== req.width || source?.height !== req.height) {
+    else if (!operation || operation.kind === 'pixels' || sourceDisplay?.width !== req.width || sourceDisplay?.height !== req.height) {
       throw new Error('Pixel data is required for this image operation');
     }
     const quality=req.qualityTarget ?? 85;

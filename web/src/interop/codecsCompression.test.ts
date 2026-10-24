@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { compressWithCandidates } from './codecsCompression';
+import {jpegWithExif} from '../test/jpeg';
 
 function png(w: number, h: number, length = 45) {
   const b=new Uint8Array(length); b.set([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82]);
@@ -43,4 +44,17 @@ it('preserves high-bit-depth input and rejects lossless conversion through 8-bit
   const result=await compressWithCandidates(request,async () => png(2,1));
   expect(result.compressedBytes).toBe(bytes);
   await expect(compressWithCandidates({...request,outputFormat:'avif'},async () => png(2,1))).rejects.toThrow(/bit.depth|precision/i);
+});
+
+it('checks encoded JPEG display dimensions rather than its storage axes', async () => {
+  const bytes=jpegWithExif(3,4,6);
+  const result=await compressWithCandidates({format:'png',outputFormat:'jpeg',lossy:true,width:4,height:3},async () => bytes);
+  expect(result.compressedBytes).toBe(bytes);
+  await expect(compressWithCandidates({format:'png',outputFormat:'jpeg',lossy:true,width:3,height:4},async () => bytes))
+    .rejects.toThrow(/dimension/i);
+});
+it('never selects a rotated original with different displayed dimensions even without a resized flag', async () => {
+  await expect(compressWithCandidates({format:'jpeg',outputFormat:'same',lossy:false,width:3,height:4,
+    originalFileBytes:jpegWithExif(3,4,6)},async () => { throw new Error('Unexpected encode'); }))
+    .rejects.toThrow(/lossy/i);
 });
