@@ -11,10 +11,15 @@ type colorKey struct {
 // colorType: 2=RGB, 6=RGBA
 // Returns an unordered map of Color to count.
 func CountColors(pixels []byte, colorType int) map[Color]int {
+	return countColorsWithProgress(pixels, colorType, nil)
+}
+
+func countColorsWithProgress(pixels []byte, colorType int, callback func(string, int)) map[Color]int {
 	colorMap := make(map[Color]int)
 
 	bpp := BytesPerPixel(ColorType(colorType))
 
+	progress := newWorkProgress(callback, "histogram", len(pixels)/bpp, 4096)
 	for i := 0; i < len(pixels); i += bpp {
 		c := Color{
 			R: pixels[i],
@@ -22,8 +27,12 @@ func CountColors(pixels []byte, colorType int) map[Color]int {
 			B: pixels[i+2],
 		}
 		colorMap[c]++
+		if completed := i/bpp + 1; completed >= progress.next {
+			progress.report(completed)
+		}
 	}
 
+	progress.finish()
 	return colorMap
 }
 

@@ -56,6 +56,7 @@ interface ProgressMessage {
   progress: number;
   predictable?: boolean;
   phaseTarget?: number;
+  phasePercent?: number;
 }
 
 // Go loads only for PNG/JPEG operations. Reuse in-flight and settled startup.
@@ -340,7 +341,7 @@ self.onmessage = async (event: MessageEvent) => {
   if (!req || typeof req.id!=='string') {
     self.postMessage({type:'error',error:'Invalid compress message'}); return;
   }
-  const postProgress=(phase: string,progress: number,options?: {predictable?: boolean; phaseTarget?: number})=>{
+  const postProgress=(phase: string,progress: number,options?: {predictable?: boolean; phaseTarget?: number; phasePercent?: number})=>{
     self.postMessage({type:'progress',id:req.id,phase,progress,...options} as ProgressMessage);
   };
   try {
@@ -355,26 +356,40 @@ self.onmessage = async (event: MessageEvent) => {
     }
     const quality=req.qualityTarget ?? 85;
     if (!Number.isFinite(quality) || quality<0 || quality>100) throw new Error('Quality must be between 0 and 100');
-    postProgress(STAGE.PREPARING.label,INITIAL_PROGRESS,{predictable:true,phaseTarget:STAGE.RESIZING.end});
+    postProgress(STAGE.PREPARING.label,INITIAL_PROGRESS);
     let work: {pixels?: Uint8Array; width: number; height: number} = {pixels:req.pixels,width:req.width,height:req.height};
     const requirePixels = (): Uint8Array => {
       if (!work.pixels) throw new Error('Pixel data is required for this image operation');
       return work.pixels;
     };
     if (size.resized) {
-      postProgress(STAGE.RESIZING.label,STAGE.RESIZING.start,{predictable:true,phaseTarget:STAGE.RESIZING.end});
+      postProgress(STAGE.RESIZING.label,STAGE.RESIZING.start);
       work=resizePixels(requirePixels(),req.width,req.height,size.width,size.height);
     }
-    const pngProgress=(phase: string,progress: number)=>postProgress(phase,mapPngPhaseToGlobal(phase,progress),{
-      predictable:true,phaseTarget:mapPngPhaseToGlobal(phase,100),
-    });
+    let lastPngPhase = '';
+    let lastPngUpdate = -Infinity;
+    const pngProgress=(phase: string,progress: number)=>{
+      const now = performance.now();
+      // Time only limits message traffic; it never changes the reported work.
+      if (phase === lastPngPhase && progress !== 0 && progress !== 100 && now-lastPngUpdate < 80) return;
+      lastPngPhase = phase;
+      lastPngUpdate = now;
+      postProgress(phase,mapPngPhaseToGlobal(phase,progress),{
+      // Only these phases expose completed units. Boundary-only and legacy
+      // deflate callbacks stay indeterminate until a real pass finishes.
+      phasePercent: ['histogram','palette','quantize','filtering'].includes(phase) || phase === 'deflate' && progress > 0 ? progress : undefined,
+      phaseTarget: mapPngPhaseToGlobal(phase,100),
+      });
+    };
     const result=await compressWithCandidates({
       ...req,width:work.width,height:work.height,resized:size.resized,
     },async (format,fast)=>{
-      postProgress(STAGE.ENCODING.label,STAGE.ENCODING.start,{predictable:false,phaseTarget:STAGE.ENCODING.end-1});
+      postProgress('initializing',STAGE.ENCODING.start);
+      if (format==='webp' || format==='avif') postProgress(`encoding-${format}`,STAGE.ENCODING.start);
       if (format==='webp') return encodeWebp(requirePixels(),work.width,work.height,quality);
       if (format==='avif') return encodeAvif(requirePixels(),work.width,work.height,quality,!req.lossy,fast?8:req.preset===2?8:req.preset===4?5:6);
       await initWasm();
+      postProgress(`encoding-${format}`,STAGE.ENCODING.start);
       if (format==='jpeg') {
         const options=resolveJpegEncodeOptions({
           inputFormat:req.format,outputFormat:format,width:work.width,height:work.height,preset:req.preset,
@@ -391,7 +406,7 @@ self.onmessage = async (event: MessageEvent) => {
       return encodePngAdvanced(requirePixels(),work.width,work.height,6,req.preset,req.lossy,req.maxColors,req.dithering,
         req.ditherStrength ?? 0.5,quality,req.zopfliIterations ?? 0,0,false,0,false,false,pngProgress,req.pngAllowRGBAFallback === true);
     });
-    postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end,{predictable:true,phaseTarget:STAGE.FINALIZING.end});
+    postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end);
     const originalBytes=req.originalFileBytes?.length || req.pixels?.length || 0;
     // Codec/Go boundaries have already copied borrowed memory. The selected
     // output (including an unchanged input candidate) belongs to this worker.

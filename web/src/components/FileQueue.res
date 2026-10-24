@@ -87,7 +87,7 @@ let make = (
                    {React.string(Display.formatSize(item.originalBytes))}
                  </span>
                  {switch item.status {
-                 | Compressing =>
+                 | Decoding | Compressing =>
                    let activeProgress = switch compressionProgress {
                    | Some(progress) when progress.itemId == item.id => Some(progress)
                    | _ =>
@@ -97,29 +97,7 @@ let make = (
                    }
                    switch activeProgress {
                    | Some(progress) =>
-                     let elapsed = %raw("performance.now()") -. progress.startTime
-                     <div className="flex flex-col gap-1">
-                       <div className="flex items-center gap-2">
-                         <span className="text-xs text-blue-400 font-medium" dataTestId="file-compression-percent">
-                           {React.string("Compressing " ++ Int.toString(progress.progress) ++ "%")}
-                         </span>
-                         <div className="w-16 bg-neutral-800 rounded-full h-1.5 overflow-hidden">
-                           <div
-                             className="bg-blue-500 h-1.5 rounded-full transition-all duration-300 ease-out"
-                             style={ReactDOM.Style._dictToStyle(Dict.fromArray([("width", Int.toString(progress.progress) ++ "%")]))}
-                           />
-                         </div>
-                       </div>
-                       <div className="flex items-center gap-2 text-xs text-neutral-500">
-                         <span className="capitalize" dataTestId="file-compression-phase">
-                           {React.string(Progress.phaseLabel(progress.phase))}
-                         </span>
-                         <span>{React.string(" - ")}</span>
-                         <span>
-                          {React.string(Display.formatTimeFloat(elapsed))}
-                         </span>
-                       </div>
-                     </div>
+                     <ProgressStatus progress compact=true />
                    | None =>
                      <span className="text-xs text-blue-400 animate-pulse">
                        {React.string("Compressing...")}
@@ -150,8 +128,7 @@ let make = (
                    <span className="text-xs text-red-400">
                      {React.string(msg)}
                    </span>
-                 | Pending
-                 | Decoding =>
+                 | Pending =>
                    <span className="text-xs text-neutral-500">
                      {React.string(statusText(item.status))}
                    </span>

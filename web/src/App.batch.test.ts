@@ -440,3 +440,39 @@ describe('ZIP export lifecycle', () => {
     expect(abortAtRevoke.every(Boolean)).toBe(true)
   })
 })
+
+describe('live progress lifecycle', () => {
+  it('keeps silent decode/worker clocks live, forwards phase units and cleans up a new settings generation', async () => {
+    vi.useFakeTimers({toFake: ['setInterval', 'clearInterval', 'performance']})
+    try {
+      let finishDecode!: (value: ReturnType<typeof decoded>) => void
+      decodeFile.mockImplementationOnce(() => new Promise(resolve => { finishDecode = resolve }))
+      const {container, unmount} = render(createElement(App))
+      await act(async () => addFiles(container, ['silent.png']))
+      expect(screen.getByTestId('compression-phase')).toHaveTextContent(/decoding/i)
+      expect(screen.getAllByRole('progressbar').every(bar => !bar.hasAttribute('aria-valuenow'))).toBe(true)
+      await act(async () => vi.advanceTimersByTime(12_500))
+      expect(screen.getByTestId('compression-elapsed')).toHaveTextContent('12.5s')
+      expect(screen.getByTestId('file-compression-elapsed')).toHaveTextContent('12.5s')
+      await act(async () => finishDecode(decoded()))
+      expect(screen.queryAllByText(/has not reported progress/i)).toHaveLength(0)
+      const worker = AppWorker.instances[0]
+      const request = worker.messages.find(message => message.type === 'compress')
+      await act(async () => worker.onmessage?.({data: {type: 'progress', id: request.id, phase: 'quantize', progress: 12, phasePercent: 25}}))
+      expect(screen.getByTestId('compression-percent')).toHaveTextContent('25% of stage')
+      await act(async () => vi.advanceTimersByTime(2500))
+      expect(screen.getByTestId('compression-elapsed')).toHaveTextContent('15.0s')
+      expect(screen.getByTestId('file-compression-percent')).toHaveTextContent('25% of stage')
+      await act(async () => fireEvent.click(screen.getByRole('checkbox')))
+      expect(screen.getByTestId('compression-elapsed')).toHaveTextContent('0.0s')
+      expect(screen.getByTestId('compression-percent')).not.toHaveTextContent('25%')
+      await act(async () => AppWorker.instances.filter(worker => !worker.terminated && worker.messages.some(message => message.type === 'compress')).forEach(worker => worker.complete('png')))
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+      expect(vi.getTimerCount()).toBe(0)
+      await act(async () => fireEvent.click(screen.getByRole('checkbox')))
+      expect(vi.getTimerCount()).toBe(1)
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+})

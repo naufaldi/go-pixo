@@ -10,6 +10,7 @@ export const STAGE = {
 
 export type ProgressSnapshot = {
   progress: number;
+  phasePercent?: number;
   phase: string;
   lastRealProgress: number;
   lastRealUpdateTime: number;
@@ -22,12 +23,24 @@ export type ProgressSnapshot = {
 export type RealProgressUpdate = {
   phase: string;
   progress: number;
+  phasePercent?: number;
   predictable?: boolean;
   phaseTarget?: number;
 };
 
 const PHASE_LABELS: Record<string, string> = {
+  decoding: 'Reading / decoding image',
+  initializing: 'Initializing encoder',
   preparing: 'Preparing',
+  histogram: 'Counting pixel colors',
+  'palette-sort': 'Sorting colors',
+  palette: 'Building palette',
+  quantize: 'Mapping pixels to palette',
+  'encoding-png': 'Encoding PNG',
+  'encoding-webp': 'Encoding WebP',
+  'encoding-avif': 'Encoding AVIF',
+  'decode-png': 'Decoding PNG',
+  verifying: 'Verifying output',
   resizing: 'Resizing',
   encoding: 'Encoding',
   'encoding-jpeg': 'Encoding JPEG...',
@@ -67,38 +80,15 @@ export function phaseLabel(phase: string): string {
   return PHASE_LABELS[phase] ?? phase;
 }
 
-export function predictionRateForFileSize(fileSizeBytes: number): number {
-  if (fileSizeBytes >= 2_000_000) return 8;
-  if (fileSizeBytes >= 500_000) return 5;
-  if (fileSizeBytes >= 100_000) return 3;
-  if (fileSizeBytes >= 10_000) return 2;
-  return 1;
+// Legacy callers may still invoke this helper. Time and file size cannot prove
+// completed work, so prediction intentionally leaves the measured snapshot alone.
+export function advancePredictedProgress(snapshot: ProgressSnapshot, _now: number): ProgressSnapshot {
+  return snapshot;
 }
 
-export function advancePredictedProgress(
-  snapshot: ProgressSnapshot,
-  now: number,
-): ProgressSnapshot {
-  if (!snapshot.predictable) {
-    return snapshot;
-  }
-
-  const ceiling = Math.min(snapshot.phaseTarget, MAX_PREDICTED_PROGRESS - 1);
-  if (snapshot.progress >= ceiling) {
-    return snapshot;
-  }
-
-  const elapsedMs = now - snapshot.lastRealUpdateTime;
-  const ratePerSecond = predictionRateForFileSize(snapshot.fileSize);
-  const predicted =
-    snapshot.lastRealProgress + (elapsedMs / 1000) * ratePerSecond;
-  const next = clampProgress(snapshot.progress, Math.min(predicted, ceiling));
-
-  if (next <= snapshot.progress) {
-    return snapshot;
-  }
-
-  return { ...snapshot, progress: next };
+export function measuredPhasePercent(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value))) : undefined;
 }
 
 export function applyRealProgress(
@@ -114,6 +104,7 @@ export function applyRealProgress(
 
   return {
     progress,
+    phasePercent: measuredPhasePercent(update.phasePercent),
     phase: update.phase,
     lastRealProgress: update.progress,
     lastRealUpdateTime: now,
@@ -134,7 +125,7 @@ export function createInitialSnapshot(
   const snapshot = applyRealProgress(null, {
     phase,
     progress,
-    predictable: options?.predictable ?? true,
+    predictable: false,
     phaseTarget: options?.phaseTarget ?? STAGE.RESIZING.end,
   }, now);
   return { ...snapshot, fileSize };
@@ -148,8 +139,9 @@ export function applyRealProgressWrapper(
   phaseTarget: number,
   now: number,
   fileSize: number,
+  phasePercent?: number,
 ): ProgressSnapshot {
-  const result = applyRealProgress(snapshot, { phase, progress, predictable, phaseTarget }, now);
+  const result = applyRealProgress(snapshot, { phase, progress, predictable, phaseTarget, phasePercent }, now);
   return {
     ...result,
     fileSize: fileSize > 0 ? fileSize : (snapshot?.fileSize ?? 0),

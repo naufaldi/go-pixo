@@ -136,3 +136,25 @@ it('rejects storage dimensions masquerading as display dimensions on a JPEG byte
   await send('jpeg',jpegWithExif(3000,4000,6),{width:3000,height:4000,targetWidth:3000});
   expect(messages.find(message => message.type==='error')?.error).toMatch(/pixel/i);
 });
+
+it('forwards actual PNG phase units and leaves opaque stages indeterminate until the result', async () => {
+  const {scope, messages, send} = await worker();
+  scope.recompressPngLossless.mockImplementation((bytes: Uint8Array, _preset: number, _iterations: number, report: (phase: string, value: number) => void) => {
+    report('histogram', 0); report('histogram', 25); report('histogram', 100);
+    report('palette-sort', 0); report('quantize', 0); report('quantize', 50); report('quantize', 100);
+    report('deflate', 0); vi.spyOn(performance, 'now').mockReturnValueOnce(performance.now() + 100); report('deflate', 50); report('deflate', 100);
+    report('finalize', 100);
+    return new Uint8Array(bytes);
+  });
+  await send('png', png);
+  const updates = messages.filter(message => message.type === 'progress');
+  expect(updates.find(message => message.phase === 'histogram' && message.phasePercent === 100)).toBeDefined();
+  expect(updates.find(message => message.phase === 'quantize' && message.phasePercent === 100)).toBeDefined();
+  expect(updates.find(message => message.phase === 'deflate' && message.phasePercent === 50)).toBeDefined();
+  for (const update of updates.filter(message => ['initializing','palette-sort','finalize','finalizing'].includes(message.phase))) {
+    expect(update.phasePercent).toBeUndefined();
+    expect(update.progress).toBeLessThan(100);
+    expect(update.predictable).not.toBe(true);
+  }
+  expect(messages.at(-1).type).toBe('compressed');
+});

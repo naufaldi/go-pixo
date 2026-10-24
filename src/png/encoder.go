@@ -116,10 +116,17 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 			return nil, err
 		}
 
+		if opts.ProgressCallback != nil {
+			opts.ProgressCallback("deflate", 100)
+			opts.ProgressCallback("finalize", 0)
+		}
 		if err := writeIEND(&buf); err != nil {
 			return nil, err
 		}
 
+		if opts.ProgressCallback != nil {
+			opts.ProgressCallback("finalize", 100)
+		}
 		result := buf.Bytes()
 
 		// Raw-pixel callers can request a stored fallback at their size target.
@@ -147,16 +154,14 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 		}
 	}
 
-	if opts.ProgressCallback != nil {
-		opts.ProgressCallback("preprocess", 100)
-		opts.ProgressCallback("filtering", 0)
-	}
-
 	// 2. Alpha Optimization (RGB=0 when A=0)
 	if opts.OptimizeAlpha && colorType == ColorRGBA {
 		processedPixels = OptimizeAlpha(processedPixels, colorType)
 	}
 
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("preprocess", 100)
+	}
 	var buf bytes.Buffer
 
 	// 3. Write PNG Signature
