@@ -162,7 +162,7 @@ it('stops streaming inflation at the first over-budget byte without retaining fu
   const push=vi.spyOn(Inflate.prototype,'push');
   const bytes=makeTiff({t259:[8]},Array.from(deflateSync(new Uint8Array(4096))));
   await expect(decodeTiff(bytes)).rejects.toThrow(/strip.*budget/i);
-  const stream=push.mock.contexts[0] as Inflate & {strm:{total_out:number}};
+  const stream=push.mock.contexts[0] as unknown as {strm:{total_out:number}};
   // The 2x1 RGB image allows six bytes; only seven are expanded, not 4096.
   expect(stream.strm.total_out).toBe(7);
 });

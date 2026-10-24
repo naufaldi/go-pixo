@@ -1,8 +1,16 @@
 # Builder stage
-FROM oven/bun:1 AS builder
+FROM node:24.22.1-bookworm-slim AS builder
+
+# Go module downloads use the system trust store, absent from the slim base.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep the package manager and Node runtime aligned with CI.
+COPY --from=oven/bun:1.4.3 /usr/local/bin/bun /usr/local/bin/bun
 
 # Install Go using official Go image as a base
-COPY --from=golang:1.25 /usr/local/go /usr/local/go
+COPY --from=golang:1.26 /usr/local/go /usr/local/go
 
 ENV PATH=/usr/local/go/bin:$PATH
 
@@ -12,7 +20,7 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 
 # Download Go dependencies
-RUN go mod download || true
+RUN go mod download
 
 # Copy Go source code
 COPY src/ src/

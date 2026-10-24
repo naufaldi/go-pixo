@@ -83,6 +83,15 @@ test('complete production cache reloads, compresses fresh images and downloads a
   context.on('request', (request) => {
     if (!['GET', 'HEAD'].includes(request.method())) nonGetRequests.push(request.url())
   })
+  // This URL is outside the precache list and must reach the actual network.
+  const networkAvailable = () => page.evaluate(async () => {
+    try {
+      await fetch(`/offline-network-probe.txt?nonce=${crypto.randomUUID()}`, { cache: 'no-store' })
+      return true
+    } catch {
+      return false
+    }
+  })
   await page.goto('/')
   await expect(page.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 60000 })
   expect(await page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe('activated')
@@ -93,8 +102,10 @@ test('complete production cache reloads, compresses fresh images and downloads a
   expect(cached).toEqual(files.map((file) => '/' + file.split('/').map(encodeURIComponent).join('/')).sort())
   // This is a real codec build, not just an app-shell cache with canvas fallback.
   expect(files.some((file) => /avif.*\.wasm$/i.test(file))).toBe(true)
+  expect(await networkAvailable()).toBe(true)
 
   await context.setOffline(true)
+  expect(await networkAvailable()).toBe(false)
   try {
     await page.reload()
     await expect(page.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 30000 })
@@ -136,7 +147,11 @@ test('complete production cache reloads, compresses fresh images and downloads a
   await uploadFreshImage(page, 1)
   await expect(page.getByTestId('batch-summary')).toContainText('2 completed, 0 failed, 0 remaining.', { timeout: 60000 })
   await expect(page.locator('[data-testid="file-item-done"], [data-testid="file-item-optimized"]')).toHaveCount(2)
-  expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+  // Chromium's navigator.onLine hint can stay true after an emulated offline
+  // reload. Prove an uncached request is disconnected before accepting the ZIP.
+  expect(await networkAvailable()).toBe(false)
+  expect(failedRequests.some((request) => request.url.includes('/offline-network-probe.txt') &&
+    request.error === 'net::ERR_INTERNET_DISCONNECTED')).toBe(true)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download ZIP', exact: true }).click(),

@@ -1,4 +1,4 @@
-import { Inflate } from 'pako';
+import { Inflate, type ZStream } from 'pako';
 import type { Ifd } from 'utif';
 import { MAX_IMAGE_PIXELS } from './imageFormats';
 
@@ -44,6 +44,9 @@ export function decodeTiffStrips(bytes: Uint8Array, page: Ifd, width: number, he
       // by at most one 16 KiB scratch chunk before the callback aborts inflate.
       const inflate=new Inflate({chunkSize:Math.min(16*1024,expected+1),windowBits:15});
       let stripWritten=0, complete=false;
+      // Keep the public stream reference to verify every encoded byte was consumed.
+      let stream: ZStream | undefined;
+      inflate.onStart=strm=>{ stream=strm; };
       inflate.onData=chunk=>{
         if (!(chunk instanceof Uint8Array)) throw new Error('Invalid TIFF strip output');
         if (chunk.length>expected-stripWritten || chunk.length>total-written-stripWritten) {
@@ -54,10 +57,9 @@ export function decodeTiffStrips(bytes: Uint8Array, page: Ifd, width: number, he
       };
       inflate.onEnd=status=>{ complete=status===0; };
       inflate.push(source,true);
-      // onEnd is called only at a real stream end (or error) in pako 2. Reject truncation,
+      // onEnd is called only at a real stream end (or error). Reject truncation,
       // checksum errors and trailing data as well as short decoded strips.
-      // Pako exposes consumed-input state, but @types/pako omits that field.
-      const remaining=(inflate as Inflate & {strm:{avail_in:number}}).strm.avail_in;
+      const remaining=stream?.avail_in;
       if (!complete || remaining!==0 || stripWritten!==expected) {
         throw new Error('Invalid or corrupt TIFF DEFLATE strip length or stream');
       }
