@@ -477,7 +477,8 @@ func TestGenerateCandidates(t *testing.T) {
 	coeff := float32(50.0)
 	step := float32(16.0)
 
-	candidates := generateCandidates(coeff, step, -255, 255)
+	values, count := generateCandidates(coeff, step, -255, 255)
+	candidates := values[:count]
 
 	if len(candidates) == 0 {
 		t.Error("Expected at least one candidate")
@@ -494,28 +495,6 @@ func TestGenerateCandidates(t *testing.T) {
 
 	if !hasCenter {
 		t.Error("Center value should be in candidates")
-	}
-}
-
-func TestGenerateCandidatesWithRunLength(t *testing.T) {
-	coeff := float32(50.0)
-	step := float32(16.0)
-
-	candidates := generateCandidatesWithRunLength(coeff, step, 0, -255, 255)
-
-	if len(candidates) == 0 {
-		t.Error("Expected at least one candidate")
-	}
-
-	for _, c := range candidates {
-		if c.value < -255 || c.value > 255 {
-			t.Errorf("Candidate value %d out of range", c.value)
-		}
-	}
-
-	candidatesZeros := generateCandidatesWithRunLength(coeff, step, 16, -255, 255)
-	if len(candidatesZeros) != 1 || candidatesZeros[0].value != 0 {
-		t.Error("Run length >= 16 should only return zero candidate")
 	}
 }
 

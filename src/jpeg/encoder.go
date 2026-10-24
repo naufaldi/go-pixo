@@ -416,7 +416,7 @@ func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *Quantiz
 	}
 
 	if e.Options.TrellisQuant {
-		quantized := TrellisOptimizeWithConfig(dct, qTable, e.trellisConfig)
+		quantized := trellisOptimize(dct, qTable, e.trellisConfig, isLuminance)
 		return ZigzagReorder(quantized)
 	}
 
