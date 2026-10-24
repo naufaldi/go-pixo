@@ -9,7 +9,7 @@ import (
 
 /**
  * HandleEncodePng converts JS arguments to Go and calls EncodePng.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number)
+ * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, allowRGBAFallback?: boolean)
  */
 func HandleEncodePng(this js.Value, args []js.Value) any {
 	if err := checkPNGArguments(args, false); err != nil {
@@ -29,8 +29,14 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 		return argumentError(err)
 	}
 
+	// Basic full-budget compression is opportunistic unless explicitly disabled.
+	allowRGBAFallback := true
+	if len(args) > 7 && args[7].Type() == js.TypeBoolean {
+		allowRGBAFallback = args[7].Bool()
+	}
+
 	// Call the actual implementation
-	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors)
+	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors, allowRGBAFallback)
 	if err != nil {
 		return js.ValueOf(fmt.Sprintf("error: %v", err))
 	}
@@ -44,7 +50,7 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 
 /**
  * HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, [filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean], [progressCallback: function])
+ * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, [filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean], [progressCallback: function], [allowRGBAFallback: boolean])
  */
 func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	if err := checkPNGArguments(args, true); err != nil {
@@ -95,6 +101,10 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 		return argumentError(err)
 	}
 
+	// Preserve strict behavior for explicit advanced quantizer calls. The app
+	// opts in after the existing argument-17 progress callback.
+	allowRGBAFallback := len(args) > 17 && args[17].Type() == js.TypeBoolean && args[17].Bool()
+
 	// Call the advanced implementation
 	output, err := EncodePngAdvanced(
 		pixels, width, height, colorType, preset,
@@ -107,6 +117,7 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 		optimalDeflate,
 		filterEarlyTerm,
 		progressFunc,
+		allowRGBAFallback,
 	)
 	if err != nil {
 		return js.ValueOf(fmt.Sprintf("error: %v", err))

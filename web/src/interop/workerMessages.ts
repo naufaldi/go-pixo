@@ -9,6 +9,7 @@ export type CompressPayload = {
   preset: number
   lossy: boolean
   maxColors: number
+  pngAllowRGBAFallback?: boolean
   dithering: boolean
   ditherStrength: number
   qualityTarget: number
@@ -84,6 +85,7 @@ export function buildCompressMessageFromFields(
   originalFileBytes: Uint8Array,
   targetWidth?: number,
   targetHeight?: number,
+  pngAllowRGBAFallback = false,
 ): CompressMessage {
   return buildCompressMessage({
     id,
@@ -107,6 +109,7 @@ export function buildCompressMessageFromFields(
     originalFileBytes,
     targetWidth,
     targetHeight,
+    pngAllowRGBAFallback,
   })
 }
 

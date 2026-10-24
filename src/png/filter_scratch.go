@@ -67,7 +67,7 @@ func SelectFilterWithStrategyAndScratch(row []byte, prevRow []byte, bpp int, str
 	case FilterStrategyEntropy:
 		return selectEntropyWithScratch(row, prevRow, bpp, scratch)
 	case FilterStrategyBruteForce:
-		return selectBruteForce(row, prevRow, bpp)
+		return selectBruteForceWithScratch(row, prevRow, bpp, scratch)
 	case FilterStrategyBigrams:
 		return selectBigrams(row, prevRow, bpp)
 	case FilterStrategyCombined:

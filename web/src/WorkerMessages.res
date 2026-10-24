@@ -27,6 +27,7 @@ external buildCompressMessage: (
   array<int>,
   option<int>,
   option<int>,
+  bool,
 ) => compressMessage = "buildCompressMessageFromFields"
 
 @get external messageType: parsed => string = "type"

@@ -155,6 +155,13 @@ func checkCallback(args []js.Value, index int) error {
 	return nil
 }
 
+func checkOptionalBoolean(args []js.Value, index int) error {
+	if len(args) > index && !args[index].IsUndefined() && args[index].Type() != js.TypeBoolean {
+		return fmt.Errorf("argument %d must be a boolean", index+1)
+	}
+	return nil
+}
+
 func checkPNGArguments(args []js.Value, advanced bool) error {
 	rules := []argumentRule{integerArg(1, imagelimit.MaxDimension), integerArg(1, imagelimit.MaxDimension), integerArg(0, 6), integerArg(0, 4), booleanArg, integerArg(0, 256)}
 	if advanced {
@@ -163,8 +170,13 @@ func checkPNGArguments(args []js.Value, advanced bool) error {
 	if err := checkArguments(args, rules); err != nil {
 		return err
 	}
-	if args[5].Bool() && args[6].Int() < 2 {
-		return fmt.Errorf("lossy PNG requires 2 to 256 colors")
+	if args[5].Bool() && args[6].Int() < 1 {
+		return fmt.Errorf("lossy PNG requires 1 to 256 colors")
+	}
+	if !advanced {
+		if err := checkOptionalBoolean(args, 7); err != nil {
+			return err
+		}
 	}
 	if advanced {
 		switch {
@@ -178,6 +190,9 @@ func checkPNGArguments(args []js.Value, advanced bool) error {
 				return err
 			}
 			if err := checkCallback(args, 16); err != nil {
+				return err
+			}
+			if err := checkOptionalBoolean(args, 17); err != nil {
 				return err
 			}
 		default:

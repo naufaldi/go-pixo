@@ -25,6 +25,9 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 	if err != nil {
 		return err
 	}
+	if err := validateFilterOptions(opts); err != nil {
+		return err
+	}
 
 	bpp := BytesPerPixel(colorType)
 
@@ -119,6 +122,9 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 	if err != nil {
 		return nil, err
 	}
+	if err := validateFilterOptions(opts); err != nil {
+		return nil, err
+	}
 	bpp := BytesPerPixel(colorType)
 
 	if len(pixels) != expectedRawLen {
@@ -133,7 +139,12 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 // scanline stream before the next row can overwrite its buffer.
 func filterScanlines(pixels []byte, width, height, bpp int, opts Options) []byte {
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
-	scratch := NewAdaptiveScratch(width*bpp, bpp)
+	scratch := NewAdaptiveScratchWithConfig(width*bpp, bpp, FilterSelectionConfig{
+		EarlyTerminationEnabled:   opts.FilterEarlyTermination,
+		FilterSelectionThreshold:  float64(width * bpp),
+		EarlyTerminationThreshold: 0.5 * float64(width*bpp),
+		MinFiltersToTry:           DefaultMinFiltersToTry,
+	})
 	var prevRow []byte
 	for y := 0; y < height; y++ {
 		if opts.ProgressCallback != nil && y%100 == 0 {
@@ -151,6 +162,17 @@ func filterScanlines(pixels []byte, width, height, bpp int, opts Options) []byte
 		opts.ProgressCallback("deflate", 0)
 	}
 	return scanlineData
+}
+
+func validateFilterOptions(opts Options) error {
+	if opts.FilterEarlyTermination {
+		switch opts.FilterStrategy {
+		case FilterStrategyMinSum, FilterStrategyAdaptive, FilterStrategyParallel, FilterStrategyEntropy:
+		default:
+			return fmt.Errorf("png: early filter termination requires MinSum, Adaptive, Parallel, or Entropy strategy")
+		}
+	}
+	return nil
 }
 
 // ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.

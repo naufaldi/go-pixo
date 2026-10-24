@@ -61,6 +61,9 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 	if len(pixels) != expectedSize {
 		return nil, fmt.Errorf("png: pixel count mismatch: got %d bytes, want %d", len(pixels), expectedSize)
 	}
+	if err := validateFilterOptions(opts); err != nil {
+		return nil, err
+	}
 	if opts.ProgressCallback != nil {
 		opts.ProgressCallback("preprocess", 0)
 	}
@@ -71,14 +74,21 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 	// 0. Quantization (Lossy) - before other optimizations
 	if opts.MaxColors > 0 && opts.MaxColors <= 256 {
-		var indexedPixels []byte
-		var palette Palette
-
-		if opts.Dithering {
-			indexedPixels, palette = QuantizeWithDithering(processedPixels, int(colorType), opts.MaxColors)
-		} else {
-			indexedPixels, palette = Quantize(processedPixels, int(colorType), opts.MaxColors)
+		// Palette stores RGB only. Do not silently discard alpha or pass grayscale
+		// samples into the RGB quantizer. Lossless encoding supports both inputs.
+		if colorType != ColorRGB && colorType != ColorRGBA {
+			return nil, fmt.Errorf("png: palette quantization requires RGB or opaque RGBA pixels")
 		}
+		if colorType == ColorRGBA {
+			for i := 3; i < len(pixels); i += 4 {
+				if pixels[i] != 255 {
+					return nil, fmt.Errorf("png: palette quantization does not support transparency; use lossless encoding")
+				}
+			}
+		}
+		// Avoid the legacy full RGB lookup table here. Linear nearest-color search
+		// is exact, bounded by 256 palette entries, and needs no image-sized scratch.
+		indexedPixels, palette := QuantizeWithOptions(processedPixels, int(colorType), opts.MaxColors, opts, false)
 
 		if opts.ProgressCallback != nil {
 			opts.ProgressCallback("preprocess", 100)
@@ -221,6 +231,7 @@ func (e *Encoder) encodeMinimalPNG(pixels []byte, opts Options) ([]byte, error) 
 	opts.CompressionLevel = 0
 	opts.OptimalDeflate = false
 	opts.FilterStrategy = FilterStrategyNone
+	opts.FilterEarlyTermination = false
 
 	if err := WriteIDATWithOptions(&buf, pixels, opts.Width, opts.Height, opts.ColorType, opts); err != nil {
 		return nil, err

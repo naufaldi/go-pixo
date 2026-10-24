@@ -105,6 +105,8 @@ let make = () => {
           settings.zopfliIterations, settings.progressive, settings.trellis,
           settings.subsampling, settings.optimizeHuffman, result.originalFileBytes,
           settingsState.targetWidth, settingsState.targetHeight,
+          // Presets allow palette compression; they do not require indexed PNG.
+          true,
         )
         submit(workerPool, message, (phase, percent, predictable, phaseTarget) => {
           if isCurrent(item, epoch) {

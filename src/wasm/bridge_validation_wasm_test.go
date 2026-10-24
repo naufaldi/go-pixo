@@ -45,12 +45,14 @@ func TestHandlersRejectMalformedArguments(t *testing.T) {
 		{"png string", HandleEncodePng, []any{bytes, "1", 1, 6, 2, false, 0}},
 		{"png boolean", HandleEncodePng, []any{bytes, 1, 1, 6, 2, 1, 0}},
 		{"png preset", HandleEncodePng, []any{bytes, 1, 1, 6, -1, false, 0}},
+		{"png fallback policy type", HandleEncodePng, []any{bytes, 1, 1, 6, 2, false, 0, "true"}},
 		{"png colors", HandleEncodePng, []any{bytes, 1, 1, 6, 2, true, 257}},
 		{"advanced strength", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, true, 2, false, math.Inf(1), 75, 0}},
 		{"advanced iterations", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, false, 0, false, 0.5, 75, 100000}},
 		{"advanced partial options", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, 2}},
 		{"advanced filter", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, 999, false, 0, false, false}},
 		{"advanced distance", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, 0, false, 99, false, false}},
+		{"advanced fallback policy type", HandleEncodePngAdvanced, []any{bytes, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, 0, false, 0, false, false, js.Undefined(), "true"}},
 		{"jpeg wrapped quality", HandleEncodeJpeg, []any{bytes.Call("subarray", 0, 3), 1, 1, 3, 331}},
 		{"jpeg short", HandleEncodeJpeg, []any{js.Global().Get("Uint8Array").New(2), 1, 1, 3, 75}},
 		{"jpeg subsampling", HandleEncodeJpegAdvanced, []any{bytes, 1, 1, 3, 75, 99, false, false, false, 1}},
@@ -148,6 +150,8 @@ func TestRecompressHandlersRejectOversizedHeaders(t *testing.T) {
 func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 	pixels := js.Global().Get("Uint8Array").New(4)
 	clamped := js.Global().Get("Uint8ClampedArray").New(4)
+	opaque := js.Global().Get("Uint8Array").New(4)
+	js.CopyBytesToJS(opaque, []byte{12, 34, 56, 255})
 	view := js.Global().Get("Uint8Array").New(8).Call("subarray", 4, 8)
 	viewBytes := []byte{12, 34, 56, 255}
 	js.CopyBytesToJS(view, viewBytes)
@@ -175,12 +179,16 @@ func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 		args   []any
 	}{
 		{"png", HandleEncodePng, []any{pixels, 1, 1, 6, 2, false, 0}},
+		{"png preset RGBA fallback", HandleEncodePng, []any{pixels, 1, 1, 6, 2, true, 256, true}},
+		{"png one-color palette", HandleEncodePng, []any{opaque, 1, 1, 6, 2, true, 1}},
 		{"png intrinsic subview copy", HandleEncodePng, []any{view, 1, 1, 6, 2, false, 0}},
 		{"png hostile view prototype", HandleEncodePng, []any{hostileView, 1, 1, 6, 2, false, 0}},
 		{"png clamped real size", HandleEncodePng, []any{clamped, 1, 1, 6, 2, false, 0}},
 		{"png advanced legacy", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0}},
 		{"png advanced legacy callback", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, callback.Value}},
 		{"png advanced full callback", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, 0, false, 0, false, false, callback.Value}},
+		{"png advanced preset RGBA fallback", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, true, 256, false, 0.5, 75, 0, 0, false, 0, false, false, callback.Value, true}},
+		{"png advanced one-color palette", HandleEncodePngAdvanced, []any{opaque, 1, 1, 6, 2, true, 1, false, 0.5, 75, 0}},
 		{"jpeg", HandleEncodeJpeg, []any{pixels.Call("subarray", 0, 3), 1, 1, 3, 75}},
 		{"jpeg advanced", HandleEncodeJpegAdvanced, []any{pixels.Call("subarray", 0, 3), 1, 1, 3, 75, 0, false, false, true, 1}},
 	} {
