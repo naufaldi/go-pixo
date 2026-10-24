@@ -75,10 +75,7 @@ func TestPaletteLUT_TransparentDisabled(t *testing.T) {
 	lut := NewPaletteLUT(palette)
 	lut.SetTransparentFallback(false)
 
-	ri := 128 >> 2
-	gi := 128 >> 2
-	bi := 128 >> 2
-	want := lut.opaqueLUT[ri][gi][bi]
+	want := uint8(1) // Compact RGB(128,128,128) is nearer white than black.
 	got := lut.Lookup(128, 128, 128, 128)
 
 	if got != want {
@@ -135,13 +132,8 @@ func TestPaletteLUT_MemoryUsage(t *testing.T) {
 	lut := NewPaletteLUT(palette)
 	memoryUsage := lut.MemoryUsage()
 
-	expected := 64 * 64 * 64
-	if memoryUsage != expected {
-		t.Errorf("MemoryUsage() = %d, want %d", memoryUsage, expected)
-	}
-
-	if memoryUsage != 262144 {
-		t.Errorf("Expected 262,144 entries, got %d", memoryUsage)
+	if memoryUsage < 256*3 || memoryUsage > 128*1024 {
+		t.Errorf("MemoryUsage() = %d, want snapshot and bounded cache below 128 KiB", memoryUsage)
 	}
 }
 
