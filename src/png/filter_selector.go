@@ -155,32 +155,7 @@ func SelectFilterWithEntropy(row []byte, prevRow []byte, bpp int) (FilterType, [
 }
 
 func selectBruteForce(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
-	var bestFilter FilterType
-	var bestFiltered []byte
-	bestSize := -1
-
-	filters := []struct {
-		typ FilterType
-		fn  func() []byte
-	}{
-		{FilterNone, func() []byte { return ApplyFilterNone(row) }},
-		{FilterSub, func() []byte { return ApplyFilterSub(row, bpp) }},
-		{FilterUp, func() []byte { return ApplyFilterUp(row, prevRow) }},
-		{FilterAverage, func() []byte { return ApplyFilterAverage(row, prevRow, bpp) }},
-		{FilterPaeth, func() []byte { return ApplyFilterPaeth(row, prevRow, bpp) }},
-	}
-
-	for _, f := range filters {
-		filtered := f.fn()
-		size := len(filtered)
-		if bestSize < 0 || size < bestSize {
-			bestSize = size
-			bestFilter = f.typ
-			bestFiltered = filtered
-		}
-	}
-
-	return bestFilter, bestFiltered
+	return selectBruteForceWithScratch(row, prevRow, bpp, NewAdaptiveScratch(len(row), bpp))
 }
 
 // SelectAll returns the chosen filter type for each scanline using the default strategy.

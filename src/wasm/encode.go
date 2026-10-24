@@ -37,6 +37,9 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 
 	if lossy && maxColors > 0 && maxColors <= 256 {
 		opts.ApplyLossy(maxColors, 75, 0.5)
+	} else {
+		opts.ApplyLossless()
+		opts.OptimizeAlpha = false
 	}
 
 	encoder, err := png.NewEncoderWithOptions(opts)
@@ -103,6 +106,7 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 	if distanceMetric >= int(png.DistanceMetricEuclidean) {
 		opts.DistanceMetric = png.DistanceMetric(distanceMetric)
 	}
+	opts.FilterEarlyTermination = filterEarlyTerm
 
 	if lossy && maxColors > 0 && maxColors <= 256 {
 		if qualityTarget < 0 {
@@ -119,9 +123,10 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		}
 
 		opts.ApplyLossy(maxColors, qualityTarget, ditherStrength)
-	} else if dithering {
-		opts.Dithering = true
-		opts.DitheringStrength = ditherStrength
+		opts.Dithering = dithering
+	} else {
+		opts.ApplyLossless()
+		opts.OptimizeAlpha = false
 	}
 
 	encoder, err := png.NewEncoderWithOptions(opts)

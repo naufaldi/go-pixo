@@ -6,12 +6,49 @@ This document explains the lossy compression pipeline in go-pixo, including pale
 
 PNG compression can be either **lossless** or **lossy**:
 
-| Mode | Quality | Size Reduction | Use Case |
-|------|---------|----------------|----------|
-| Lossless | 100% | 50-70% | Graphics, screenshots, text |
-| Lossy | 70-95% | 70-99% | Photos, gradients, large images |
+| Mode | Pixel behavior | Size behavior |
+|------|----------------|---------------|
+| Lossless | Preserves every sample, including RGB under zero alpha | Byte recompression returns the original when the candidate is larger |
+| Palette quantization | May change RGB colors | Savings depend on the image and palette overhead |
 
 Lossy compression reduces file size by reducing the number of colors (quantization) and optionally applying dithering to smooth the visual impact.
+
+## Encoder option contract
+
+`Encoder.EncodeWithOptions` uses `QuantizeWithOptions` when `MaxColors` is 1..256.
+`EncodePngAdvanced` exposes the same settings without changing its argument order.
+These controls have distinct meanings:
+
+- `MaxColors` is a hard palette cap. Zero disables quantization.
+- `QualityTarget` (0..100) drives the existing median-cut heuristic. When the input
+  exceeds the cap, it uses roughly `MaxColors * (0.5 + QualityTarget/200)` entries
+  and adjusts bucket splits. The one-color cap always stays one. Inputs already
+  within the cap retain their exact RGB colors, regardless of quality.
+- Quality 100 uses the full cap. It still permits lossy quantization. This is not
+  a measured fidelity target, a minimum-quality guarantee, or JPEG's quality scale.
+  There is no extra quality reduction to meet a file-size target, including for
+  tiny images.
+- Empty `Options{}` retains the legacy full-quality helper behavior. To request
+  quality zero in a Go struct literal, set `QualityTargetSet: true`. Presets and
+  `ApplyLossy` set this presence flag automatically. Nonzero quality values always
+  take effect. The WASM argument zero explicitly requests the lowest quality.
+- `UsePerceptualDistance=true` or `DistanceMetricRedmean` selects Redmean instead of
+  Euclidean distance for palette indices. It affects both direct and dithered
+  lookups; it does not change how median cut generates the palette.
+- `Dithering` enables horizontal error diffusion. `DitheringStrength` scales the
+  signed error sent to the next pixel by `7/16`, from zero to full strength. Error
+  resets at each row. This path is not full two-dimensional Floyd-Steinberg.
+
+The production mapper uses exact linear palette searches, at most 256 entries per
+pixel. Diffusion carries three integers and allocates no image-sized scratch or
+full RGB lookup table. Color counting still uses the existing histogram. The
+optional LUT argument on standalone quantizer helpers retains its legacy behavior.
+
+The current RGB palette cannot represent alpha. Palette requests reject grayscale
+and non-opaque RGBA inputs instead of panicking or silently discarding transparency.
+Use lossless encoding for these inputs. Both public PNG encode entry points disable
+quantization, dithering, and hidden-RGB optimization when `lossy=false`.
+`RecompressPNGBytesLossless` also overrides lossy template settings.
 
 ## When to Use Palette Quantization
 
@@ -53,7 +90,8 @@ palette := MedianCutWithQuality(colors, maxColors, quality)
 
 ### Alpha Channel Support
 
-For RGBA images, alpha information is preserved using the tRNS chunk:
+The encoder's palette path supports opaque RGBA only. The standalone RGBA palette
+generation helpers below are not an alpha-preserving encoder pipeline:
 
 ```go
 // RGBA quantization with alpha
@@ -64,7 +102,9 @@ palette := MedianCutRGBA(colors, maxColors)
 
 Dithering distributes quantization error to neighboring pixels, creating the illusion of more colors.
 
-### Available Algorithms
+### Standalone helpers
+
+These helpers are separate from the production option path described above:
 
 | Method | Quality | Speed | Description |
 |--------|---------|-------|-------------|
