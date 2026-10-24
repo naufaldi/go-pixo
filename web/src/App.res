@@ -146,7 +146,12 @@ let make = () => {
     None
   }, [state])
 
-  let handleFileSelect = files => dispatch(AddItems(files->Array.map(createQueueItem)))
+  let handleFileSelect = files => {
+    if files->Array.length > 0 {
+      cancelZipExport()
+      dispatch(AddItems(files->Array.map(createQueueItem)))
+    }
+  }
   let handleDragEnter = e => { ReactEvent.Mouse.preventDefault(e); dispatch(SetDragActive(true)) }
   let handleDragOver = e => ReactEvent.Mouse.preventDefault(e)
   let handleDragLeave = e => { ReactEvent.Mouse.preventDefault(e); dispatch(SetDragActive(false)) }

@@ -243,6 +243,27 @@ describe('ZIP export lifecycle', () => {
     expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
   })
 
+  it.each(['resolve', 'reject'] as const)('adding files aborts the previous ZIP and ignores its late %s', async settlement => {
+    let signal!: AbortSignal
+    let finish!: () => void
+    let fail!: (error: Error) => void
+    downloadAllAsZip.mockImplementation((_items, exportSignal) => {
+      signal = exportSignal
+      return new Promise<void>((resolve, reject) => { finish = resolve; fail = reject })
+    })
+    const { container } = await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    await act(async () => addFiles(container, ['new.png']))
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      if (settlement === 'resolve') finish()
+      else fail(new Error('Stale export failure'))
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(downloadAllAsZip).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
+  })
+
   it.each(['resolve', 'reject'] as const)('clear aborts the export and an old %s cannot change a newer export', async settlement => {
     const pending: { signal: AbortSignal; reject: (error: Error) => void; resolve: () => void }[] = []
     downloadAllAsZip.mockImplementation((_items, signal) => new Promise<void>((resolve, reject) => pending.push({ signal, resolve, reject })))
