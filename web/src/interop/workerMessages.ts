@@ -49,6 +49,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+// Worker messages already own their received storage. Preserve view offsets
+// instead of constructing a second full output allocation.
+export function receivedBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  throw new Error('Invalid compression worker bytes');
+}
+
 export function buildCompressMessage(payload: CompressPayload): CompressMessage {
   return { type: 'compress', ...payload }
 }
@@ -136,12 +145,12 @@ export function parseWorkerMessage(value: unknown): ParsedWorkerMessage {
         return { type: 'unknown' }
       }
 
-      return {
+      try { return {
         type: 'compressed',
         id: value.id,
-        compressedBytes: new Uint8Array(value.compressedBytes as ArrayBufferLike),
+        compressedBytes: receivedBytes(value.compressedBytes),
         outputFormat: typeof value.outputFormat === 'string' ? value.outputFormat : 'png',
-      }
+      } } catch { return {type: 'unknown'} }
 
     case 'error':
       return {

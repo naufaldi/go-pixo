@@ -8,6 +8,16 @@ type compressionResult = {compressedBytes: array<int>, outputFormat: string}
 @send external terminatePool: pool => unit = "terminate"
 @send external cancelTask: (pool, string) => unit = "cancel"
 @send external submit: (pool, WorkerMessages.compressMessage, (string, int, bool, option<int>) => unit) => Promise.t<compressionResult> = "submit"
+type taskRegistry
+@new @module("./interop/taskRegistry.ts") external createTaskRegistry: unit => taskRegistry = "TaskRegistry"
+@get external activeCount: taskRegistry => int = "size"
+@send external hasTask: (taskRegistry, string) => bool = "has"
+@send external isRemoved: (taskRegistry, string) => bool = "isRemoved"
+@send external reserveTask: (taskRegistry, string, string) => Download.abortSignal = "reserve"
+@send external removeTask: (taskRegistry, string) => unit = "remove"
+@send external abortTasks: taskRegistry => unit = "abortAll"
+@send external settleTask: (taskRegistry, string) => unit = "settle"
+@send external commitTasks: (taskRegistry, array<string>) => unit = "commit"
 @module("./interop/clipboard.ts") external filesFromPasteEvent: 'a => array<Types.Web.File.t> = "filesFromPasteEvent"
 let errorMessage = error => error->JsExn.fromException->Option.flatMap(JsExn.message)->Option.getOr("Failed to process image")
 let createBlobUrl: (string, array<int>) => string = %raw("(mime, bytes) => URL.createObjectURL(new Blob([bytes], {type: mime}))")
@@ -25,8 +35,11 @@ let make = () => {
   let poolRef = React.useRef(None: option<pool>)
   let mountedRef = React.useRef(true)
   let epochRef = React.useRef(0)
-  let activeRef = React.useRef([]: array<string>)
-  let removedRef = React.useRef([]: array<string>)
+  let tasksRef = React.useRef(None: option<taskRegistry>)
+  let tasks = switch tasksRef.current {
+  | Some(tasks) => tasks
+  | None => let tasks = createTaskRegistry(); tasksRef.current = Some(tasks); tasks
+  }
   let pendingDownloadRef = React.useRef(None: option<string>)
   let zipExportRef = React.useRef(None: option<Download.abortController>)
   let cancelZipExport = () => {
@@ -46,23 +59,25 @@ let make = () => {
       mountedRef.current = false
       cancelZipExport()
       epochRef.current = epochRef.current + 1
+      abortTasks(tasks)
       poolRef.current->Option.forEach(terminatePool)
+      commitTasks(tasks, [])
       stateRef.current.items->Array.forEach(revokeItemUrls)
     })
   })
 
   let isCurrent = (item: Types.queueItem, epoch: int) =>
     mountedRef.current && epochRef.current == epoch &&
-    !(removedRef.current->Array.includes(item.id)) &&
+    !isRemoved(tasks, item.id) &&
     stateRef.current.items->Array.some(current => current.id == item.id && current.generation == item.generation)
 
-  let processItem = (item: Types.queueItem, settingsState: Types.appState, workerPool: pool) => {
+  let processItem = (item: Types.queueItem, settingsState: Types.appState, workerPool: pool, signal: Download.abortSignal) => {
     let epoch = epochRef.current
     let key = taskKey(item)
     let started = now()
     dispatch(UpdateTask(item.id, item.generation, current => {...current, status: Types.Decoding}))
     dispatch(SetTaskProgress(item.id, item.generation, Some(Progress.seedProgress(item.id, item.originalBytes, started))))
-    ImageDecode.decodeFile(item.file)
+    ImageDecode.decodeFile(item.file, signal)
     ->Promise.then(result => {
       if !isCurrent(item, epoch) {
         BlobUrl.revokeObjectURL(result.previewUrl)
@@ -120,25 +135,26 @@ let make = () => {
       Promise.resolve()
     })
     ->Promise.then(_ => {
-      activeRef.current = activeRef.current->Array.filter(active => active != key)
+      settleTask(tasks, key)
       if mountedRef.current {
         dispatch(SetTaskProgress(item.id, item.generation, None))
         // A stale decode can release capacity without changing a current item.
-        dispatch(SetProcessingAll(activeRef.current->Array.length > 0))
+        dispatch(SetProcessingAll(activeCount(tasks) > 0))
       }
       Promise.resolve()
     })->ignore
   }
 
   React.useEffect1(() => {
+    commitTasks(tasks, state.items->Array.map(item => item.id))
     switch poolRef.current {
     | Some(workerPool) =>
       state.items->Array.forEach(item => {
         let key = taskKey(item)
-        if item.status == Types.Pending && activeRef.current->Array.length < capacity(workerPool) && !(activeRef.current->Array.includes(key)) {
+        if item.status == Types.Pending && activeCount(tasks) < capacity(workerPool) && !hasTask(tasks, key) && !isRemoved(tasks, item.id) {
           // Reserve before decoding, so re-renders cannot start this task twice.
-          activeRef.current = activeRef.current->Array.concat([key])
-          processItem(item, state, workerPool)
+          let signal = reserveTask(tasks, key, item.id)
+          processItem(item, state, workerPool, signal)
         }
       })
     | None => ()
@@ -172,6 +188,7 @@ let make = () => {
 
   let resetPool = () => {
     epochRef.current = epochRef.current + 1
+    abortTasks(tasks)
     poolRef.current->Option.forEach(terminatePool)
     poolRef.current = Some(createPool())
   }
@@ -184,7 +201,7 @@ let make = () => {
   }
   let handleRemove = id => {
     cancelZipExport()
-    removedRef.current = removedRef.current->Array.concat([id])
+    removeTask(tasks, id)
     stateRef.current.items->Array.find(item => item.id == id)->Option.forEach(item =>
       poolRef.current->Option.forEach(workerPool => cancelTask(workerPool, taskKey(item))))
     if pendingDownloadRef.current == Some(id) { pendingDownloadRef.current = None }
