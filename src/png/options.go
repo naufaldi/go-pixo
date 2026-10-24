@@ -14,7 +14,7 @@ const (
 	PresetMax
 	// PresetExtreme favors maximum size reduction.
 	PresetExtreme
-	// PresetUltra uses combined Entropy+Bigrams filter strategy with deep Zopfli passes.
+	// PresetUltra uses combined Entropy+Bigrams filtering and the capped parse search.
 	PresetUltra
 )
 
@@ -60,27 +60,31 @@ const (
 
 // Options represents PNG encoding options.
 type Options struct {
-	Width               int
-	Height              int
-	ColorType           ColorType
-	CompressionLevel    int
-	FilterStrategy      FilterStrategy
-	OptimizeAlpha       bool
-	ReduceColorType     bool
-	StripMetadata       bool
-	OptimalDeflate      bool
-	MaxColors           int
-	Dithering           bool
-	DitheringStrength   float64
-	QualityTarget       int
-	ZopfliIterations    int
-	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
-	PreserveChunks      []Chunk
-	OriginalFileSize    int
+	Width             int
+	Height            int
+	ColorType         ColorType
+	CompressionLevel  int // Zero writes stored blocks directly, even with OptimalDeflate.
+	FilterStrategy    FilterStrategy
+	OptimizeAlpha     bool
+	ReduceColorType   bool
+	StripMetadata     bool
+	OptimalDeflate    bool
+	MaxColors         int
+	Dithering         bool
+	DitheringStrength float64
+	QualityTarget     int
+	// ZopfliIterations budgets up to three distinct parses beyond the baseline;
+	// see compress.ZopfliConfig. OptimalConfig.MaxIterations takes precedence.
+	ZopfliIterations      int
+	EnsureSizeNotLarger   bool // Requests a stored fallback when the candidate misses the size target.
+	PreserveChunks        []Chunk
+	OriginalFileSize      int
 	UsePerceptualDistance bool
 	DistanceMetric        DistanceMetric
-	OptimalConfig         compress.OptimalConfig
-	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
+	// OptimalConfig supplies MaxIterations to the bounded search. BlockSplitting
+	// is unsupported; other fields configure compress.OptimalParse, not this path.
+	OptimalConfig    compress.OptimalConfig
+	ProgressCallback func(phase string, progress int) // Optional callback for progress updates
 }
 
 // FastOptions returns options optimized for speed.
@@ -104,8 +108,8 @@ func FastOptions(width, height int) Options {
 	}
 }
 
-// FasterOptions returns options optimized for speed with size guarantee.
-// If compressed output is larger than original, it will use minimal compression.
+// FasterOptions returns options optimized for speed with a cheap stored fallback.
+// RecompressPNGBytesLossless provides the file-size guarantee using original bytes.
 func FasterOptions(width, height int) Options {
 	return Options{
 		Width:               width,
@@ -127,7 +131,7 @@ func FasterOptions(width, height int) Options {
 }
 
 // SmallerOptions returns options optimized for maximum compression with quality preservation.
-// Uses bigrams-based filtering and moderate Zopfli iterations for best size/quality ratio.
+// Uses bigrams-based filtering and the bounded parse search.
 func SmallerOptions(width, height int) Options {
 	return Options{
 		Width:               width,
@@ -209,24 +213,24 @@ func ExtremeOptions(width, height int) Options {
 }
 
 // UltraOptions returns options for maximum compression using the combined Entropy+Bigrams
-// filter strategy with deep Zopfli passes. Slower than ExtremeOptions but can squeeze
-// out additional savings on images already processed by other tools.
+// filter strategy and the bounded parse search. Its filter scoring can find
+// additional savings; iteration budgets above three do not add compression work.
 func UltraOptions(width, height int) Options {
 	return Options{
-		Width:             width,
-		Height:            height,
-		ColorType:         ColorRGBA,
-		CompressionLevel:  10,
-		FilterStrategy:    FilterStrategyCombined,
-		OptimizeAlpha:     true,
-		ReduceColorType:   true,
-		StripMetadata:     true,
-		OptimalDeflate:    true,
-		MaxColors:         0,
-		Dithering:         false,
-		DitheringStrength: 0.0,
-		QualityTarget:     100,
-		ZopfliIterations:  20,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    10,
+		FilterStrategy:      FilterStrategyCombined,
+		OptimizeAlpha:       true,
+		ReduceColorType:     true,
+		StripMetadata:       true,
+		OptimalDeflate:      true,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		ZopfliIterations:    20,
 		EnsureSizeNotLarger: false,
 	}
 }

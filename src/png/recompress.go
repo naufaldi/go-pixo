@@ -72,7 +72,8 @@ func RecompressPNGBytesLossless(inputPNG []byte, opts Options) ([]byte, error) {
 	encOpts.Height = height
 	encOpts.ColorType = ColorRGBA
 	encOpts.PreserveChunks = preserved
-	// Compare against the original below; the encoder's minimal fallback drops metadata.
+	// Compare the candidate directly against the original below; do not encode a
+	// second raw-pixel fallback when the original bytes are already available.
 	encOpts.EnsureSizeNotLarger = false
 	encOpts.OriginalFileSize = len(inputPNG)
 

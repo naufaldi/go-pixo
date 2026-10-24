@@ -2,22 +2,24 @@ package compress
 
 import "math"
 
-// ZopfliConfig holds configuration for Zopfli-style compression.
+// ZopfliConfig controls a bounded search over greedy LZ77 parses, not full Zopfli.
 type ZopfliConfig struct {
-	// Iterations is the number of iterations to run.
-	// More iterations produce better compression but take longer.
-	// Default: 15
+	// Iterations budgets distinct trials beyond the always-retained level-6 parse.
+	// One trial tries level 9; two also try level 7; three also try level 8.
+	// Larger values are capped at three because no further strategies are implemented.
+	// Nonpositive values use the legacy default of 15 (effectively three trials).
 	Iterations int
 
-	// BlockSplitting enables optimal block splitting.
-	// Default: true
+	// BlockSplitting is retained for compatibility but is unsupported and ignored.
+	// Output uses a single fixed or dynamic Huffman block.
 	BlockSplitting bool
 
-	// MaxBlockSize is the maximum size of each DEFLATE block.
-	// Default: 65535 (maximum allowed by DEFLATE)
+	// MaxBlockSize is retained for compatibility but is unsupported and ignored.
+	// The 65535-byte limit applies only to stored blocks, not Huffman-coded blocks.
 	MaxBlockSize int
 
-	// ProgressCallback is an optional function called after each iteration.
+	// ProgressCallback reports completed distinct trials after the baseline parse.
+	// total is the capped trial count, not the originally requested Iterations.
 	ProgressCallback func(iteration, total int)
 }
 
@@ -30,12 +32,10 @@ func DefaultZopfliConfig() ZopfliConfig {
 	}
 }
 
-// ZopfliEncode compresses data using Zopfli-style iterative DEFLATE optimization.
-// This provides better compression than standard DEFLATE at the cost of slower encoding.
-// The algorithm iteratively refines the compression by:
-// 1. Finding better literal/length and distance pairs through multiple passes
-// 2. Trying different encoding configurations
-// 3. Selecting the best result across iterations
+// ZopfliEncode selects the smallest valid fixed/dynamic encoding across distinct
+// greedy parses. Tokens are generated once per configuration and shared by both
+// Huffman coders. This does not implement Zopfli's iterative cost-model refinement
+// or block splitting. Empty input retains the historical empty-result behavior.
 func ZopfliEncode(data []byte, config ZopfliConfig) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
@@ -44,10 +44,6 @@ func ZopfliEncode(data []byte, config ZopfliConfig) ([]byte, error) {
 	if config.Iterations <= 0 {
 		config.Iterations = DefaultZopfliConfig().Iterations
 	}
-	if config.MaxBlockSize <= 0 {
-		config.MaxBlockSize = DefaultZopfliConfig().MaxBlockSize
-	}
-
 	encoder := NewDeflateEncoder()
 
 	// Always start with a compressed result, never return uncompressed data
@@ -55,50 +51,31 @@ func ZopfliEncode(data []byte, config ZopfliConfig) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	bestSize := len(bestResult)
 
-	// Store original compression level
-	originalLevel := encoder.compressionLevel
-
-	// Run iterative refinement
-	for iteration := 0; iteration < config.Iterations; iteration++ {
-		// Set maximum compression level
-		encoder.SetCompressionLevel(9)
-
-		// Try single block encoding
-		singleResult, encodeErr := encoder.EncodeAuto(data)
-		if encodeErr == nil && len(singleResult) < bestSize {
-			bestResult = singleResult
-			bestSize = len(singleResult)
+	// Try level 9 first to preserve the old minimum-effort quality. Intermediate
+	// chain limits can find different greedy matches, so higher budgets add 7 and 8.
+	levels := [...]int{9, 7, 8}
+	trials := min(config.Iterations, len(levels))
+	for iteration, level := range levels[:trials] {
+		encoder.SetCompressionLevel(level)
+		candidate, err := encoder.EncodeAuto(data)
+		if err != nil {
+			return nil, err
 		}
-
-		// Try fixed blocks as alternative
-		fixedResult, encodeErr := encoder.Encode(data, false)
-		if encodeErr == nil && len(fixedResult) < bestSize {
-			bestResult = fixedResult
-			bestSize = len(fixedResult)
-		}
-
-		// Try dynamic blocks as alternative
-		dynamicResult, encodeErr := encoder.Encode(data, true)
-		if encodeErr == nil && len(dynamicResult) < bestSize {
-			bestResult = dynamicResult
-			bestSize = len(dynamicResult)
+		if len(candidate) < len(bestResult) {
+			bestResult = candidate
 		}
 
 		if config.ProgressCallback != nil {
-			config.ProgressCallback(iteration+1, config.Iterations)
+			config.ProgressCallback(iteration+1, trials)
 		}
 	}
-
-	// Restore original compression level
-	encoder.SetCompressionLevel(originalLevel)
 
 	return bestResult, nil
 }
 
 // ZopfliEncodeSimple is a simplified Zopfli encoder with reasonable defaults.
-// Uses 15 iterations for good compression.
+// The legacy default budget is capped to the three supported distinct trials.
 func ZopfliEncodeSimple(data []byte) ([]byte, error) {
 	return ZopfliEncode(data, DefaultZopfliConfig())
 }

@@ -1,9 +1,9 @@
 package png
 
 const (
-	DefaultMinSumThreshold   = 0.0
-	DefaultEntropyThreshold  = 0.0
-	DefaultMinFiltersToTry   = 2
+	DefaultMinSumThreshold  = 0.0
+	DefaultEntropyThreshold = 0.0
+	DefaultMinFiltersToTry  = 2
 )
 
 type FilterSelectionConfig struct {
@@ -39,6 +39,8 @@ func SelectAllWithStrategyAndScratch(pixels []byte, width, height, bpp int, stra
 	return filters
 }
 
+// SelectFilterWithStrategyAndScratch returns the selected type and matching bytes.
+// The returned bytes may alias scratch and must be consumed before its next use.
 func SelectFilterWithStrategyAndScratch(row []byte, prevRow []byte, bpp int, strategy FilterStrategy, scratch *AdaptiveScratch) (FilterType, []byte) {
 	switch strategy {
 	case FilterStrategyNone:
@@ -68,6 +70,8 @@ func SelectFilterWithStrategyAndScratch(row []byte, prevRow []byte, bpp int, str
 		return selectBruteForce(row, prevRow, bpp)
 	case FilterStrategyBigrams:
 		return selectBigrams(row, prevRow, bpp)
+	case FilterStrategyCombined:
+		return selectCombined(row, prevRow, bpp)
 	case FilterStrategyParallel:
 		return selectMinSumWithScratch(row, prevRow, bpp, scratch)
 	default:
@@ -77,7 +81,6 @@ func SelectFilterWithStrategyAndScratch(row []byte, prevRow []byte, bpp int, str
 
 func selectMinSumWithScratch(row []byte, prevRow []byte, bpp int, scratch *AdaptiveScratch) (FilterType, []byte) {
 	var bestFilter FilterType
-	var bestFiltered []byte
 	bestScore := -1
 
 	filters := []struct {
@@ -102,7 +105,6 @@ func selectMinSumWithScratch(row []byte, prevRow []byte, bpp int, scratch *Adapt
 		if bestScore < 0 || score < bestScore {
 			bestScore = score
 			bestFilter = f.typ
-			bestFiltered = filtered
 		}
 
 		if scratch.Config.EarlyTerminationEnabled &&
@@ -112,12 +114,13 @@ func selectMinSumWithScratch(row []byte, prevRow []byte, bpp int, scratch *Adapt
 		}
 	}
 
-	return bestFilter, bestFiltered[1:]
+	// All candidates share one buffer. Reapply the winner after scoring so its
+	// bytes agree with the returned filter type, including after early termination.
+	return bestFilter, applyFilterWithScratch(bestFilter, row, prevRow, bpp, scratch)[1:]
 }
 
 func selectEntropyWithScratch(row []byte, prevRow []byte, bpp int, scratch *AdaptiveScratch) (FilterType, []byte) {
 	var bestFilter FilterType
-	var bestFiltered []byte
 	bestScore := -1.0
 
 	filters := []struct {
@@ -138,19 +141,20 @@ func selectEntropyWithScratch(row []byte, prevRow []byte, bpp int, scratch *Adap
 
 	for i, f := range filters {
 		filtered := f.fn()
-		score := EntropyScore(filtered[1:])
+		// Match the allocating selector's ordering. Scaling by row length can
+		// round distinct entropy values into a tie and change the winning filter.
+		score := CalculateEntropy(filtered[1:])
 		if bestScore < 0 || score < bestScore {
 			bestScore = score
 			bestFilter = f.typ
-			bestFiltered = filtered
 		}
 
 		if scratch.Config.EarlyTerminationEnabled &&
 			i+1 >= minFilters &&
-			bestScore <= scratch.Config.EarlyTerminationThreshold {
+			bestScore*float64(len(row)) <= scratch.Config.EarlyTerminationThreshold {
 			break
 		}
 	}
 
-	return bestFilter, bestFiltered[1:]
+	return bestFilter, applyFilterWithScratch(bestFilter, row, prevRow, bpp, scratch)[1:]
 }
