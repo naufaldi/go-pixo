@@ -3,8 +3,9 @@ import avifDecodeWasm from '@jsquash/avif/codec/dec/avif_dec.wasm?url';
 import heifModuleUrl from 'libheif-js/libheif-wasm/libheif-bundle.mjs?url';
 import type { AVIFModule as AvifEncoder } from '@jsquash/avif/codec/enc/avif_enc.js';
 import type { AVIFModule as AvifDecoder } from '@jsquash/avif/codec/dec/avif_dec.js';
-import { assertSafeDimensions, inspectImage, sniffInputFormat } from './imageFormats';
+import { assertSafeDimensions, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
 import { assertRgbaPixelBuffer } from './pixels';
+import { decodeTiffStrips } from './tiffStrips';
 
 let encoder: Promise<AvifEncoder> | undefined;
 let decoder: Promise<AvifDecoder> | undefined;
@@ -104,15 +105,22 @@ export async function decodeTiff(bytes: Uint8Array): Promise<DecodedPixels> {
   inspectImage(bytes);
   const UTIF=await import('utif');
   const buffer=new Uint8Array(bytes).buffer;
-  // UTIF follows maker notes / EXIF recursively without cycle limits. Pixels do
-  // not need those directories; neutralize their entries in our private copy.
+  // Only pixel-decoding tags reach UTIF. In particular, do not materialize
+  // arbitrary metadata arrays or follow recursive EXIF / maker-note pointers.
   const view=new DataView(buffer), le=bytes[0]===73, p=view.getUint32(4,le), count=view.getUint16(p,le);
+  let retained=0;
   for (let i=0;i<count;i++) {
     const s=p+2+i*12;
-    if ([34665,37500,50740].includes(view.getUint16(s,le))) {
-      view.setUint16(s,65000,le); view.setUint16(s+2,1,le); view.setUint32(s+4,0,le); view.setUint32(s+8,0,le);
+    const tag=view.getUint16(s,le);
+    if ([322,323,324,325].includes(tag)) {
+      throw new Error('Tiled TIFF images are not supported. Export a strip-based image first.');
+    }
+    if (TIFF_TAG_VALUE_LIMITS[tag]!==undefined) {
+      new Uint8Array(buffer).copyWithin(p+2+retained*12,s,s+12);
+      retained++;
     }
   }
+  view.setUint16(p,retained,le); view.setUint32(p+2+retained*12,0,le);
   const pages=UTIF.decode(buffer);
   if (pages.length!==1) throw new Error('Multiple-page TIFF images are not supported. Export a single page first.');
   const page=pages[0];
@@ -123,21 +131,19 @@ export async function decodeTiff(bytes: Uint8Array): Promise<DecodedPixels> {
   if (planar.length!==1 || planar[0]!==1) {
     throw new Error('Planar TIFF images are not supported. Export an interleaved image first.');
   }
-  // UTIF allocates a separate tile buffer from these tags, independently of
-  // image width/height. Reject even partial tile declarations before decodeImage.
-  if ([page.t322,page.t323,page.t324,page.t325].some(value=>value!==undefined)) {
-    throw new Error('Tiled TIFF images are not supported. Export a strip-based image first.');
-  }
   const samples=page.t277 ?? [1], bits=page.t258 ?? [1], sampleFormat=page.t339 ?? [1];
   if (samples.length!==1 || !Number.isInteger(samples[0]) || samples[0]<1 || samples[0]>4 ||
       bits.length!==samples[0] || bits.some(bit=>![1,2,4,8].includes(bit) || bit!==bits[0]) ||
       (sampleFormat.length!==1 && sampleFormat.length!==samples[0]) || sampleFormat.some(format=>format!==1)) {
     throw new Error('TIFF needs 1–4 unsigned integer channels with matching, uniform 1, 2, 4 or 8-bit samples.');
   }
-  // UTIF's strip allocation uses BitsPerSample.length, not SamplesPerPixel.
-  // Matching both and limiting channels/bits bounds it to at most RGBA size.
   if ((page.t274?.[0] ?? 1)!==1) throw new Error('Rotated TIFF orientation is not supported. Export an upright image first.');
-  UTIF.decodeImage(buffer,page);
+  const photometric=page.t262?.[0] ?? 2;
+  if (photometric===3 && (samples[0]!==1 || bits[0]!==8 || page.t320?.length!==768)) {
+    throw new Error('Palette TIFF needs an 8-bit index and a 256-entry RGB color map');
+  }
+  page.width=width; page.height=height;
+  page.data=decodeTiffStrips(bytes,page,width,height);
   const pixels=UTIF.toRGBA8(page);
   assertRgbaPixelBuffer(pixels,width,height);
   return {pixels,width,height};
