@@ -2,6 +2,23 @@
 
 This guide explains why PNG encoders select different filters for each row and how the selection algorithm works.
 
+## Production controls
+
+`Options.FilterEarlyTermination` (the WASM `filterEarlyTerm` argument) is opt-in.
+For MinSum, Adaptive, and Parallel it stops after at least two candidates when the
+best absolute residual averages at most 1 per byte. For Entropy the cutoff is 0.5
+bits per byte. It may choose a different filter and trade compressed size for less
+scoring work; decoded samples remain identical. Other strategies reject this flag
+instead of silently ignoring it. Defaults still score the full candidate set.
+
+`FilterStrategyBruteForce` measures actual BestSpeed DEFLATE byte counts for all
+five filtered rows, including their filter bytes. Both allocating and scratch
+selectors use this rule. The image helpers also use exactly five trials per row,
+without the former exponential search over row combinations. This is a local cost
+comparison, not a guarantee of the smallest final PNG: final DEFLATE effort and
+cross-row history can change the outcome. No default preset selects this expensive
+mode. Existing DEFLATE effort budgets remain independent of filter selection.
+
 ---
 
 ## Why Select Filters Per Row?

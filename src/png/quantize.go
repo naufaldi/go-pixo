@@ -446,7 +446,10 @@ func QuantizeToPalettePerceptual(pixels []byte, colorType int, palette Palette, 
 }
 
 // QuantizeWithOptions converts true-color pixels to indexed palette using Options.
-// The Options.UsePerceptualDistance and Options.DistanceMetric fields control the distance metric.
+// QualityTarget controls the existing median-cut heuristic, not a measured quality
+// floor. Distance settings apply to every lookup, including error-adjusted pixels.
+// Dithering uses only horizontal 7/16 diffusion, reset at each Options.Width row.
+// Passing useLUT=false avoids the legacy full RGB table without changing results.
 func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Options, useLUT ...bool) ([]byte, Palette) {
 	enableLUT := true
 	if len(useLUT) > 0 {
@@ -463,7 +466,22 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 	colorMap := CountColors(pixels, colorType)
 	colorsWithCount := ToColorWithCountSlice(colorMap)
 
-	paletteColors := MedianCut(colorsWithCount, maxColors)
+	quality := opts.QualityTarget
+	if quality == 0 && !opts.QualityTargetSet {
+		quality = 100
+	}
+	// The median-cut quality heuristic has a minimum of two buckets. A caller's
+	// explicit one-color cap takes precedence over that heuristic.
+	if maxColors == 1 {
+		quality = 100
+	}
+	if quality < 0 {
+		quality = 0
+	}
+	if quality > 100 {
+		quality = 100
+	}
+	paletteColors := MedianCutWithQuality(colorsWithCount, maxColors, float64(quality)/100)
 
 	palette := NewPalette(len(paletteColors))
 	for _, c := range paletteColors {
@@ -476,6 +494,14 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 	indexed := make([]byte, width)
 
 	usePerceptual := opts.UsePerceptualDistance || opts.DistanceMetric == DistanceMetricRedmean
+	strength := opts.DitheringStrength
+	if strength < 0 {
+		strength = 0
+	}
+	if strength > 1 {
+		strength = 1
+	}
+	var carry [3]int
 
 	var lut *PaletteLUT
 	if enableLUT && palette.NumColors > 0 {
@@ -488,10 +514,13 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 
 	for i := 0; i < width; i++ {
 		offset := i * bpp
+		if opts.Width > 0 && i%opts.Width == 0 {
+			carry = [3]int{}
+		}
 		c := Color{
-			R: pixels[offset],
-			G: pixels[offset+1],
-			B: pixels[offset+2],
+			R: uint8(clamp(int(pixels[offset]) + carry[0])),
+			G: uint8(clamp(int(pixels[offset+1]) + carry[1])),
+			B: uint8(clamp(int(pixels[offset+2]) + carry[2])),
 		}
 		if lut != nil {
 			indexed[i] = lut.Lookup(c.R, c.G, c.B, 255)
@@ -499,6 +528,14 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 			indexed[i] = uint8(palette.FindNearestPerceptual(c))
 		} else {
 			indexed[i] = uint8(palette.FindNearest(c))
+		}
+		if opts.Dithering && strength > 0 && palette.NumColors > 0 {
+			chosen := palette.Colors[indexed[i]]
+			carry = [3]int{
+				int(float64(int(c.R)-int(chosen.R)) * 7 / 16 * strength),
+				int(float64(int(c.G)-int(chosen.G)) * 7 / 16 * strength),
+				int(float64(int(c.B)-int(chosen.B)) * 7 / 16 * strength),
+			}
 		}
 	}
 
