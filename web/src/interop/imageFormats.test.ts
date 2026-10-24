@@ -46,6 +46,31 @@ describe('image byte preflight', () => {
     expect(inspectImage(ascii('<svg width="2" height="1"><path fill="url(\'#gradient\')"/></svg>')).format).toBe('svg');
     expect(() => inspectImage(ascii('<svg width="2" height="1"><style>path {animation-name:fade;animation-duration:1s}</style></svg>'))).toThrow(/animat/i);
   });
+  it('rejects repeated unmatched SVG URL prefixes instead of rescanning every suffix', () => {
+    const bytes=ascii(`<svg width="2" height="1"><!--${'url('.repeat(2048)}--></svg>`);
+    expect(() => inspectImage(bytes)).toThrow(/url|static|self.contained/i);
+  });
+  it('bounds SVG text and token work before native decoding', () => {
+    expect(() => inspectImage(ascii(`<svg width="2" height="1"><!--${' '.repeat(1024*1024)}--></svg>`))).toThrow(/SVG.*limit/i);
+    expect(() => inspectImage(ascii(`<svg width="2" height="1">${'<path/>'.repeat(10001)}</svg>`))).toThrow(/SVG.*(token|complex|limit)/i);
+  });
+  it.each([
+    '<path fill="u&#114;l(https://example.com/a)"/>',
+    '<path style="fill:u\\72l(https://example.com/a)"/>',
+    '<image href=https://example.com/a/>',
+    '<image xlink:href="https://example.com/a"/>',
+    '<style>path{fill:URL(https://example.com/a)}</style>',
+    '<s:script xmlns:s="http://www.w3.org/2000/svg"/>',
+    '<s:animate xmlns:s="http://www.w3.org/2000/svg"/>',
+    '<image xml:base="https://example.com/a.svg" href="#shape"/>',
+    '<path onclick="alert(1)"/>',
+  ])('rejects external, encoded or active SVG content: %s', content => {
+    expect(() => inspectImage(ascii(`<svg width="2" height="1">${content}</svg>`))).toThrow(/external|static|self.contained|animat/i);
+  });
+  it('preserves static local use references, gradients and ordinary XML entities', () => {
+    const svg='<svg viewBox="0 0 2 1"><defs><path id="shape"/><linearGradient id="paint"/></defs><use href="#shape" fill="url(\'#paint\')"/><text>&amp; &lt; &gt;</text></svg>';
+    expect(inspectImage(ascii(svg))).toMatchObject({format:'svg',width:2,height:1});
+  });
   it('bounds TIFF dimensions and rejects cyclic page pointers before codec allocation', () => {
     const b=new Uint8Array(38); b.set([73,73,42,0,8,0,0,0,2,0]);
     const v=new DataView(b.buffer);
