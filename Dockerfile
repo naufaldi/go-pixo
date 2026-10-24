@@ -1,6 +1,11 @@
 # Builder stage
 FROM node:24.22.1-bookworm-slim AS builder
 
+# Go module downloads use the system trust store, absent from the slim base.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Keep the package manager and Node runtime aligned with CI.
 COPY --from=oven/bun:1.4.3 /usr/local/bin/bun /usr/local/bin/bun
 

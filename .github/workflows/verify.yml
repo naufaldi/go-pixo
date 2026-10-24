@@ -13,6 +13,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Verify package installation and the actual Linux image without publishing.
+      - run: docker build --progress=plain -t go-pixo:verify .
+
   go:
     runs-on: ubuntu-latest
     steps:
