@@ -55,7 +55,45 @@ export function sniffInputFormat(bytes: Uint8Array, _mime = ''): InputFormat {
   return 'unknown'; // A filename or MIME declaration cannot establish the actual codec.
 }
 
-export type ImageInfo = {format: InputFormat; width?: number; height?: number; bitDepth?: number};
+export type JpegOrientation = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type ImageInfo = {
+  format: InputFormat;
+  // Encoded storage dimensions. Native JPEG pixels/preview apply orientation.
+  width?: number; height?: number; bitDepth?: number;
+  orientation?: JpegOrientation;
+};
+
+export function imageDisplayDimensions(info: ImageInfo): {width: number; height: number} {
+  const {width,height}=info;
+  if (width===undefined || height===undefined) throw new Error('Image needs bounded dimensions before admission');
+  assertSafeDimensions(width,height);
+  return info.format==='jpeg' && (info.orientation ?? 1)>=5 ? {width:height,height:width} : {width,height};
+}
+
+// Read only IFD0's inline SHORT orientation. Never follow EXIF, thumbnail, maker
+// note or next-IFD pointers, nor allocate arrays from metadata-provided counts.
+function jpegExifOrientation(bytes: Uint8Array, start: number, end: number): JpegOrientation | undefined {
+  if (end-start<8) throw invalid();
+  const view=new DataView(bytes.buffer,bytes.byteOffset+start,end-start);
+  const order=view.getUint16(0);
+  if (order!==0x4949 && order!==0x4d4d) throw invalid();
+  const le=order===0x4949;
+  if (view.getUint16(2,le)!==42) throw invalid();
+  const ifd=view.getUint32(4,le);
+  if (ifd<8 || ifd>view.byteLength-2) throw invalid();
+  const count=view.getUint16(ifd,le);
+  if (count>1024 || ifd+2+count*12+4>view.byteLength) throw invalid();
+  let orientation: JpegOrientation | undefined;
+  for (let i=0;i<count;i++) {
+    const entry=ifd+2+i*12;
+    if (view.getUint16(entry,le)!==274) continue;
+    if (orientation!==undefined || view.getUint16(entry+2,le)!==3 || view.getUint32(entry+4,le)!==1) throw invalid();
+    const value=view.getUint16(entry+8,le);
+    if (value<1 || value>8) throw invalid();
+    orientation=value as JpegOrientation;
+  }
+  return orientation;
+}
 
 export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
   if (!bytes.length) throw new Error('Image is empty');
@@ -64,6 +102,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let width: number | undefined, height: number | undefined;
   let bitDepth: number | undefined;
+  let orientation: JpegOrientation | undefined;
   const u32 = (p: number, le = false) => view.getUint32(p, le);
   if (format === 'unknown') throw new Error('Unsupported or invalid image format');
   if (format === 'png') {
@@ -113,18 +152,26 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     }
     if (width===undefined) throw invalid();
   } else if (format === 'jpeg') {
-    let p=2;
-    while (p+4<=bytes.length) {
+    let p=2, exifSeen=false;
+    while (p<bytes.length) {
       if (bytes[p++]!==255) throw invalid();
       while (bytes[p]===255) p++;
+      if (p>=bytes.length) throw invalid();
       const marker=bytes[p++];
-      if (marker===217 || marker===218) break;
+      if (marker===217 || marker===218) break; // Metadata ends before scan data.
       if (marker===1 || (marker>=208 && marker<=215)) continue;
+      if (p+2>bytes.length) throw invalid();
       const n=view.getUint16(p);
       if (n<2 || n>bytes.length-p) throw invalid();
+      if (marker===225 && n>=8 && text(bytes,p+2,6)==='Exif\0\0') {
+        // Ambiguous duplicate EXIF blocks can disagree with native orientation.
+        if (exifSeen) throw invalid();
+        exifSeen=true;
+        orientation=jpegExifOrientation(bytes,p+8,p+n);
+      }
       if ([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker)) {
         if (n<7) throw invalid();
-        height=view.getUint16(p+3); width=view.getUint16(p+5); break;
+        height=view.getUint16(p+3); width=view.getUint16(p+5);
       }
       p+=n;
     }
@@ -261,7 +308,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     if (!width || !height) throw new Error('SVG needs bounded width/height or a viewBox');
   }
   if (width!==undefined && height!==undefined) assertSafeDimensions(width,height);
-  return {format,width,height,bitDepth};
+  return {format,width,height,bitDepth,orientation};
 }
 
 export function inputMime(format: InputFormat): string {

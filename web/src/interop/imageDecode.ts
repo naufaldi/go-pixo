@@ -1,9 +1,11 @@
 import type { InputFormat } from './compressionSettings';
-import { assertSafeDimensions, inspectImage, inputMime, MAX_IMAGE_BYTES } from './imageFormats';
-import { copyImageDataPixels } from './pixels';
+import { assertSafeDimensions, imageDisplayDimensions, inspectImage, inputMime, MAX_IMAGE_BYTES } from './imageFormats';
+import { ownedImageDataPixels } from './pixels';
+import { imageOperation, type OperationSettings } from './imageOperation';
 
 export type DecodeResult = {
-  pixels: Uint8Array;
+  pixels?: Uint8Array;
+  // Display dimensions, matching native oriented pixels and the original preview.
   width: number;
   height: number;
   colorType: number;
@@ -72,16 +74,25 @@ function readFile(file: File, signal?: AbortSignal): Promise<ArrayBuffer> {
   });
 }
 
-export async function decodeFile(file: File, signal?: AbortSignal): Promise<DecodeResult> {
+export type DecodeOptions = OperationSettings & {admit?: (workspaceBytes: number) => Promise<void>};
+
+export async function decodeFile(file: File, signal?: AbortSignal, options?: DecodeOptions): Promise<DecodeResult> {
   const buffer=await readFile(file,signal);
   assertActive(signal);
   const originalFileBytes=new Uint8Array(buffer);
   const info=inspectImage(originalFileBytes,file.type);
+  const operation = imageOperation(info, options);
+  await options?.admit?.(operation.workspaceBytes);
+  assertActive(signal);
+  if (operation.kind !== 'pixels') {
+    const previewUrl = URL.createObjectURL(new Blob([buffer], {type: inputMime(info.format)}));
+    return {width: operation.width, height: operation.height, colorType: 6, previewUrl, originalFileBytes, inputFormat: info.format};
+  }
   if (info.format==='tiff' || info.format==='avif' || info.format==='heic') {
     const image=await decodeBundled(originalFileBytes,signal);
     assertActive(signal);
-    const previewUrl=URL.createObjectURL(new Blob([new Uint8Array(image.previewBytes)],{type:'image/png'}));
-    return {...image,colorType:6,previewUrl,originalFileBytes,inputFormat:info.format};
+    const previewUrl=URL.createObjectURL(new Blob([image.previewBytes as Uint8Array<ArrayBuffer>],{type:'image/png'}));
+    return {pixels:image.pixels,width:image.width,height:image.height,colorType:6,previewUrl,originalFileBytes,inputFormat:info.format};
   }
 
   // Native decoding is bounded by preflight. The caller owns bounded queueing.
@@ -106,10 +117,15 @@ export async function decodeFile(file: File, signal?: AbortSignal): Promise<Deco
       try {
         const width=img.naturalWidth || img.width, height=img.naturalHeight || img.height;
         assertSafeDimensions(width,height);
+        if (info.format==='jpeg') {
+          const display=imageDisplayDimensions(info);
+          if (width!==display.width || height!==display.height) throw new Error('Native JPEG dimensions disagree with EXIF preflight');
+        }
+        if (width * height > info.width! * info.height!) throw new Error('Decoded image exceeds its preflight workspace estimate');
         canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height;
         const ctx=canvas.getContext('2d'); if (!ctx) throw new Error('Failed to create canvas context');
         ctx.drawImage(img,0,0);
-        const pixels=copyImageDataPixels(ctx.getImageData(0,0,width,height).data);
+        const pixels=ownedImageDataPixels(ctx.getImageData(0,0,width,height).data);
         finish(undefined,{pixels,width,height,colorType:6,previewUrl:url,originalFileBytes,inputFormat:info.format});
       } catch(error) { finish(error); }
       finally { if (canvas) { canvas.width=0; canvas.height=0; } }

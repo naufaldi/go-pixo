@@ -1,6 +1,6 @@
 import { receivedBytes } from './interop/workerMessages';
 
-// A worker owns one WASM instance. The app also bounds decoding to capacity.
+// A worker lazily owns its required codecs. The app bounds reads and workspace admission.
 export type CompressionResult = { compressedBytes: Uint8Array; outputFormat: string };
 type CompressionRequest = { id: string; [field: string]: unknown };
 type ProgressCallback = (phase: string, progress: number, predictable?: boolean, phaseTarget?: number) => void;
@@ -68,7 +68,7 @@ export class WorkerPool {
       return;
     }
     if (data.type === 'error' && data.id == null) {
-      this.failSlot(slot, new Error(data.error || 'Worker initialization failed'));
+      this.failSlot(slot, new Error(data.error || 'Worker initialization failed'), true);
       return;
     }
     const task = slot.task;
@@ -151,12 +151,12 @@ export class WorkerPool {
     slot.ready = false;
   }
 
-  private failSlot(slot: Slot, error: Error): void {
+  private failSlot(slot: Slot, error: Error, initialization = !slot.ready): void {
     if (this.stopped) return;
     const task = slot.task;
     // One automatic replacement per failed initialization sequence. A failed
     // input is rejected once and never requeued, even after transferring its bytes.
-    slot.initializationFailures = slot.ready && task ? 0 : slot.initializationFailures + 1;
+    slot.initializationFailures = initialization ? slot.initializationFailures + 1 : 0;
     slot.task = null;
     this.disposeSlot(slot);
     task?.reject(error);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import {jpegWithExif} from '../test/jpeg';
 import { assertSafeDimensions, inspectImage, sniffInputFormat } from './imageFormats';
 
 const ascii = (value: string) => Uint8Array.from(value, c => c.charCodeAt(0));
@@ -80,4 +81,69 @@ describe('image byte preflight', () => {
     v.setUint32(18,1,true); v.setUint32(30,1,true); v.setUint32(34,8,true);
     expect(() => inspectImage(b)).toThrow(/page|cyclic|invalid/i);
   });
+});
+
+describe('bounded JPEG EXIF orientation preflight', () => {
+  it.each([true,false])('retains stored dimensions and reads all orientations with little endian=%s', littleEndian => {
+    for (let orientation=1;orientation<=8;orientation++) {
+      const bytes=jpegWithExif(3000,4000,orientation,littleEndian);
+      // A borrowed input view must not accidentally use its backing buffer's origin.
+      const padded=new Uint8Array(bytes.length+11); padded.set(bytes,7);
+      expect(inspectImage(padded.subarray(7,7+bytes.length))).toMatchObject({
+        format:'jpeg',width:3000,height:4000,orientation,
+      });
+    }
+  });
+  it('finds orientation after SOF and ignores unrelated APP1 payloads', () => {
+    expect(inspectImage(jpegWithExif(3000,4000,8,true,true))).toMatchObject({orientation:8});
+    const ordinary=new Uint8Array([255,216,255,225,0,8,88,77,80,0,0,0,255,192,0,7,8,0,3,0,4]);
+    expect(inspectImage(ordinary)).toMatchObject({width:4,height:3});
+  });
+  it.each([
+    ['invalid value', (_b: Uint8Array,v: DataView) => v.setUint16(30,9,true)],
+    ['invalid type', (_b: Uint8Array,v: DataView) => v.setUint16(24,4,true)],
+    ['array count', (_b: Uint8Array,v: DataView) => v.setUint32(26,0xffffffff,true)],
+    ['byte order', (b: Uint8Array) => { b[12]=0 }],
+    ['TIFF magic', (_b: Uint8Array,v: DataView) => v.setUint16(14,43,true)],
+    ['IFD before header', (_b: Uint8Array,v: DataView) => v.setUint32(16,0,true)],
+    ['IFD outside segment', (_b: Uint8Array,v: DataView) => v.setUint32(16,36,true)],
+    ['excessive IFD entries', (_b: Uint8Array,v: DataView) => v.setUint16(20,65535,true)],
+    ['truncated IFD', (_b: Uint8Array,v: DataView) => v.setUint16(20,2,true)],
+    ['short EXIF segment', (_b: Uint8Array,v: DataView) => v.setUint16(4,8)],
+    ['segment beyond input', (_b: Uint8Array,v: DataView) => v.setUint16(4,65535)],
+  ] as const)('rejects malformed orientation safely: %s', (_,mutate) => {
+    const b=jpegWithExif(3000,4000,6); mutate(b,new DataView(b.buffer));
+    expect(() => inspectImage(b)).toThrow(/invalid|corrupt/i);
+  });
+  it('does not follow EXIF or next-IFD pointers into maker notes or cyclic metadata', () => {
+    const b=jpegWithExif(3000,4000,6);
+    // The next IFD points back to IFD0. Orientation needs only this one bounded directory.
+    new DataView(b.buffer).setUint32(34,8,true);
+    expect(inspectImage(b)).toMatchObject({orientation:6});
+  });
+  it.each([[255,216,255],[255,216,255,255,255],[255,216,255,225,0]].map(bytes => [bytes]))('rejects truncated JPEG markers without leaking RangeError', values => {
+    expect(() => inspectImage(new Uint8Array(values))).toThrow(/invalid|corrupt/i);
+  });
+});
+
+it('keeps storage axes when valid EXIF has no orientation and ignores unrelated pointer payloads', () => {
+  const b=jpegWithExif(3000,4000,6), view=new DataView(b.buffer);
+  view.setUint16(22,34665,true); view.setUint16(24,4,true); view.setUint32(30,0xffffffff,true);
+  const info=inspectImage(b);
+  expect(info.orientation).toBeUndefined();
+  expect(info).toMatchObject({width:3000,height:4000});
+});
+it('rejects duplicate EXIF blocks and orientation tags instead of guessing native precedence', () => {
+  const b=jpegWithExif(3000,4000,6);
+  const duplicateBlock=new Uint8Array([...b.subarray(0,38),...b.subarray(2)]);
+  expect(() => inspectImage(duplicateBlock)).toThrow(/invalid|corrupt/i);
+  const duplicateTag=new Uint8Array([...b.subarray(0,34),...b.subarray(22,34),...b.subarray(34)]);
+  const view=new DataView(duplicateTag.buffer); view.setUint16(4,46); view.setUint16(20,2,true);
+  expect(() => inspectImage(duplicateTag)).toThrow(/invalid|corrupt/i);
+});
+it('bounds every truncated EXIF prefix to its declared JPEG segment', () => {
+  const b=jpegWithExif(3000,4000,6);
+  for (let length=3;length<38;length++) {
+    expect(() => inspectImage(b.subarray(0,length))).toThrow(/invalid|corrupt/i);
+  }
 });
