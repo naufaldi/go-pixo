@@ -44,7 +44,11 @@ func (enc *DeflateEncoder) Encode(data []byte, useDynamic bool) ([]byte, error) 
 	}
 
 	tokens := enc.lz77.Encode(data)
+	return encodeDeflateTokens(tokens, useDynamic)
+}
 
+// encodeDeflateTokens codes an existing parse without repeating LZ77 matching.
+func encodeDeflateTokens(tokens []Token, useDynamic bool) ([]byte, error) {
 	var buf bytes.Buffer
 	if useDynamic {
 		if err := WriteDynamicBlock(&buf, true, tokens); err != nil {
@@ -67,12 +71,13 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 		return enc.Encode(data, false)
 	}
 
-	fixed, err := enc.Encode(data, false)
+	tokens := enc.lz77.Encode(data)
+	fixed, err := encodeDeflateTokens(tokens, false)
 	if err != nil {
 		return nil, err
 	}
 
-	dynamic, err := enc.Encode(data, true)
+	dynamic, err := encodeDeflateTokens(tokens, true)
 	if err != nil {
 		return fixed, nil
 	}
@@ -83,61 +88,15 @@ func (enc *DeflateEncoder) EncodeAuto(data []byte) ([]byte, error) {
 	return fixed, nil
 }
 
-// EncodeOptimal compresses data using optimal DEFLATE with iterative refinement.
-// This produces better compression at the cost of slower encoding.
-// Uses Zopfli-style iteration to find better literal/length and distance pairs,
-// optimal block splitting, and optimized Huffman table configurations.
+// EncodeOptimal selects the best of distinct greedy LZ77 configurations.
+// It is a bounded search, not a full Zopfli optimizer; see ZopfliConfig.
 func (enc *DeflateEncoder) EncodeOptimal(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return enc.Encode(data, false)
-	}
-
-	// Use Zopfli-style iterative compression for best results
-	zopfliConfig := DefaultZopfliConfig()
-	zopfliConfig.Iterations = 15
-	zopfliConfig.BlockSplitting = true
-	zopfliConfig.ProgressCallback = enc.ProgressCallback
-
-	result, err := ZopfliEncode(data, zopfliConfig)
-	if err != nil {
-		// Fallback to simple iterative approach if Zopfli fails
-		return enc.encodeOptimalFallback(data)
-	}
-
-	return result, nil
+	config := DefaultZopfliConfig()
+	return enc.EncodeOptimalWithConfig(data, config.Iterations, config.BlockSplitting)
 }
 
-// encodeOptimalFallback is the original iterative approach used when Zopfli is unavailable.
-func (enc *DeflateEncoder) encodeOptimalFallback(data []byte) ([]byte, error) {
-	bestResult := data
-	bestSize := len(data)
-
-	// Try multiple iterations with increasing effort
-	for iteration := 0; iteration < 5; iteration++ {
-		// Increase compression level each iteration
-		enc.SetCompressionLevel(enc.compressionLevel + iteration)
-		if enc.compressionLevel > 9 {
-			enc.SetCompressionLevel(9)
-		}
-
-		result, err := enc.EncodeAuto(data)
-		if err != nil {
-			continue
-		}
-
-		if len(result) < bestSize {
-			bestResult = result
-			bestSize = len(result)
-		}
-	}
-
-	// Reset to original level
-	enc.SetCompressionLevel(enc.compressionLevel)
-
-	return bestResult, nil
-}
-
-// EncodeOptimalWithConfig compresses data using optimal DEFLATE with configurable options.
+// EncodeOptimalWithConfig selects distinct parses with the budget described by
+// ZopfliConfig.Iterations. blockSplitting is retained for compatibility and ignored.
 func (enc *DeflateEncoder) EncodeOptimalWithConfig(data []byte, iterations int, blockSplitting bool) ([]byte, error) {
 	if len(data) == 0 {
 		return enc.Encode(data, false)
@@ -150,12 +109,7 @@ func (enc *DeflateEncoder) EncodeOptimalWithConfig(data []byte, iterations int, 
 		ProgressCallback: enc.ProgressCallback,
 	}
 
-	result, err := ZopfliEncode(data, zopfliConfig)
-	if err != nil {
-		return enc.encodeOptimalFallback(data)
-	}
-
-	return result, nil
+	return ZopfliEncode(data, zopfliConfig)
 }
 
 // EncodeTo writes compressed DEFLATE data directly to the writer.
@@ -182,7 +136,7 @@ func (enc *DeflateEncoder) EncodeStored(data []byte) ([]byte, error) {
 
 // EncodeWithFallback tries DEFLATE compression first. If the result is not
 // smaller than the input, it falls back to stored blocks (no compression).
-// This ensures the output is never larger than the input.
+// Expansion is bounded by stored-block overhead; framing still adds bytes.
 func (enc *DeflateEncoder) EncodeWithFallback(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return enc.EncodeStored(data)

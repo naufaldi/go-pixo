@@ -1,6 +1,7 @@
 package png
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/mac/go-pixo/src/compress"
@@ -32,28 +33,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter selection based on strategy
-	scanlineData := make([]byte, 0, (1+width*bpp)*height)
-	var prevRow []byte
-	for y := 0; y < height; y++ {
-		// Report progress periodically for filtering
-		if opts.ProgressCallback != nil && y%100 == 0 {
-			percent := int(float64(y) / float64(height) * 100)
-			opts.ProgressCallback("filtering", percent)
-		}
-
-		offset := y * width * bpp
-		row := pixels[offset : offset+width*bpp]
-		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
-		scanlineData = append(scanlineData, byte(filterType))
-		scanlineData = append(scanlineData, filteredRow...)
-		prevRow = row
-	}
-
-	if opts.ProgressCallback != nil {
-		opts.ProgressCallback("filtering", 100)
-		opts.ProgressCallback("deflate", 0)
-	}
+	scanlineData := filterScanlines(pixels, width, height, bpp, opts)
 
 	// Build zlib-compressed data
 	zlibData, err := buildZlibData(scanlineData, opts)
@@ -72,8 +52,9 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 
 // buildZlibData builds the zlib-wrapped DEFLATE data containing scanlines.
 // The pixels parameter contains all scanline data with filter bytes prepended.
-// This function uses size comparison fallback: if DEFLATE doesn't reduce the size,
-// it falls back to stored blocks (uncompressed) to ensure the output is never larger.
+// Level zero writes stored blocks directly. Other non-optimal levels fall back
+// to stored blocks when compression does not help. PNG/zlib framing adds overhead;
+// only the byte-recompression wrapper can guarantee never-larger files.
 func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 	// Write zlib header: CMF (DEFLATE, 32K window) + FLG (default compression, check bits)
 	cmf, err := compress.ZlibHeaderBytes(32768, 2)
@@ -81,28 +62,31 @@ func buildZlibData(pixels []byte, opts Options) ([]byte, error) {
 		return nil, err
 	}
 
-	// Compress scanline data using DEFLATE with size comparison fallback
-	// This ensures the output is never larger than the input
-	encoder := compress.NewDeflateEncoder()
-	encoder.SetCompressionLevel(opts.CompressionLevel)
-
-	if opts.ProgressCallback != nil {
-		encoder.ProgressCallback = func(iteration, total int) {
-			percent := int(float64(iteration) / float64(total) * 100)
-			opts.ProgressCallback("deflate", percent)
-		}
-	}
-
 	var deflateData []byte
-	if opts.OptimalDeflate {
-		if opts.OptimalConfig.MaxIterations > 0 || opts.OptimalConfig.BlockSplitting {
-			deflateData, err = encoder.EncodeOptimalWithConfig(pixels, opts.OptimalConfig.MaxIterations, opts.OptimalConfig.BlockSplitting)
-		} else {
-			deflateData, err = encoder.EncodeOptimal(pixels)
-		}
+	if opts.CompressionLevel == 0 {
+		// Bypass both LZ77 allocation and optimal search, even when the caller's
+		// template has OptimalDeflate enabled. Stored blocks split at 65535 bytes.
+		var stored bytes.Buffer
+		err = compress.WriteStoredBlocks(&stored, pixels)
+		deflateData = stored.Bytes()
 	} else {
-		// Use fallback: if DEFLATE doesn't help, use stored blocks
-		deflateData, err = encoder.EncodeWithFallback(pixels)
+		encoder := compress.NewDeflateEncoder()
+		encoder.SetCompressionLevel(opts.CompressionLevel)
+		if opts.ProgressCallback != nil {
+			encoder.ProgressCallback = func(iteration, total int) {
+				percent := int(float64(iteration) / float64(total) * 100)
+				opts.ProgressCallback("deflate", percent)
+			}
+		}
+		if opts.OptimalDeflate {
+			iterations := opts.ZopfliIterations
+			if opts.OptimalConfig.MaxIterations > 0 {
+				iterations = opts.OptimalConfig.MaxIterations
+			}
+			deflateData, err = encoder.EncodeOptimalWithConfig(pixels, iterations, opts.OptimalConfig.BlockSplitting)
+		} else {
+			deflateData, err = encoder.EncodeWithFallback(pixels)
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress scanline data: %w", err)
@@ -131,6 +115,9 @@ func IDATDataBytes(pixels []byte, width, height int, colorType ColorType) ([]byt
 
 // IDATDataBytesWithOptions returns the raw zlib data with configurable options.
 func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
+	if width <= 0 || height <= 0 {
+		return nil, ErrInvalidDimensions
+	}
 	bpp := BytesPerPixel(colorType)
 	expectedRawLen := width * bpp * height
 
@@ -139,19 +126,31 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 			len(pixels), expectedRawLen, width, height)
 	}
 
-	// Build scanlines with filter selection based on strategy
+	return buildZlibData(filterScanlines(pixels, width, height, bpp, opts), opts)
+}
+
+// filterScanlines owns scratch for one encode. Each winner is copied into the
+// scanline stream before the next row can overwrite its buffer.
+func filterScanlines(pixels []byte, width, height, bpp int, opts Options) []byte {
 	scanlineData := make([]byte, 0, (1+width*bpp)*height)
+	scratch := NewAdaptiveScratch(width*bpp, bpp)
 	var prevRow []byte
 	for y := 0; y < height; y++ {
+		if opts.ProgressCallback != nil && y%100 == 0 {
+			opts.ProgressCallback("filtering", y*100/height)
+		}
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
-		filterType, filteredRow := SelectFilterWithStrategy(row, prevRow, bpp, opts.FilterStrategy)
+		filterType, filteredRow := SelectFilterWithStrategyAndScratch(row, prevRow, bpp, opts.FilterStrategy, scratch)
 		scanlineData = append(scanlineData, byte(filterType))
 		scanlineData = append(scanlineData, filteredRow...)
 		prevRow = row
 	}
-
-	return buildZlibData(scanlineData, opts)
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("filtering", 100)
+		opts.ProgressCallback("deflate", 0)
+	}
+	return scanlineData
 }
 
 // ExpectedIDATSize returns an estimated size of the IDAT chunk data for a given image.

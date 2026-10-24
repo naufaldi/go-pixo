@@ -1,7 +1,5 @@
 package png
 
-import "runtime"
-
 type AdaptiveScratch struct {
 	rowBuffer   []byte
 	filteredRow []byte
@@ -49,6 +47,6 @@ func (as *AdaptiveScratch) BPP() int {
 	return as.bpp
 }
 
-func (as *AdaptiveScratch) Release() {
-	runtime.GC()
-}
+// Release is retained for compatibility. Scratch is owned by the caller and
+// reclaimed by Go normally; releasing it must not force a process-wide GC.
+func (as *AdaptiveScratch) Release() {}

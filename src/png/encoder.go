@@ -118,9 +118,9 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 		result := buf.Bytes()
 
-		// Size guarantee: if compressed is larger than original, return minimal PNG
+		// Raw-pixel callers can request a stored fallback at their size target.
 		if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
-			return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, opts.ColorType)
+			return e.encodeMinimalPNG(pixels, opts)
 		}
 
 		return result, nil
@@ -191,38 +191,37 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 
 	result := buf.Bytes()
 
-	// Size guarantee: if compressed is larger than original, return minimal PNG
+	// Raw-pixel callers can request a stored fallback at their size target.
 	if opts.EnsureSizeNotLarger && len(result) >= originalSizeForGuarantee(opts, pixels) {
-		return e.encodeMinimalPNG(pixels, opts.Width, opts.Height, opts.ColorType)
+		return e.encodeMinimalPNG(pixels, opts)
 	}
 
 	return result, nil
 }
 
-// encodeMinimalPNG creates a minimal PNG when compression doesn't help.
-// Uses stored blocks for fast encoding without DEFLATE overhead.
-func (e *Encoder) encodeMinimalPNG(pixels []byte, width, height int, colorType ColorType) ([]byte, error) {
+// encodeMinimalPNG writes an unfiltered PNG using stored blocks and preserved
+// metadata. Without the original file bytes it cannot guarantee a smaller file.
+func (e *Encoder) encodeMinimalPNG(pixels []byte, opts Options) ([]byte, error) {
 	var buf bytes.Buffer
 
 	if err := writeSignature(&buf); err != nil {
 		return nil, err
 	}
 
-	if err := writeIHDR(&buf, width, height, colorType); err != nil {
+	if err := writeIHDR(&buf, opts.Width, opts.Height, opts.ColorType); err != nil {
 		return nil, err
 	}
 
-	// Use stored blocks for minimal compression (fast, no expansion for already-compressed data)
-	// We call WriteIDATWithOptions with a special preset/level if needed,
-	// but the default behavior with CompressionLevel=0 or if it's smaller will use stored blocks.
-	opts := e.opts
-	opts.Width = width
-	opts.Height = height
-	opts.ColorType = colorType
-	// Force stored blocks by using level 0
-	opts.CompressionLevel = 0
+	if err := writePreservedChunks(&buf, opts.PreserveChunks); err != nil {
+		return nil, err
+	}
 
-	if err := WriteIDATWithOptions(&buf, pixels, width, height, colorType, opts); err != nil {
+	// Use this call's metadata and skip filter search as well as LZ77 matching.
+	opts.CompressionLevel = 0
+	opts.OptimalDeflate = false
+	opts.FilterStrategy = FilterStrategyNone
+
+	if err := WriteIDATWithOptions(&buf, pixels, opts.Width, opts.Height, opts.ColorType, opts); err != nil {
 		return nil, err
 	}
 
