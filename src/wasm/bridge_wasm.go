@@ -12,10 +12,9 @@ import (
  * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number)
  */
 func HandleEncodePng(this js.Value, args []js.Value) any {
-	if len(args) < 7 {
-		return js.ValueOf("invalid arguments")
+	if err := checkPNGArguments(args, false); err != nil {
+		return argumentError(err)
 	}
-
 	pixelsJS := args[0]
 	width := args[1].Int()
 	height := args[2].Int()
@@ -25,8 +24,10 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 	maxColors := args[6].Int()
 
 	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
+	pixels, err := copyJSBytes(pixelsJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	// Call the actual implementation
 	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors)
@@ -46,10 +47,9 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
  * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, [filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean], [progressCallback: function])
  */
 func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
-	if len(args) < 11 {
-		return js.ValueOf("invalid arguments: expected at least 11 arguments")
+	if err := checkPNGArguments(args, true); err != nil {
+		return argumentError(err)
 	}
-
 	pixelsJS := args[0]
 	width := args[1].Int()
 	height := args[2].Int()
@@ -90,8 +90,10 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	}
 
 	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
+	pixels, err := copyJSBytes(pixelsJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	// Call the advanced implementation
 	output, err := EncodePngAdvanced(
@@ -122,10 +124,9 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
  * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number)
  */
 func HandleEncodeJpeg(this js.Value, args []js.Value) any {
-	if len(args) < 5 {
-		return js.ValueOf("invalid arguments: expected 5 arguments")
+	if err := checkJPEGArguments(args, false); err != nil {
+		return argumentError(err)
 	}
-
 	pixelsJS := args[0]
 	width := args[1].Int()
 	height := args[2].Int()
@@ -133,8 +134,10 @@ func HandleEncodeJpeg(this js.Value, args []js.Value) any {
 	quality := args[4].Int()
 
 	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
+	pixels, err := copyJSBytes(pixelsJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	// Call the actual implementation
 	output, err := EncodeJpeg(pixels, width, height, colorType, uint8(quality))
@@ -154,10 +157,9 @@ func HandleEncodeJpeg(this js.Value, args []js.Value) any {
  * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number, subsampling: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean, preset: number)
  */
 func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
-	if len(args) < 10 {
-		return js.ValueOf("invalid arguments: expected 10 arguments")
+	if err := checkJPEGArguments(args, true); err != nil {
+		return argumentError(err)
 	}
-
 	pixelsJS := args[0]
 	width := args[1].Int()
 	height := args[2].Int()
@@ -170,8 +172,10 @@ func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
 	preset := args[9].Int()
 
 	// Copy JS buffer to Go slice
-	pixels := make([]byte, pixelsJS.Get("length").Int())
-	js.CopyBytesToGo(pixels, pixelsJS)
+	pixels, err := copyJSBytes(pixelsJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	// Call the advanced implementation
 	output, err := EncodeJpegAdvanced(pixels, width, height, colorType, uint8(quality), subsampling, progressive, trellis, optimizeHuffman, preset)
@@ -191,10 +195,12 @@ func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
  * Expected args: (jpegBytes: Uint8Array, preset: number, quality: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean)
  */
 func HandleRecompressJpeg(this js.Value, args []js.Value) any {
-	if len(args) < 6 {
-		return js.ValueOf("error: invalid arguments: expected 6 arguments")
+	if err := checkArguments(args, []argumentRule{integerArg(0, 4), integerArg(1, 100), booleanArg, booleanArg, booleanArg}); err != nil {
+		return argumentError(err)
 	}
-
+	if err := checkEncodedBytes(args[0]); err != nil {
+		return argumentError(err)
+	}
 	jpegBytesJS := args[0]
 	preset := args[1].Int()
 	quality := args[2].Int()
@@ -202,8 +208,10 @@ func HandleRecompressJpeg(this js.Value, args []js.Value) any {
 	trellis := args[4].Bool()
 	optimizeHuffman := args[5].Bool()
 
-	input := make([]byte, jpegBytesJS.Get("length").Int())
-	js.CopyBytesToGo(input, jpegBytesJS)
+	input, err := copyJSBytes(jpegBytesJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	output, err := RecompressJpeg(input, preset, uint8(quality), progressive, trellis, optimizeHuffman)
 	if err != nil {
@@ -223,8 +231,14 @@ func HandleBytesPerPixel(this js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return js.ValueOf(0)
 	}
-	colorType := args[0].Int()
-	return js.ValueOf(BytesPerPixel(colorType))
+	if args[0].Type() != js.TypeNumber {
+		return argumentError(fmt.Errorf("color type must be an integer"))
+	}
+	value := args[0].Float()
+	if value != 0 && value != 2 && value != 3 && value != 6 {
+		return argumentError(fmt.Errorf("unsupported color type"))
+	}
+	return js.ValueOf(BytesPerPixel(int(value)))
 }
 
 /**
@@ -262,10 +276,15 @@ func HandleGetPresets(this js.Value, args []js.Value) any {
  * Expected arguments: (pngBytes: Uint8Array, preset: number, zopfliIterations: number, progressCallback?: function)
  */
 func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
-	if len(args) < 3 {
-		return js.ValueOf("invalid arguments: expected 3 arguments")
+	if err := checkArguments(args, []argumentRule{integerArg(0, 4), integerArg(0, 50)}); err != nil {
+		return argumentError(err)
 	}
-
+	if err := checkCallback(args, 3); err != nil {
+		return argumentError(err)
+	}
+	if err := checkEncodedBytes(args[0]); err != nil {
+		return argumentError(err)
+	}
 	pngBytesJS := args[0]
 	preset := args[1].Int()
 	zopfliIterations := args[2].Int()
@@ -278,8 +297,10 @@ func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
 		}
 	}
 
-	input := make([]byte, pngBytesJS.Get("length").Int())
-	js.CopyBytesToGo(input, pngBytesJS)
+	input, err := copyJSBytes(pngBytesJS)
+	if err != nil {
+		return argumentError(err)
+	}
 
 	output, err := RecompressPngLossless(input, preset, zopfliIterations, progressFunc)
 	if err != nil {

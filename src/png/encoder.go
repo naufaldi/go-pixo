@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+
+	"github.com/mac/go-pixo/src/internal/imagelimit"
 )
 
 // Encoder writes PNG images with configurable compression and preprocessing options.
@@ -16,12 +18,7 @@ type Encoder struct {
 
 // NewEncoder creates a PNG encoder for an image of the given size and color type.
 func NewEncoder(width, height int, colorType ColorType) (*Encoder, error) {
-	if width <= 0 || height <= 0 {
-		return nil, ErrInvalidDimensions
-	}
-
-	// Validate parameters by creating a dummy IHDR
-	if _, err := NewIHDRData(width, height, 8, uint8(colorType)); err != nil {
+	if _, err := pixelDataSize(width, height, colorType); err != nil {
 		return nil, err
 	}
 
@@ -38,12 +35,7 @@ func NewEncoder(width, height int, colorType ColorType) (*Encoder, error) {
 
 // NewEncoderWithOptions creates a PNG encoder using the provided Options.
 func NewEncoderWithOptions(opts Options) (*Encoder, error) {
-	if opts.Width <= 0 || opts.Height <= 0 {
-		return nil, ErrInvalidDimensions
-	}
-
-	// Validate parameters by creating a dummy IHDR
-	if _, err := NewIHDRData(opts.Width, opts.Height, 8, uint8(opts.ColorType)); err != nil {
+	if _, err := pixelDataSize(opts.Width, opts.Height, opts.ColorType); err != nil {
 		return nil, err
 	}
 
@@ -62,16 +54,18 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 
 // EncodeWithOptions encodes pixels into a PNG using opts.
 func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error) {
+	expectedSize, err := pixelDataSize(opts.Width, opts.Height, opts.ColorType)
+	if err != nil {
+		return nil, err
+	}
+	if len(pixels) != expectedSize {
+		return nil, fmt.Errorf("png: pixel count mismatch: got %d bytes, want %d", len(pixels), expectedSize)
+	}
 	if opts.ProgressCallback != nil {
 		opts.ProgressCallback("preprocess", 0)
 	}
 
 	colorType := opts.ColorType
-	bpp := BytesPerPixel(colorType)
-	expectedSize := opts.Width * opts.Height * bpp
-	if len(pixels) != expectedSize {
-		return nil, fmt.Errorf("png: pixel count mismatch: got %d bytes, want %d", len(pixels), expectedSize)
-	}
 
 	processedPixels := pixels
 
@@ -197,6 +191,13 @@ func (e *Encoder) EncodeWithOptions(pixels []byte, opts Options) ([]byte, error)
 	}
 
 	return result, nil
+}
+
+func pixelDataSize(width, height int, colorType ColorType) (int, error) {
+	if _, err := NewIHDRData(width, height, 8, uint8(colorType)); err != nil {
+		return 0, err
+	}
+	return imagelimit.PixelBytes(width, height, BytesPerPixel(colorType))
 }
 
 // encodeMinimalPNG creates a minimal PNG when compression doesn't help.

@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/draw"
 	stdpng "image/png"
+
+	"github.com/mac/go-pixo/src/internal/imagelimit"
 )
 
 // RecompressPNGBytesLossless recompresses an input PNG while preserving pixels.
@@ -18,6 +20,17 @@ import (
 // Quantization, dithering, and invisible RGB changes are disabled. Unsupported
 // 16-bit images are returned unchanged because the encoder accepts only 8-bit samples.
 func RecompressPNGBytesLossless(inputPNG []byte, opts Options) ([]byte, error) {
+	if err := imagelimit.CheckEncodedSize(len(inputPNG)); err != nil {
+		return nil, err
+	}
+	config, err := stdpng.DecodeConfig(bytes.NewReader(inputPNG))
+	if err != nil {
+		return nil, fmt.Errorf("png: decode config: %w", err)
+	}
+	if err := imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
+		return nil, err
+	}
+
 	preserved, err := ExtractPreserveChunks(inputPNG)
 	if err != nil {
 		return nil, err
