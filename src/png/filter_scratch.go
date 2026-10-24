@@ -141,7 +141,9 @@ func selectEntropyWithScratch(row []byte, prevRow []byte, bpp int, scratch *Adap
 
 	for i, f := range filters {
 		filtered := f.fn()
-		score := EntropyScore(filtered[1:])
+		// Match the allocating selector's ordering. Scaling by row length can
+		// round distinct entropy values into a tie and change the winning filter.
+		score := CalculateEntropy(filtered[1:])
 		if bestScore < 0 || score < bestScore {
 			bestScore = score
 			bestFilter = f.typ
@@ -149,7 +151,7 @@ func selectEntropyWithScratch(row []byte, prevRow []byte, bpp int, scratch *Adap
 
 		if scratch.Config.EarlyTerminationEnabled &&
 			i+1 >= minFilters &&
-			bestScore <= scratch.Config.EarlyTerminationThreshold {
+			bestScore*float64(len(row)) <= scratch.Config.EarlyTerminationThreshold {
 			break
 		}
 	}

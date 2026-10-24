@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"image"
+	stdpng "image/png"
 	"io"
 	"math/rand"
 	"testing"
@@ -67,6 +68,59 @@ func TestPNGCompressionWorkPixelRoundTrip(t *testing.T) {
 		}
 		if !bytes.Equal(idat, concatChunkData(parsePNGChunks(t, out), "IDAT")) {
 			t.Error("IDAT helper and PNG writer differ")
+		}
+	}
+}
+
+func TestScratchEntropyPreservesUnscaledOrdering(t *testing.T) {
+	rows := [][]byte{
+		{9, 11, 15, 14, 5, 12, 3, 13, 4, 10, 9, 7, 3},
+		{12, 1, 8, 5, 2, 15, 0, 4, 5, 1, 7, 6, 7},
+	}
+	scratch := NewAdaptiveScratch(13, 1)
+	defer scratch.Release()
+	var previous []byte
+	var expectedScanlines []byte
+	for y, row := range rows {
+		wantType, wantBytes := SelectFilterWithStrategy(row, previous, 1, FilterStrategyEntropy)
+		expectedScanlines = append(expectedScanlines, byte(wantType))
+		expectedScanlines = append(expectedScanlines, wantBytes...)
+		gotType, gotBytes := SelectFilterWithStrategyAndScratch(row, previous, 1, FilterStrategyEntropy, scratch)
+		if gotType != wantType || !bytes.Equal(gotBytes, wantBytes) {
+			t.Errorf("row %d: scratch (%d,%v), allocating (%d,%v)", y, gotType, gotBytes, wantType, wantBytes)
+		}
+		previous = row
+	}
+	opts := FastOptions(13, 2)
+	opts.ColorType = ColorGrayscale
+	opts.FilterStrategy = FilterStrategyEntropy
+	opts.OptimalDeflate = true
+	enc, err := NewEncoderWithOptions(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pixels := append(append([]byte(nil), rows[0]...), rows[1]...)
+	out, err := enc.Encode(pixels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Entropy's last floating-point bits can differ across native and WASM.
+	// Preserve the allocating selector's exact stream on the current platform.
+	wantIDAT, err := buildZlibData(expectedScanlines, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotIDAT := concatChunkData(parsePNGChunks(t, out), "IDAT"); !bytes.Equal(gotIDAT, wantIDAT) {
+		t.Errorf("scratch IDAT (%d bytes) differs from allocating selection (%d bytes)", len(gotIDAT), len(wantIDAT))
+	}
+	decoded, err := stdpng.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range pixels {
+		r, g, b, a := decoded.At(i%13, i/13).RGBA()
+		if r != uint32(want)*257 || g != r || b != r || a != 65535 {
+			t.Errorf("pixel %d: got (%d,%d,%d,%d), want gray %d", i, r, g, b, a, want)
 		}
 	}
 }
