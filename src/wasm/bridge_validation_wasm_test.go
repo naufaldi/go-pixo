@@ -151,6 +151,12 @@ func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 	view := js.Global().Get("Uint8Array").New(8).Call("subarray", 4, 8)
 	viewBytes := []byte{12, 34, 56, 255}
 	js.CopyBytesToJS(view, viewBytes)
+	hostileView := js.Global().Get("Uint8Array").New(4)
+	js.CopyBytesToJS(hostileView, viewBytes)
+	prototypeProxy := js.Global().Get("Proxy").New(js.Global().Get("Object").Call("create", js.Null()), map[string]any{
+		"getPrototypeOf": js.Global().Get("Function").New("throw new TypeError('untrusted prototype inspection')"),
+	})
+	js.Global().Get("Object").Call("setPrototypeOf", hostileView, prototypeProxy)
 	js.Global().Get("Object").Call("defineProperty", view, "subarray", map[string]any{
 		"value": js.Global().Get("Function").New("throw new TypeError('untrusted subarray called')"),
 	})
@@ -170,6 +176,7 @@ func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 	}{
 		{"png", HandleEncodePng, []any{pixels, 1, 1, 6, 2, false, 0}},
 		{"png intrinsic subview copy", HandleEncodePng, []any{view, 1, 1, 6, 2, false, 0}},
+		{"png hostile view prototype", HandleEncodePng, []any{hostileView, 1, 1, 6, 2, false, 0}},
 		{"png clamped real size", HandleEncodePng, []any{clamped, 1, 1, 6, 2, false, 0}},
 		{"png advanced legacy", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0}},
 		{"png advanced legacy callback", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, callback.Value}},

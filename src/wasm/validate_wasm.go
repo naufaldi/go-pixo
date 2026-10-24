@@ -61,15 +61,15 @@ func byteArrayLength(value js.Value) (length int, err error) {
 			err = fmt.Errorf("could not inspect input byte array")
 		}
 	}()
-	if value.Type() != js.TypeObject || !js.Global().Get("ArrayBuffer").Call("isView", value).Bool() ||
-		(!value.InstanceOf(js.Global().Get("Uint8Array")) && !value.InstanceOf(js.Global().Get("Uint8ClampedArray"))) {
+	if value.Type() != js.TypeObject || !js.Global().Get("ArrayBuffer").Call("isView", value).Bool() {
 		return 0, fmt.Errorf("input must be a Uint8Array or Uint8ClampedArray")
 	}
 	// Do not trust an own 'length' property shadowing the typed array's real size.
 	object := js.Global().Get("Object")
 	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
-	// instanceof follows prototypes. This intrinsic getter reads the internal
-	// typed-array kind instead, ignoring an own Symbol.toStringTag property.
+	// Never use instanceof on caller input: a prototype proxy can throw outside
+	// Go's recover boundary. This getter reads the internal typed-array kind,
+	// ignoring prototypes and an own Symbol.toStringTag property.
 	tagGetter := object.Call("getOwnPropertyDescriptor", prototype, js.Global().Get("Symbol").Get("toStringTag")).Get("get")
 	kind := tagGetter.Call("call", value)
 	if kind.Type() != js.TypeString || (kind.String() != "Uint8Array" && kind.String() != "Uint8ClampedArray") {
