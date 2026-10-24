@@ -239,3 +239,18 @@ describe('WorkerPool lifecycle', () => {
     if (kind === 'typed') expect(received).toBe(bytes)
   })
 })
+
+it('bounds failures from lazy Go startup even after transport readiness', async () => {
+  const pool = createPool(1)
+  const first = pool.submit({id: 'first-go'}, () => {}).catch(error => error.message)
+  ControlledWorker.instances[0].emit({type: 'ready'})
+  ControlledWorker.instances[0].emit({type: 'error', error: 'Go startup failed'})
+  expect(await first).toBe('Go startup failed')
+  const second = pool.submit({id: 'second-go'}, () => {}).catch(error => error.message)
+  ControlledWorker.instances[1].emit({type: 'ready'})
+  ControlledWorker.instances[1].emit({type: 'error', error: 'Go startup failed'})
+  expect(await second).toBe('Go startup failed')
+  expect(ControlledWorker.instances).toHaveLength(2)
+  await expect(pool.submit({id: 'later'}, () => {})).rejects.toThrow('Go startup failed')
+  expect(pool.recover()).toBe(true)
+})

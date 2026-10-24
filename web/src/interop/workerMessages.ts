@@ -1,6 +1,6 @@
 export type CompressPayload = {
   id: string
-  pixels: Uint8Array
+  pixels: Uint8Array | undefined
   width: number
   height: number
   colorType: number
@@ -64,7 +64,7 @@ export function buildCompressMessage(payload: CompressPayload): CompressMessage 
 
 export function buildCompressMessageFromFields(
   id: string,
-  pixels: Uint8Array,
+  pixels: Uint8Array | undefined,
   width: number,
   height: number,
   colorType: number,

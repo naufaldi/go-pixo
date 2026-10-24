@@ -1,5 +1,5 @@
 import { compressionCandidates, resolveOutputFormat, selectCompressionResult, type CompressionResult, type InputFormat, type OutputFormatChoice, type ResolvedFormat } from './compressionSettings';
-import { assertSafeDimensions, inspectImage } from './imageFormats';
+import { assertSafeDimensions, imageDisplayDimensions, inspectImage } from './imageFormats';
 
 export type CandidateRequest = {
   format: InputFormat; outputFormat?: OutputFormatChoice; lossy: boolean;
@@ -12,10 +12,12 @@ export async function compressWithCandidates(
 ): Promise<CompressionResult> {
   assertSafeDimensions(request.width,request.height);
   const source=request.originalFileBytes?.length ? inspectImage(request.originalFileBytes) : undefined;
+  const sourceDisplay=source ? imageDisplayDimensions(source) : undefined;
   const input=source?.format ?? request.format;
   const choice=request.outputFormat ?? 'same';
   const encodable=['png','jpeg','webp','avif'].includes(input);
-  const original: CompressionResult | undefined=!request.resized && encodable && request.originalFileBytes?.length &&
+  const original: CompressionResult | undefined=!request.resized && sourceDisplay?.width===request.width &&
+    sourceDisplay.height===request.height && encodable && request.originalFileBytes?.length &&
     (choice==='auto' || resolveOutputFormat(input,choice)===input)
       ? {compressedBytes:request.originalFileBytes,outputFormat:input as ResolvedFormat} : undefined;
 
@@ -39,7 +41,8 @@ export async function compressWithCandidates(
       const compressedBytes=await encode(format,choice==='auto');
       const actual=inspectImage(compressedBytes);
       if (actual.format!==format) throw new Error(`Encoder format/signature mismatch: expected ${format}, got ${actual.format}`);
-      if (actual.width!==request.width || actual.height!==request.height) throw new Error('Encoder returned incorrect image dimensions');
+      const display=imageDisplayDimensions(actual);
+      if (display.width!==request.width || display.height!==request.height) throw new Error('Encoder returned incorrect image dimensions');
       candidates.push({compressedBytes,outputFormat:format});
     } catch (error) {
       if (choice!=='auto') throw error;

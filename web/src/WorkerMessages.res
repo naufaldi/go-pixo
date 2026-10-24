@@ -7,7 +7,7 @@ external parse: 'a => parsed = "parseWorkerMessage"
 @module("./interop/workerMessages.ts")
 external buildCompressMessage: (
   string,
-  'a,
+  option<array<int>>,
   int,
   int,
   int,
@@ -24,7 +24,7 @@ external buildCompressMessage: (
   bool,
   string,
   bool,
-  'a,
+  array<int>,
   option<int>,
   option<int>,
 ) => compressMessage = "buildCompressMessageFromFields"
