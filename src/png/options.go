@@ -94,8 +94,12 @@ type Options struct {
 	DistanceMetric        DistanceMetric
 	// OptimalConfig supplies MaxIterations to the bounded search. BlockSplitting
 	// is unsupported; other fields configure compress.OptimalParse, not this path.
-	OptimalConfig    compress.OptimalConfig
-	ProgressCallback func(phase string, progress int) // Optional callback for progress updates
+	OptimalConfig compress.OptimalConfig
+	// ProgressCallback reports phase-local completed work (0..100). Histogram and
+	// quantize count pixels, palette counts splits/entries, filtering counts rows,
+	// and deflate counts completed optimization passes when available. Other phases
+	// only report boundaries and must be displayed as indeterminate during work.
+	ProgressCallback func(phase string, progress int)
 }
 
 // FastOptions returns options optimized for speed.

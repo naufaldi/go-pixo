@@ -458,7 +458,11 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 		maxColors = 256
 	}
 
-	colorMap := CountColors(pixels, colorType)
+	colorMap := countColorsWithProgress(pixels, colorType, opts.ProgressCallback)
+	// Sorting has no useful counter. Report its boundary, without claiming work units.
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("palette-sort", 0)
+	}
 	colorsWithCount := ToColorWithCountSlice(colorMap)
 
 	quality := opts.QualityTarget
@@ -476,7 +480,7 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 	if quality > 100 {
 		quality = 100
 	}
-	paletteColors := MedianCutWithQuality(colorsWithCount, maxColors, float64(quality)/100)
+	paletteColors := medianCutWithProgress(colorsWithCount, maxColors, float64(quality)/100, opts.ProgressCallback)
 
 	palette := NewPalette(len(paletteColors))
 	for _, c := range paletteColors {
@@ -507,6 +511,7 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 		}
 	}
 
+	progress := newWorkProgress(opts.ProgressCallback, "quantize", width, 4096)
 	for i := 0; i < width; i++ {
 		offset := i * bpp
 		if opts.Width > 0 && i%opts.Width == 0 {
@@ -532,7 +537,11 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 				int(float64(int(c.B)-int(chosen.B)) * 7 / 16 * strength),
 			}
 		}
+		if i+1 >= progress.next {
+			progress.report(i + 1)
+		}
 	}
+	progress.finish()
 
 	return indexed, *palette
 }

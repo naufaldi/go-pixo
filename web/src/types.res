@@ -73,6 +73,7 @@ type compressionProgress = {
   itemId: string,
   phase: string,
   progress: int,
+  phasePercent: option<int>,
   startTime: float,
   fileSize: int,
   lastRealProgress: int,

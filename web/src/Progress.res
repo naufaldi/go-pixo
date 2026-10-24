@@ -1,5 +1,6 @@
 type snapshot = {
   progress: int,
+  phasePercent: option<int>,
   phase: string,
   lastRealProgress: int,
   lastRealUpdateTime: float,
@@ -21,6 +22,7 @@ external applyRealProgressWrapper: (
   int,
   float,
   int,
+  option<int>,
 ) => snapshot = "applyRealProgressWrapper"
 
 @module("./interop/progress.ts")
@@ -40,6 +42,7 @@ let toCompressionProgress = (
     itemId,
     phase: s.phase,
     progress: s.progress,
+    phasePercent: s.phasePercent,
     startTime,
     fileSize,
     lastRealProgress: s.lastRealProgress,
@@ -53,6 +56,7 @@ let toCompressionProgress = (
 let fromCompressionProgress = (p: Types.compressionProgress): snapshot => {
   {
     progress: p.progress,
+    phasePercent: p.phasePercent,
     phase: p.phase,
     lastRealProgress: p.lastRealProgress,
     lastRealUpdateTime: p.lastRealUpdateTime,
@@ -64,7 +68,7 @@ let fromCompressionProgress = (p: Types.compressionProgress): snapshot => {
 }
 
 let seedProgress = (itemId: string, fileSize: int, now: float): Types.compressionProgress => {
-  let snapshot = createInitialSnapshot("preparing", 2, now, fileSize)
+  let snapshot = createInitialSnapshot("decoding", 0, now, fileSize)
   toCompressionProgress(itemId, fileSize, now, snapshot)
 }
 
@@ -75,6 +79,7 @@ let applyWorkerUpdate = (
   predictable: bool,
   phaseTarget: int,
   now: float,
+  phasePercent: option<int>,
 ): Types.compressionProgress => {
   switch previous {
   | Some(p) =>
@@ -86,6 +91,7 @@ let applyWorkerUpdate = (
       phaseTarget,
       now,
       p.fileSize,
+      phasePercent,
     )
     toCompressionProgress(p.itemId, p.fileSize, p.startTime, snapshot)
   | None =>
@@ -97,6 +103,7 @@ let applyWorkerUpdate = (
       phaseTarget,
       now,
       0,
+      phasePercent,
     )
     toCompressionProgress("", 0, now, snapshot)
   }

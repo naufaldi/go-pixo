@@ -321,3 +321,55 @@ test('a missing Go asset served as a successful SPA fallback fails offline insta
     await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
   }
 })
+
+
+test('production PNG reports measured stage work, advances its clock and allows cancellation', async ({page}) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => {
+    const state = {updates: [] as {phase: string; phasePercent?: number; at: number}[], elapsed: [] as string[]}
+    ;(window as any).__progressEvidence = state
+    const NativeWorker = window.Worker
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options)
+        this.addEventListener('message', event => {
+          if (event.data?.type === 'progress') state.updates.push({...event.data, at: performance.now()})
+        })
+      }
+    }
+    new MutationObserver(() => {
+      const elapsed = document.querySelector('[data-testid="compression-elapsed"]')?.textContent
+      if (elapsed && state.elapsed.at(-1) !== elapsed) state.elapsed.push(elapsed)
+    }).observe(document, {subtree: true, childList: true, characterData: true})
+  })
+  await page.goto('/')
+  await expect(page.getByTestId('offline-status')).toContainText('Ready offline', {timeout: 60000})
+  const fixture = fileURLToPath(new URL('./fixtures/benchmark/codex-still-life.png', import.meta.url))
+  const started = Date.now()
+  await page.locator('input[type="file"]').setInputFiles(fixture)
+  await expect(page.locator('img[alt="Compressed"]')).toBeVisible({timeout: 30000})
+  const wallMs = Date.now() - started
+  const evidence = await page.evaluate(() => (window as any).__progressEvidence)
+  for (const phase of ['histogram', 'palette', 'quantize']) {
+    expect(evidence.updates.some((update: any) => update.phase === phase && update.phasePercent > 0 && update.phasePercent < 100)).toBe(true)
+  }
+  expect(new Set(evidence.elapsed).size).toBeGreaterThan(2)
+  const metadata = await outputMetadata(page)
+  expect(metadata.type).toBe('image/png')
+  expect([metadata.width, metadata.height]).toEqual([1536, 1024])
+  expect(metadata.header.slice(0,8)).toEqual([137,80,78,71,13,10,26,10])
+  console.info(JSON.stringify({wallMs, ...metadata, updates: evidence.updates.length, elapsed: evidence.elapsed,
+    measured: ['histogram','palette','quantize','filtering'].map(phase => ({phase, values: evidence.updates.filter((update: any) => update.phase === phase).map((update: any) => update.phasePercent)}))}))
+
+  await page.getByRole('button', {name: 'Clear all'}).click()
+  await page.locator('input[type="file"]').setInputFiles(fixture)
+  await expect(page.getByTestId('compression-phase')).toHaveText('Building palette', {timeout: 15000})
+  await page.getByRole('button', {name: 'Remove image', exact: true}).click()
+  await expect(page.getByText('codex-still-life.png', {exact: true})).not.toBeVisible()
+  await expect(page.getByRole('progressbar')).not.toBeVisible()
+  // A new job can claim the cancelled slot; late updates cannot revive its UI.
+  await page.locator('input[type="file"]').setInputFiles(fileURLToPath(new URL('./fixtures/sample-32x32.png', import.meta.url)))
+  await expect(page.locator('img[alt="Compressed"]')).toBeVisible({timeout: 15000})
+  expect(errors).toEqual([])
+})

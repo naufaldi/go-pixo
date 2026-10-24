@@ -1,3 +1,5 @@
+import { measuredPhasePercent } from './progress';
+
 export type CompressPayload = {
   id: string
   pixels: Uint8Array | undefined
@@ -35,6 +37,7 @@ export type ParsedWorkerMessage =
       phase: string
       progress: number
       predictable: boolean
+      phasePercent?: number
       phaseTarget?: number
     }
   | {
@@ -132,6 +135,7 @@ export function parseWorkerMessage(value: unknown): ParsedWorkerMessage {
       }
 
       return {
+        ...(measuredPhasePercent(value.phasePercent) !== undefined ? {phasePercent: measuredPhasePercent(value.phasePercent)} : {}),
         type: 'progress',
         id: value.id,
         phase: value.phase,
