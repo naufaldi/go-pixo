@@ -22,6 +22,7 @@ let make = (
   ~onDownloadFormat: outputFormat => unit,
   ~onDownloadAll,
   ~onDownloadZip: unit => unit,
+  ~exportingZip: bool=false,
   ~hasCompletedItems: bool,
   ~completedCount: int,
   ~failedCount: int,
@@ -217,10 +218,11 @@ let make = (
           {completedCount + failedCount >= 2 && hasCompletedItems
             ? <button
                 type_="button"
-                disabled=processingAll
+                disabled={processingAll || exportingZip}
+                ariaBusy=exportingZip
                 onClick={_ => onDownloadZip()}
                 className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors disabled:cursor-wait disabled:opacity-50">
-                {React.string(if failedCount > 0 { "Download ZIP (" ++ Int.toString(completedCount) ++ " successful)" } else { "Download ZIP" })}
+                {React.string(if exportingZip { "Exporting ZIP..." } else if failedCount > 0 { "Download ZIP (" ++ Int.toString(completedCount) ++ " successful)" } else { "Download ZIP" })}
               </button>
             : React.null}
         </div>

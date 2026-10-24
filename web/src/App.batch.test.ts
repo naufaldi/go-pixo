@@ -80,7 +80,7 @@ describe('bounded batch UI', () => {
     await act(async () => { AppWorker.instances[0].complete('png') })
     await waitFor(() => expect(zip).toBeEnabled())
     expect(all).toBeEnabled()
-    fireEvent.click(zip)
+    await act(async () => fireEvent.click(zip))
     expect(downloadAllAsZip).toHaveBeenCalledTimes(1)
     expect(downloadAllAsZip.mock.calls[0][0].map((item: { status: string }) => item.status)).toEqual(['Done', 'Done', 'Done'])
   })
@@ -205,5 +205,114 @@ describe('bounded batch UI', () => {
     expect(screen.queryByText('one.png')).not.toBeInTheDocument()
     expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(0)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+  })
+})
+
+const readyForZip = async () => {
+  const view = render(createElement(App))
+  addFiles(view.container, ['one.png', 'two.png'])
+  await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(2))
+  await act(async () => { AppWorker.instances[0].complete('png'); AppWorker.instances[1].complete('png') })
+  return view
+}
+
+describe('ZIP export lifecycle', () => {
+  it('shows busy state, suppresses duplicate clicks and allows another export after completion', async () => {
+    let finish!: () => void
+    downloadAllAsZip.mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
+    await readyForZip()
+    const button = screen.getByRole('button', { name: 'Download ZIP' })
+    act(() => { fireEvent.click(button); fireEvent.click(button) })
+    expect(downloadAllAsZip).toHaveBeenCalledTimes(1)
+    expect(button).toBeDisabled()
+    expect(button).toHaveTextContent('Exporting ZIP')
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    expect(downloadAllAsZip.mock.calls[0][1]).toBeInstanceOf(AbortSignal)
+    await act(async () => finish())
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(downloadAllAsZip).toHaveBeenCalledTimes(2)
+    await act(async () => finish())
+  })
+
+  it('reports export errors and restores the ZIP button for retry', async () => {
+    downloadAllAsZip.mockRejectedValue(new Error('Read failed'))
+    await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('ZIP download failed: Read failed'))
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
+  })
+
+  it.each(['resolve', 'reject'] as const)('adding files aborts the previous ZIP and ignores its late %s', async settlement => {
+    let signal!: AbortSignal
+    let finish!: () => void
+    let fail!: (error: Error) => void
+    downloadAllAsZip.mockImplementation((_items, exportSignal) => {
+      signal = exportSignal
+      return new Promise<void>((resolve, reject) => { finish = resolve; fail = reject })
+    })
+    const { container } = await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    await act(async () => addFiles(container, ['new.png']))
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      if (settlement === 'resolve') finish()
+      else fail(new Error('Stale export failure'))
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(downloadAllAsZip).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeDisabled()
+  })
+
+  it.each(['resolve', 'reject'] as const)('clear aborts the export and an old %s cannot change a newer export', async settlement => {
+    const pending: { signal: AbortSignal; reject: (error: Error) => void; resolve: () => void }[] = []
+    downloadAllAsZip.mockImplementation((_items, signal) => new Promise<void>((resolve, reject) => pending.push({ signal, resolve, reject })))
+    const { container } = await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    expect(pending[0].signal?.aborted).toBe(true)
+    addFiles(container, ['new-one.png', 'new-two.png'])
+    await waitFor(() => expect(AppWorker.instances.filter(worker => !worker.terminated).flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(2))
+    await act(async () => AppWorker.instances.filter(worker => !worker.terminated).forEach(worker => worker.complete('png')))
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    await act(async () => {
+      if (settlement === 'resolve') pending[0].resolve()
+      else pending[0].reject(new Error('Late old failure'))
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /Exporting ZIP/ })
+    expect(button).toBeDisabled()
+    expect(pending[1].signal.aborted).toBe(false)
+    await act(async () => pending[1].resolve())
+    expect(button).toBeEnabled()
+  })
+
+  it.each(['settings', 'remove'] as const)('aborts before %s revokes an export source', async action => {
+    let signal!: AbortSignal
+    downloadAllAsZip.mockImplementation((_items, exportSignal) => { signal = exportSignal; return new Promise(() => {}) })
+    await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    const abortedAtRevoke: boolean[] = []
+    vi.mocked(URL.revokeObjectURL).mockImplementation(() => abortedAtRevoke.push(signal.aborted))
+    await act(async () => {
+      if (action === 'settings') fireEvent.click(screen.getByRole('checkbox'))
+      else fireEvent.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
+    })
+    expect(signal.aborted).toBe(true)
+    expect(abortedAtRevoke.length).toBeGreaterThan(0)
+    expect(abortedAtRevoke.every(Boolean)).toBe(true)
+  })
+
+  it('unmount aborts the active export before URLs are released', async () => {
+    let signal!: AbortSignal
+    downloadAllAsZip.mockImplementation((_items, exportSignal) => { signal = exportSignal; return new Promise(() => {}) })
+    const { unmount } = await readyForZip()
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
+    const abortAtRevoke: boolean[] = []
+    vi.mocked(URL.revokeObjectURL).mockImplementation(() => { abortAtRevoke.push(signal?.aborted ?? false) })
+    unmount()
+    expect(signal?.aborted).toBe(true)
+    expect(abortAtRevoke.length).toBeGreaterThan(0)
+    expect(abortAtRevoke.every(Boolean)).toBe(true)
   })
 })
