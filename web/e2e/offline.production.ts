@@ -190,6 +190,54 @@ test('an incomplete cache is not reported as ready after eviction', async ({ pag
   await expect(page.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 60000 })
 })
 
+test('Cloudflare-style redirected HTML supports controlled and offline navigation', async ({ page, context }) => {
+  const directory = fileURLToPath(new URL('../dist/', import.meta.url))
+  const files = new Set(await distFiles(directory))
+  const types: Record<string, string> = {
+    js: 'text/javascript', css: 'text/css', html: 'text/html', wasm: 'application/wasm',
+    webmanifest: 'application/manifest+json', png: 'image/png', svg: 'image/svg+xml',
+  }
+  let canonicalRedirects = 0
+  const server = createServer((request, response) => {
+    void (async () => {
+      const pathname = new URL(request.url!, 'http://localhost').pathname
+      if (pathname === '/index.html') {
+        canonicalRedirects++
+        response.writeHead(307, { Location: '/' })
+        response.end()
+        return
+      }
+      const requested = decodeURIComponent(pathname.slice(1)) || 'index.html'
+      const file = files.has(requested) ? requested : 'index.html'
+      response.setHeader('Content-Type', types[file.split('.').at(-1)!] ?? 'application/octet-stream')
+      response.end(await readFile(join(directory, file)))
+    })().catch(() => { response.statusCode = 500; response.end() })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Canonical-redirect server did not start')
+  const url = `http://127.0.0.1:${address.port}`
+  try {
+    await page.goto(url)
+    await expect(page.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 60000 })
+    expect(canonicalRedirects).toBeGreaterThan(0)
+    expect(await page.evaluate(async () => {
+      const name = (await caches.keys()).find(value => value.startsWith('go-pixo-offline-'))!
+      return (await (await caches.open(name)).match('/index.html', { ignoreVary: true }))!.redirected
+    })).toBe(true)
+    await page.reload()
+    await expect(page.getByTestId('offline-status')).toContainText('Ready offline')
+    await context.setOffline(true)
+    await page.reload()
+    await expect(page.getByTestId('offline-status')).toContainText('Ready offline')
+    await page.goto(`${url}/saved/route`)
+    await expect(page.getByTestId('offline-status')).toContainText('Ready offline')
+  } finally {
+    await context.setOffline(false)
+    await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+  }
+})
+
 test('a missing Go asset served as a successful SPA fallback fails offline installation', async ({ page }) => {
   const directory = fileURLToPath(new URL('../dist/', import.meta.url))
   const files = new Set(await distFiles(directory))
