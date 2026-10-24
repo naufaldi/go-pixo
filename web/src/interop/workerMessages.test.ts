@@ -28,6 +28,17 @@ const payload = {
 } satisfies CompressPayload
 
 describe('workerMessages', () => {
+  it.each(['typed', 'view'])('keeps the received %s output buffer and its subarray boundaries', kind => {
+    const buffer = new Uint8Array([9, 1, 2, 3, 8]).buffer
+    const bytes = kind === 'typed' ? new Uint8Array(buffer, 1, 3) : new DataView(buffer, 1, 3)
+    const parsed = parseWorkerMessage({type: 'compressed', id: 'item', compressedBytes: bytes, outputFormat: 'png'})
+    expect(parsed.type).toBe('compressed')
+    if (parsed.type !== 'compressed') throw new Error('Expected compressed response')
+    expect(parsed.compressedBytes.buffer).toBe(buffer)
+    expect(Array.from(parsed.compressedBytes)).toEqual([1, 2, 3])
+    expect(parsed.compressedBytes.byteOffset).toBe(1)
+    if (kind === 'typed') expect(parsed.compressedBytes).toBe(bytes)
+  })
   it('builds a compress message with the expected type and payload fields', () => {
     expect(buildCompressMessage(payload)).toEqual({
       type: 'compress',

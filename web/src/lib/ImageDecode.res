@@ -11,5 +11,5 @@ type decodeResult = {
 }
 
 @module("../interop/imageDecode")
-external decodeFile: Web.File.t => Promise.t<decodeResult> = "decodeFile"
+external decodeFile: (Web.File.t, Download.abortSignal) => Promise.t<decodeResult> = "decodeFile"
 
