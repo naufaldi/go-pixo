@@ -56,6 +56,14 @@ Offline support requires HTTPS or localhost, service workers, Cache Storage and 
 
 See [web/README.md](web/README.md) for format limits, production browser tests and the cache/update design.
 
+## Image resource limits
+
+The Go PNG/JPEG recompression APIs, CLI, and WASM exports accept encoded files up to **64 MiB** and images up to **24,000,000 pixels**, with **16,384 pixels per side**, matching the browser. Recompression checks `DecodeConfig` before full decoding or conversion. Raw encoders and CLI resize targets enforce the same dimension budget; pixel buffers must have the exact checked length. PNG IHDR construction separately validates the original dimensions against the format's 2³¹−1 limit before converting to `uint32`.
+
+At this pixel budget, a single 8-byte decoded raster uses at most 192 MB and an RGBA conversion uses at most 96 MB. Encoders also keep scanlines, coefficients, compression state, and output, so these limits bound raster workspaces rather than guaranteeing a peak memory or processing-time cap. Expensive presets and concurrent calls still need caller-side scheduling. Native APIs use the same fixed limits in `src/internal/imagelimit`; there is no runtime override. Supporting larger trusted inputs needs a separately designed streaming or configurable-budget API.
+
+WASM validates numeric types, finite integer dimensions, option ranges, and actual byte-array lengths before allocating or copying into Go. It accepts `Uint8Array` and `Uint8ClampedArray` inputs, returns the existing error-string form for invalid calls, and keeps both advanced PNG callback signatures. JPEG quality must be 1–100; PNG Zopfli iterations must be 0–50 (0 keeps the preset default).
+
 ## Project Structure
 
 - `src/` — Go source code

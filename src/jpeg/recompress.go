@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/draw"
 	stdjpeg "image/jpeg"
+
+	"github.com/mac/go-pixo/src/internal/imagelimit"
 )
 
 // RecompressJPEGBytes recompresses an existing JPEG with the provided options.
@@ -14,6 +16,17 @@ import (
 // opts acts as a template; Width, Height, and ColorType are overridden to match
 // the decoded image.
 func RecompressJPEGBytes(inputJPEG []byte, opts Options) ([]byte, error) {
+	if err := imagelimit.CheckEncodedSize(len(inputJPEG)); err != nil {
+		return nil, err
+	}
+	config, err := stdjpeg.DecodeConfig(bytes.NewReader(inputJPEG))
+	if err != nil {
+		return nil, fmt.Errorf("jpeg: decode config: %w", err)
+	}
+	if err := imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
+		return nil, err
+	}
+
 	img, err := stdjpeg.Decode(bytes.NewReader(inputJPEG))
 	if err != nil {
 		return nil, fmt.Errorf("jpeg: decode input: %w", err)

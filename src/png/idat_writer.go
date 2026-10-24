@@ -20,12 +20,12 @@ func WriteIDAT(w interface{ Write([]byte) (int, error) }, pixels []byte, width, 
 
 // WriteIDATWithOptions writes IDAT chunk with configurable options.
 func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []byte, width, height int, colorType ColorType, opts Options) error {
-	if width <= 0 || height <= 0 {
-		return ErrInvalidDimensions
+	expectedRawLen, err := pixelDataSize(width, height, colorType)
+	if err != nil {
+		return err
 	}
 
 	bpp := BytesPerPixel(colorType)
-	expectedRawLen := width * bpp * height
 
 	if len(pixels) != expectedRawLen {
 		return fmt.Errorf("png: pixel data length %d does not match expected %d for %dx%d image",
@@ -131,8 +131,11 @@ func IDATDataBytes(pixels []byte, width, height int, colorType ColorType) ([]byt
 
 // IDATDataBytesWithOptions returns the raw zlib data with configurable options.
 func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorType, opts Options) ([]byte, error) {
+	expectedRawLen, err := pixelDataSize(width, height, colorType)
+	if err != nil {
+		return nil, err
+	}
 	bpp := BytesPerPixel(colorType)
-	expectedRawLen := width * bpp * height
 
 	if len(pixels) != expectedRawLen {
 		return nil, fmt.Errorf("png: pixel data length %d does not match expected %d for %dx%d image",
