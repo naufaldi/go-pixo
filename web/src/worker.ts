@@ -359,8 +359,13 @@ self.onmessage = async (event: MessageEvent) => {
     });
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end,{predictable:true,phaseTarget:STAGE.FINALIZING.end});
     const originalBytes=req.originalFileBytes?.length || req.pixels.length;
+    // Codec/Go boundaries have already copied borrowed memory. The selected
+    // output (including an unchanged input candidate) belongs to this worker.
+    const outputBuffer=result.compressedBytes.buffer;
+    if (!(outputBuffer instanceof ArrayBuffer)) throw new Error('Compression output must own a transferable buffer');
     self.postMessage({type:'compressed',id:req.id,...result,originalBytes,compressedBytesCount:result.compressedBytes.length,
-      ratio:originalBytes ? result.compressedBytes.length/originalBytes*100 : 0} as CompressionResponse);
+      ratio:originalBytes ? result.compressedBytes.length/originalBytes*100 : 0} as CompressionResponse,
+      [outputBuffer]);
   } catch(error) {
     self.postMessage({type:'error',id:req.id,error:error instanceof Error ? error.message : 'Compression failed'});
   }

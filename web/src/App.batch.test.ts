@@ -46,6 +46,82 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('bounded batch UI', () => {
+  it.each(['read', 'native', 'bundled'].flatMap(stage => ['remove', 'clear', 'unmount'].map(action => ({stage, action}))))('$action during actual $stage decoding releases resources and promptly refills admission', async ({stage, action}) => {
+    const actual = await vi.importActual<typeof import('./interop/imageDecode')>('./interop/imageDecode')
+    const bytes = stage === 'bundled'
+      ? new Uint8Array([73,73,42,0,8,0,0,0,2,0,0,1,3,0,1,0,0,0,1,0,0,0,1,1,3,0,1,0,0,0,1,0,0,0,0,0,0,0])
+      : new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,0,0,0,0])
+    class Reader {
+      static instances: Reader[] = []
+      result: ArrayBuffer | null = null
+      readyState = 0
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      onabort: (() => void) | null = null
+      aborted = false
+      constructor() { Reader.instances.push(this) }
+      readAsArrayBuffer() {
+        this.readyState = 1
+        if (stage !== 'read') { this.result = bytes.buffer; this.readyState = 2; this.onload?.() }
+      }
+      abort() { this.aborted = true; this.readyState = 2; this.onabort?.() }
+    }
+    class Image {
+      static instances: Image[] = []
+      src = ''
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      constructor() { Image.instances.push(this) }
+    }
+    vi.stubGlobal('FileReader', Reader)
+    vi.stubGlobal('Image', Image)
+    decodeFile.mockImplementation(actual.decodeFile)
+    const {container, unmount} = render(createElement(App))
+    addFiles(container)
+    await waitFor(() => expect(stage === 'read' ? Reader.instances : stage === 'native' ? Image.instances : AppWorker.instances).toHaveLength(2))
+    if (action === 'remove') fireEvent.click(screen.getAllByRole('button', {name: 'Remove image'})[0])
+    if (action === 'clear') {
+      fireEvent.click(screen.getByRole('button', {name: 'Clear all'}))
+      addFiles(container, ['fresh.png'])
+    }
+    if (action === 'unmount') unmount()
+    const count = action === 'remove' ? 1 : 2
+    if (stage === 'read') expect(Reader.instances.slice(0, count).every(reader => reader.aborted)).toBe(true)
+    if (stage === 'native') {
+      expect(Image.instances.slice(0, count).every(image => image.src === '' && image.onload === null)).toBe(true)
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(count)
+    }
+    if (stage === 'bundled') expect(AppWorker.instances.slice(0, count).every(worker => worker.terminated)).toBe(true)
+    if (action !== 'unmount') await waitFor(() => expect(Reader.instances).toHaveLength(3))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it.each(['remove', 'clear', 'settings', 'unmount'])('%s aborts decoding but holds capacity until cancelled work settles', async action => {
+    const pending: {signal: AbortSignal; settle: () => void}[] = []
+    decodeFile.mockImplementation((_file: File, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      pending.push({signal, settle: () => reject(new DOMException('Cancelled', 'AbortError'))})
+    }))
+    const { container, unmount } = render(createElement(App))
+    addFiles(container)
+    await waitFor(() => expect(pending).toHaveLength(2))
+    if (action === 'remove') fireEvent.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
+    if (action === 'clear') {
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+      addFiles(container, ['fresh.png'])
+    }
+    if (action === 'settings') fireEvent.click(screen.getByRole('checkbox'))
+    if (action === 'unmount') unmount()
+    expect(pending[0].signal?.aborted).toBe(true)
+    expect(pending[1].signal?.aborted).toBe(action !== 'remove')
+    expect(pending).toHaveLength(2)
+    await act(async () => { pending[0].settle(); if (action !== 'remove') pending[1].settle() })
+    if (action !== 'unmount') await waitFor(() => expect(pending).toHaveLength(action === 'settings' ? 4 : 3))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    unmount()
+    await act(async () => pending.forEach(operation => operation.settle()))
+  })
+
   it('bounds decoding and encoding together, refills a free slot, and records actual worker format', async () => {
     const { container } = render(createElement(App))
     addFiles(container)
