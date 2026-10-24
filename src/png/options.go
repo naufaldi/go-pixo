@@ -14,7 +14,7 @@ const (
 	PresetMax
 	// PresetExtreme favors maximum size reduction.
 	PresetExtreme
-	// PresetUltra uses combined Entropy+Bigrams filter strategy with deep Zopfli passes.
+	// PresetUltra uses combined Entropy+Bigrams filtering and the capped parse search.
 	PresetUltra
 )
 
@@ -40,7 +40,8 @@ const (
 	FilterStrategyAdaptiveFast
 	// FilterStrategyEntropy selects the filter with minimum entropy.
 	FilterStrategyEntropy
-	// FilterStrategyBruteForce tries all filters for each row.
+	// FilterStrategyBruteForce compares five independent, BestSpeed DEFLATE row
+	// streams. It is opt-in and does not search combinations across rows.
 	FilterStrategyBruteForce
 	// FilterStrategyBigrams selects the filter with minimum distinct bigrams.
 	FilterStrategyBigrams
@@ -60,27 +61,41 @@ const (
 
 // Options represents PNG encoding options.
 type Options struct {
-	Width               int
-	Height              int
-	ColorType           ColorType
-	CompressionLevel    int
-	FilterStrategy      FilterStrategy
-	OptimizeAlpha       bool
-	ReduceColorType     bool
-	StripMetadata       bool
-	OptimalDeflate      bool
-	MaxColors           int
-	Dithering           bool
-	DitheringStrength   float64
-	QualityTarget       int
-	ZopfliIterations    int
-	EnsureSizeNotLarger bool                             // If true, ensure output is not larger than original
-	PreserveChunks      []Chunk
-	OriginalFileSize    int
+	Width            int
+	Height           int
+	ColorType        ColorType
+	CompressionLevel int // Zero writes stored blocks directly, even with OptimalDeflate.
+	FilterStrategy   FilterStrategy
+	// FilterEarlyTermination stops MinSum/Adaptive/Parallel or Entropy scoring
+	// after at least two candidates when residuals average <=1 or entropy <=0.5
+	// bits/byte, respectively. Other strategies reject this option.
+	FilterEarlyTermination bool
+	OptimizeAlpha          bool
+	ReduceColorType        bool
+	StripMetadata          bool
+	OptimalDeflate         bool
+	MaxColors              int
+	Dithering              bool
+	DitheringStrength      float64 // 0..1 horizontal error diffusion, only when Dithering is enabled.
+	// QualityTarget is the median-cut heuristic (0..100), not a fidelity floor.
+	// 100 uses the full MaxColors budget but still permits lossy quantization.
+	QualityTarget int
+	// QualityTargetSet distinguishes explicit quality 0 from legacy zero-value
+	// Options (full quality). Presets and ApplyLossy set it automatically.
+	// Nonzero QualityTarget values always take effect.
+	QualityTargetSet bool
+	// ZopfliIterations budgets up to three distinct parses beyond the baseline;
+	// see compress.ZopfliConfig. OptimalConfig.MaxIterations takes precedence.
+	ZopfliIterations      int
+	EnsureSizeNotLarger   bool // Requests a stored fallback when the candidate misses the size target.
+	PreserveChunks        []Chunk
+	OriginalFileSize      int
 	UsePerceptualDistance bool
 	DistanceMetric        DistanceMetric
-	OptimalConfig         compress.OptimalConfig
-	ProgressCallback    func(phase string, progress int) // Optional callback for progress updates
+	// OptimalConfig supplies MaxIterations to the bounded search. BlockSplitting
+	// is unsupported; other fields configure compress.OptimalParse, not this path.
+	OptimalConfig    compress.OptimalConfig
+	ProgressCallback func(phase string, progress int) // Optional callback for progress updates
 }
 
 // FastOptions returns options optimized for speed.
@@ -99,13 +114,14 @@ func FastOptions(width, height int) Options {
 		Dithering:           false,
 		DitheringStrength:   0.0,
 		QualityTarget:       100,
+		QualityTargetSet:    true,
 		ZopfliIterations:    0,
 		EnsureSizeNotLarger: false,
 	}
 }
 
-// FasterOptions returns options optimized for speed with size guarantee.
-// If compressed output is larger than original, it will use minimal compression.
+// FasterOptions returns options optimized for speed with a cheap stored fallback.
+// RecompressPNGBytesLossless provides the file-size guarantee using original bytes.
 func FasterOptions(width, height int) Options {
 	return Options{
 		Width:               width,
@@ -121,13 +137,14 @@ func FasterOptions(width, height int) Options {
 		Dithering:           false,
 		DitheringStrength:   0.0,
 		QualityTarget:       100,
+		QualityTargetSet:    true,
 		ZopfliIterations:    0,
 		EnsureSizeNotLarger: true,
 	}
 }
 
 // SmallerOptions returns options optimized for maximum compression with quality preservation.
-// Uses bigrams-based filtering and moderate Zopfli iterations for best size/quality ratio.
+// Uses bigrams-based filtering and the bounded parse search.
 func SmallerOptions(width, height int) Options {
 	return Options{
 		Width:               width,
@@ -143,6 +160,7 @@ func SmallerOptions(width, height int) Options {
 		Dithering:           false,
 		DitheringStrength:   0.0,
 		QualityTarget:       100,
+		QualityTargetSet:    true,
 		ZopfliIterations:    10,
 		EnsureSizeNotLarger: false,
 	}
@@ -164,6 +182,7 @@ func BalancedOptions(width, height int) Options {
 		Dithering:         false,
 		DitheringStrength: 0.0,
 		QualityTarget:     100,
+		QualityTargetSet:  true,
 		ZopfliIterations:  0,
 	}
 }
@@ -184,6 +203,7 @@ func MaxOptions(width, height int) Options {
 		Dithering:         false,
 		DitheringStrength: 0.0,
 		QualityTarget:     100,
+		QualityTargetSet:  true,
 		ZopfliIterations:  5,
 	}
 }
@@ -204,29 +224,31 @@ func ExtremeOptions(width, height int) Options {
 		Dithering:         false,
 		DitheringStrength: 0.0,
 		QualityTarget:     100,
+		QualityTargetSet:  true,
 		ZopfliIterations:  15,
 	}
 }
 
 // UltraOptions returns options for maximum compression using the combined Entropy+Bigrams
-// filter strategy with deep Zopfli passes. Slower than ExtremeOptions but can squeeze
-// out additional savings on images already processed by other tools.
+// filter strategy and the bounded parse search. Its filter scoring can find
+// additional savings; iteration budgets above three do not add compression work.
 func UltraOptions(width, height int) Options {
 	return Options{
-		Width:             width,
-		Height:            height,
-		ColorType:         ColorRGBA,
-		CompressionLevel:  10,
-		FilterStrategy:    FilterStrategyCombined,
-		OptimizeAlpha:     true,
-		ReduceColorType:   true,
-		StripMetadata:     true,
-		OptimalDeflate:    true,
-		MaxColors:         0,
-		Dithering:         false,
-		DitheringStrength: 0.0,
-		QualityTarget:     100,
-		ZopfliIterations:  20,
+		Width:               width,
+		Height:              height,
+		ColorType:           ColorRGBA,
+		CompressionLevel:    10,
+		FilterStrategy:      FilterStrategyCombined,
+		OptimizeAlpha:       true,
+		ReduceColorType:     true,
+		StripMetadata:       true,
+		OptimalDeflate:      true,
+		MaxColors:           0,
+		Dithering:           false,
+		DitheringStrength:   0.0,
+		QualityTarget:       100,
+		QualityTargetSet:    true,
+		ZopfliIterations:    20,
 		EnsureSizeNotLarger: false,
 	}
 }
@@ -253,6 +275,7 @@ func LossyOptions(width, height int, maxColors int) Options {
 		Dithering:         true,
 		DitheringStrength: 0.5,
 		QualityTarget:     75,
+		QualityTargetSet:  true,
 		ZopfliIterations:  0,
 	}
 }
@@ -282,6 +305,7 @@ func (o *Options) ApplyLossy(maxColors int, qualityTarget int, ditheringStrength
 	o.Dithering = true
 	o.DitheringStrength = ditheringStrength
 	o.QualityTarget = qualityTarget
+	o.QualityTargetSet = true
 }
 
 // ApplyLossless resets lossy settings to lossless mode.
@@ -290,6 +314,7 @@ func (o *Options) ApplyLossless() {
 	o.Dithering = false
 	o.DitheringStrength = 0.0
 	o.QualityTarget = 100
+	o.QualityTargetSet = true
 }
 
 // CompressionRatio returns the estimated compression ratio based on options.

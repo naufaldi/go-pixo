@@ -1,122 +1,50 @@
 package png
 
-import "github.com/mac/go-pixo/src/compress"
+import (
+	"bytes"
+	"compress/flate"
+)
 
-// BruteForceFilters tries all filter combinations for each row to find optimal selection.
-// For small images (below threshold), this exhaustive search finds the best possible filter per row.
-// This is O(5^height) which is only feasible for small images.
+// BruteForceFilters compares five independent compressed scanlines per row.
+// Work is linear in the image size; it never explores 5^height combinations.
+// Row costs do not model the final compressor's cross-row history.
 func BruteForceFilters(pixels []byte, width, height, bpp int) []FilterType {
-	if height == 0 || width == 0 {
-		return nil
-	}
-
-	// For very small images, try all combinations
-	if width*bpp*height <= 65536 {
-		return bruteForceAllCombinations(pixels, width, height, bpp)
-	}
-
-	// For larger images, use per-row optimization (still brute force but faster)
-	return bruteForcePerRow(pixels, width, height, bpp)
+	return BruteForceFiltersWithScratch(pixels, width, height, bpp)
 }
 
-// BruteForceFiltersWithScratch is the same as BruteForceFilters but uses scratch buffers for reduced allocation.
+// BruteForceFiltersWithScratch reuses one scanline scratch buffer across the image.
 func BruteForceFiltersWithScratch(pixels []byte, width, height, bpp int) []FilterType {
-	if height == 0 || width == 0 {
+	if height <= 0 || width <= 0 {
 		return nil
 	}
-
 	scratch := NewAdaptiveScratch(width*bpp, bpp)
-	defer scratch.Release()
-
-	// For very small images, try all combinations
-	if width*bpp*height <= 65536 {
-		return bruteForceAllCombinationsWithScratch(pixels, width, height, bpp, scratch)
-	}
-
-	// For larger images, use per-row optimization (still brute force but faster)
-	return bruteForcePerRowWithScratch(pixels, width, height, bpp, scratch)
+	return SelectAllWithStrategyAndScratch(pixels, width, height, bpp, FilterStrategyBruteForce, scratch)
 }
 
-// bruteForceAllCombinationsWithScratch is the scratch buffer version of bruteForceAllCombinations.
-func bruteForceAllCombinationsWithScratch(pixels []byte, width, height, bpp int, scratch *AdaptiveScratch) []FilterType {
-	if height > 12 {
-		// Fallback to per-row for taller images
-		return bruteForcePerRowWithScratch(pixels, width, height, bpp, scratch)
-	}
-
-	bestFilters := make([]FilterType, height)
-	bestSize := -1
-
-	// Generate all combinations using recursion
-	var recurse func(row int, currentFilters []FilterType, currentData []byte)
-	recurse = func(row int, currentFilters []FilterType, currentData []byte) {
-		if row == height {
-			// All rows processed, compress and check size
-			compressed := compressWithFilters(currentData)
-			if bestSize < 0 || len(compressed) < bestSize {
-				bestSize = len(compressed)
-				copy(bestFilters, currentFilters)
-			}
-			return
+// selectBruteForceWithScratch measures actual BestSpeed DEFLATE bytes, including
+// the filter byte. The writer is reset between exactly five independent trials.
+func selectBruteForceWithScratch(row, prevRow []byte, bpp int, scratch *AdaptiveScratch) (FilterType, []byte) {
+	var output bytes.Buffer
+	writer, err := flate.NewWriter(&output, flate.BestSpeed)
+	if err != nil {
+		panic(err)
+	} // The constant level is valid.
+	bestFilter, bestSize := FilterNone, -1
+	for candidate := FilterNone; candidate <= FilterPaeth; candidate++ {
+		output.Reset()
+		writer.Reset(&output)
+		filtered := applyFilterWithScratch(candidate, row, prevRow, bpp, scratch)
+		if _, err := writer.Write(filtered); err != nil {
+			panic(err)
+		} // bytes.Buffer cannot fail.
+		if err := writer.Close(); err != nil {
+			panic(err)
 		}
-
-		offset := row * width * bpp
-		rowData := pixels[offset : offset+width*bpp]
-		var prevRow []byte
-		if row > 0 {
-			prevRow = pixels[(row-1)*width*bpp : row*width*bpp]
-		}
-
-		// Try all 5 filter types
-		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
-			filtered := applyFilterWithScratch(filterType, rowData, prevRow, bpp, scratch)
-			newFilters := make([]FilterType, len(currentFilters)+1)
-			copy(newFilters, currentFilters)
-			newFilters[len(currentFilters)] = filterType
-
-			newData := make([]byte, len(currentData)+1+len(filtered))
-			copy(newData, currentData)
-			newData[len(currentData)] = byte(filterType)
-			copy(newData[len(currentData)+1:], filtered)
-			recurse(row+1, newFilters, newData)
+		if bestSize < 0 || output.Len() < bestSize {
+			bestFilter, bestSize = candidate, output.Len()
 		}
 	}
-
-	recurse(0, []FilterType{}, []byte{})
-	return bestFilters
-}
-
-// bruteForcePerRowWithScratch is the scratch buffer version of bruteForcePerRow.
-func bruteForcePerRowWithScratch(pixels []byte, width, height, bpp int, scratch *AdaptiveScratch) []FilterType {
-	filters := make([]FilterType, height)
-
-	for y := 0; y < height; y++ {
-		offset := y * width * bpp
-		rowData := pixels[offset : offset+width*bpp]
-
-		var prevRow []byte
-		if y > 0 {
-			prevRow = pixels[(y-1)*width*bpp : y*width*bpp]
-		}
-
-		bestFilter := FilterNone
-		bestSize := -1
-
-		// Try all 5 filter types for this row
-		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
-			filtered := applyFilterWithScratch(filterType, rowData, prevRow, bpp, scratch)
-			compressed := compressSingleRow(filtered)
-
-			if bestSize < 0 || len(compressed) < bestSize {
-				bestSize = len(compressed)
-				bestFilter = filterType
-			}
-		}
-
-		filters[y] = bestFilter
-	}
-
-	return filters
+	return bestFilter, applyFilterWithScratch(bestFilter, row, prevRow, bpp, scratch)[1:]
 }
 
 // applyFilterWithScratch applies a single filter to a row using scratch buffers.
@@ -137,90 +65,6 @@ func applyFilterWithScratch(filterType FilterType, row, prevRow []byte, bpp int,
 	}
 }
 
-// bruteForceAllCombinations tries all 5^height filter combinations.
-// Only feasible for images with height <= 10 or so.
-func bruteForceAllCombinations(pixels []byte, width, height, bpp int) []FilterType {
-	if height > 12 {
-		// Fallback to per-row for taller images
-		return bruteForcePerRow(pixels, width, height, bpp)
-	}
-
-	bestFilters := make([]FilterType, height)
-	bestSize := -1
-
-	// Generate all combinations using recursion
-	var recurse func(row int, currentFilters []FilterType, currentData []byte)
-	recurse = func(row int, currentFilters []FilterType, currentData []byte) {
-		if row == height {
-			// All rows processed, compress and check size
-			compressed := compressWithFilters(currentData)
-			if bestSize < 0 || len(compressed) < bestSize {
-				bestSize = len(compressed)
-				copy(bestFilters, currentFilters)
-			}
-			return
-		}
-
-		offset := row * width * bpp
-		rowData := pixels[offset : offset+width*bpp]
-		var prevRow []byte
-		if row > 0 {
-			prevRow = pixels[(row-1)*width*bpp : row*width*bpp]
-		}
-
-		// Try all 5 filter types
-		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
-			filtered := applyFilter(filterType, rowData, prevRow, bpp)
-			newFilters := make([]FilterType, len(currentFilters)+1)
-			copy(newFilters, currentFilters)
-			newFilters[len(currentFilters)] = filterType
-
-			newData := make([]byte, len(currentData)+1+len(filtered))
-			copy(newData, currentData)
-			newData[len(currentData)] = byte(filterType)
-			copy(newData[len(currentData)+1:], filtered)
-			recurse(row+1, newFilters, newData)
-		}
-	}
-
-	recurse(0, []FilterType{}, []byte{})
-	return bestFilters
-}
-
-// bruteForcePerRow finds the best filter for each row individually.
-// This is O(5*height) and works for any image size.
-func bruteForcePerRow(pixels []byte, width, height, bpp int) []FilterType {
-	filters := make([]FilterType, height)
-
-	for y := 0; y < height; y++ {
-		offset := y * width * bpp
-		rowData := pixels[offset : offset+width*bpp]
-
-		var prevRow []byte
-		if y > 0 {
-			prevRow = pixels[(y-1)*width*bpp : y*width*bpp]
-		}
-
-		bestFilter := FilterNone
-		bestSize := -1
-
-		// Try all 5 filter types for this row
-		for filterType := FilterNone; filterType <= FilterPaeth; filterType++ {
-			filtered := applyFilter(filterType, rowData, prevRow, bpp)
-			compressed := compressSingleRow(filtered)
-
-			if bestSize < 0 || len(compressed) < bestSize {
-				bestSize = len(compressed)
-				bestFilter = filterType
-			}
-		}
-
-		filters[y] = bestFilter
-	}
-
-	return filters
-}
-
 // applyFilter applies a single filter to a row.
 func applyFilter(filterType FilterType, row, prevRow []byte, bpp int) []byte {
 	switch filterType {
@@ -239,16 +83,23 @@ func applyFilter(filterType FilterType, row, prevRow []byte, bpp int) []byte {
 	}
 }
 
-// compressWithFilters compresses data with specific filter bytes prepended.
-func compressWithFilters(dataWithFilters []byte) []byte {
-	// For estimation, use a simple approach
-	return compressSingleRow(dataWithFilters)
-}
-
-// compressSingleRow compresses a single row of filtered data for comparison.
+// compressSingleRow returns actual DEFLATE bytes for standalone row comparisons.
 func compressSingleRow(filteredRow []byte) []byte {
-	size, _ := compress.EstimateCompressedSize(filteredRow)
-	return make([]byte, size)
+	if len(filteredRow) == 0 {
+		return nil
+	}
+	var output bytes.Buffer
+	writer, err := flate.NewWriter(&output, flate.BestSpeed)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := writer.Write(filteredRow); err != nil {
+		panic(err)
+	}
+	if err := writer.Close(); err != nil {
+		panic(err)
+	}
+	return output.Bytes()
 }
 
 // OptimalFiltersForImage determines the optimal filter strategy based on image size.

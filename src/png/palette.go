@@ -107,14 +107,9 @@ func (p *Palette) GetColor(idx int) Color {
 }
 
 // FindNearestIndex finds the index of the nearest color in the palette to the given color.
-// Uses full PaletteLUT (256^3) for O(1) lookups with identical results.
+// A single query uses linear search without constructing a table or cache.
 func (p *Palette) FindNearestIndex(c Color) int {
-	if p.NumColors == 0 {
-		return 0
-	}
-
-	lut := NewFullPaletteLUT(p)
-	return int(lut.Lookup(c.R, c.G, c.B, 255))
+	return p.FindNearest(c)
 }
 
 // FindNearestPerceptual finds the index of the nearest color in the palette using

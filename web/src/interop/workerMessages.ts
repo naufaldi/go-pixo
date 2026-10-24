@@ -1,6 +1,6 @@
 export type CompressPayload = {
   id: string
-  pixels: Uint8Array
+  pixels: Uint8Array | undefined
   width: number
   height: number
   colorType: number
@@ -9,6 +9,7 @@ export type CompressPayload = {
   preset: number
   lossy: boolean
   maxColors: number
+  pngAllowRGBAFallback?: boolean
   dithering: boolean
   ditherStrength: number
   qualityTarget: number
@@ -49,13 +50,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+// Worker messages already own their received storage. Preserve view offsets
+// instead of constructing a second full output allocation.
+export function receivedBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  throw new Error('Invalid compression worker bytes');
+}
+
 export function buildCompressMessage(payload: CompressPayload): CompressMessage {
   return { type: 'compress', ...payload }
 }
 
 export function buildCompressMessageFromFields(
   id: string,
-  pixels: Uint8Array,
+  pixels: Uint8Array | undefined,
   width: number,
   height: number,
   colorType: number,
@@ -75,6 +85,7 @@ export function buildCompressMessageFromFields(
   originalFileBytes: Uint8Array,
   targetWidth?: number,
   targetHeight?: number,
+  pngAllowRGBAFallback = false,
 ): CompressMessage {
   return buildCompressMessage({
     id,
@@ -98,6 +109,7 @@ export function buildCompressMessageFromFields(
     originalFileBytes,
     targetWidth,
     targetHeight,
+    pngAllowRGBAFallback,
   })
 }
 
@@ -136,12 +148,12 @@ export function parseWorkerMessage(value: unknown): ParsedWorkerMessage {
         return { type: 'unknown' }
       }
 
-      return {
+      try { return {
         type: 'compressed',
         id: value.id,
-        compressedBytes: new Uint8Array(value.compressedBytes as ArrayBufferLike),
+        compressedBytes: receivedBytes(value.compressedBytes),
         outputFormat: typeof value.outputFormat === 'string' ? value.outputFormat : 'png',
-      }
+      } } catch { return {type: 'unknown'} }
 
     case 'error':
       return {

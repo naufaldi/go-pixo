@@ -2,6 +2,8 @@ package jpeg
 
 import (
 	"bytes"
+
+	"github.com/mac/go-pixo/src/internal/imagelimit"
 )
 
 // Encoder represents a JPEG encoder.
@@ -20,14 +22,8 @@ type CacheStats struct {
 
 // NewEncoder creates a new JPEG encoder with the given options.
 func NewEncoder(opts Options) (*Encoder, error) {
-	if opts.Width <= 0 || opts.Height <= 0 || opts.Width > 65535 || opts.Height > 65535 {
-		return nil, ErrInvalidDimensions
-	}
-	if opts.ColorType != ColorGrayscale && opts.ColorType != ColorRGB {
-		return nil, ErrUnsupportedColorType
-	}
-	if opts.Quality < 1 || opts.Quality > 100 {
-		return nil, ErrInvalidQuality
+	if err := validateOptions(opts); err != nil {
+		return nil, err
 	}
 
 	var dct *DCTSIMD
@@ -49,8 +45,28 @@ func NewEncoder(opts Options) (*Encoder, error) {
 	}, nil
 }
 
+func validateOptions(opts Options) error {
+	if opts.Width <= 0 || opts.Height <= 0 || opts.Width > 65535 || opts.Height > 65535 {
+		return ErrInvalidDimensions
+	}
+	if err := imagelimit.CheckDimensions(opts.Width, opts.Height); err != nil {
+		return err
+	}
+	if opts.ColorType != ColorGrayscale && opts.ColorType != ColorRGB {
+		return ErrUnsupportedColorType
+	}
+	if opts.Quality < 1 || opts.Quality > 100 {
+		return ErrInvalidQuality
+	}
+	return nil
+}
+
 // Encode encodes raw pixel data as a JPEG file.
 func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
+	// Options is public and may have changed since construction.
+	if err := validateOptions(e.Options); err != nil {
+		return nil, err
+	}
 	// Validate pixel data length
 	bpp := 1
 	if e.Options.ColorType == ColorRGB {
@@ -416,7 +432,7 @@ func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *Quantiz
 	}
 
 	if e.Options.TrellisQuant {
-		quantized := TrellisOptimizeWithConfig(dct, qTable, e.trellisConfig)
+		quantized := trellisOptimize(dct, qTable, e.trellisConfig, isLuminance)
 		return ZigzagReorder(quantized)
 	}
 

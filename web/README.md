@@ -57,7 +57,9 @@ The format pipeline validates file contents rather than trusting the extension o
 
 PNG, JPEG, WebP and AVIF are output choices. PNG/JPEG use Go WASM, AVIF uses a bundled single-thread codec without requiring cross-origin isolation, and WebP uses the browser's canvas encoder. The output is validated; an unsupported encoder returns an error rather than silently writing another format. Formats without an output encoder use PNG for “same format.” Auto tests fast WebP against a valid original (or PNG for imported formats); lossless Auto uses a lossless AVIF candidate. It selects the smallest tested valid result and does not guarantee every file will become smaller. JPEG/WebP lossless same-format mode retains the original rather than re-encoding lossily. The ordinary pixel pipeline is 8-bit; unsupported precision-preserving conversions are rejected.
 
-Animated GIF, APNG, animated WebP and AVIF/HEIF sequences are rejected rather than flattened to one frame. SVG must have bounded dimensions, contain no scripts/animation, and reference no external resources. Files are limited to 64 MiB; input and resized dimensions are limited to 24 megapixels and 16,384 pixels per side. Large batches can still hit browser/device memory limits.
+Animated GIF, APNG, animated WebP and AVIF/HEIF sequences are rejected rather than flattened to one frame. SVG must have bounded dimensions, contain no scripts/animation, and reference no external resources. Files are limited to 64 MiB; input and resized dimensions are limited to 24 megapixels and 16,384 pixels per side. The app admits at most two read/decode/compression operations (one on low-resource devices), so pending encoded reads are separately bounded to two 64 MiB files. After header inspection and before native or bundled rasterization, each operation reserves an estimate of eight RGBA surfaces (32 bytes per pixel) at the larger source/output area, including possible native JPEG orientation during single-axis resizing. The normal aggregate workspace budget is 384 MiB. One job may exceed it while running alone, bounded to 24 MP × 32 bytes = 768,000,000 bytes (732.4 MiB); other pixel work waits. Small jobs still run together. Reservations survive decode completion, cancellation and settings resets until all owned decode/compression resources settle.
+
+This is an admission estimate, not a guarantee about browser peak memory. Completed preview/output blobs, encoded-byte copies, browser caches and retained codec/WASM heap capacity are outside the workspace estimate. Large batches can still hit browser/device memory limits. Unchanged-dimension lossless JPEG/WebP uses the exact original bytes and an original-file preview URL without canvas extraction or Go initialization. Lossless PNG also uses an original preview URL and sends original bytes to its byte recompressor without frontend RGBA extraction. Bundled TIFF/AVIF/HEIC previews still decode locally to PNG.
 
 ## Testing
 
@@ -105,7 +107,7 @@ bunx vitest run build/offline.test.ts build/service-worker.test.ts src/offline/c
 
 - ReScript files compile to `.res.js` (in-source)
 - Import ReScript modules: `import { App } from './App.res.js'`
-- Each compression worker initializes its own Go WASM instance; codec imports remain lazy
+- Compression workers announce transport readiness without loading Go. PNG/JPEG operations lazily initialize one reusable Go promise per worker; WebP and AVIF initialize only their required encoder
 - Tailwind classes work directly (no config needed)
 
 Codec license texts and pinned source/build references are shipped under `public/licenses/` and available from the app’s Open-source licenses link.

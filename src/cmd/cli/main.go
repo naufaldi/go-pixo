@@ -2,15 +2,18 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/mac/go-pixo/src/internal/imagelimit"
 	"github.com/mac/go-pixo/src/jpeg"
 	"github.com/mac/go-pixo/src/png"
 	"golang.org/x/image/draw"
@@ -90,9 +93,18 @@ func run() int {
 	inputFileSize := int64(0)
 	if err == nil {
 		inputFileSize = fileInfo.Size()
+		if inputFileSize > imagelimit.MaxInputBytes {
+			fmt.Fprintln(os.Stderr, "Error: encoded input exceeds 64 MiB limit")
+			return 1
+		}
 	}
 
-	img, format, err := image.Decode(file)
+	inputBytes, err := io.ReadAll(io.LimitReader(file, imagelimit.MaxInputBytes+1))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		return 1
+	}
+	img, format, err := decodeInput(inputBytes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding image: %v\n", err)
 		return 1
@@ -103,8 +115,12 @@ func run() int {
 		fmt.Printf("Input file size: %d bytes\n", inputFileSize)
 	}
 
-	if *resizeWidth > 0 || *resizeHeight > 0 {
-		img = resizeImage(img, *resizeWidth, *resizeHeight)
+	if *resizeWidth != 0 || *resizeHeight != 0 {
+		img, err = resizeImage(img, *resizeWidth, *resizeHeight)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resizing image: %v\n", err)
+			return 1
+		}
 		if *verbose {
 			b := img.Bounds()
 			fmt.Printf("  Resized to:   %dx%d\n", b.Dx(), b.Dy())
@@ -258,12 +274,6 @@ func run() int {
 
 		var encodeErr error
 		if isJpegInput && !*lossy {
-			// Read original file bytes for lossless re-encode path.
-			inputBytes, readErr := os.ReadFile(*inputFile)
-			if readErr != nil {
-				fmt.Fprintf(os.Stderr, "Error reading input: %v\n", readErr)
-				return 1
-			}
 			jpegOpts := jpeg.MaxOptions(0, 0, jpegQualityByte)
 			jpegOpts.Progressive = *progressive
 			jpegOpts.TrellisQuant = *trellis
@@ -397,12 +407,15 @@ func getExt(filename string) string {
 // resizeImage scales img to fit within the given width and height,
 // preserving aspect ratio. If only one dimension is given, the other
 // is computed automatically.
-func resizeImage(src image.Image, targetW, targetH int) image.Image {
+func resizeImage(src image.Image, targetW, targetH int) (image.Image, error) {
+	if targetW < 0 || targetH < 0 || targetW > imagelimit.MaxDimension || targetH > imagelimit.MaxDimension {
+		return nil, fmt.Errorf("resize dimensions exceed limit")
+	}
 	b := src.Bounds()
 	srcW, srcH := b.Dx(), b.Dy()
 
 	if targetW == 0 && targetH == 0 {
-		return src
+		return src, nil
 	}
 
 	aspect := float64(srcW) / float64(srcH)
@@ -412,13 +425,16 @@ func resizeImage(src image.Image, targetW, targetH int) image.Image {
 	if targetH == 0 {
 		targetH = int(float64(targetW) / aspect)
 	}
+	if err := imagelimit.CheckDimensions(targetW, targetH); err != nil {
+		return nil, err
+	}
 	if targetW == srcW && targetH == srcH {
-		return src
+		return src, nil
 	}
 
 	dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
-	return dst
+	return dst, nil
 }
 
 // imageToRGB extracts packed RGB bytes from any image.Image, dropping the alpha channel.
@@ -436,4 +452,19 @@ func imageToRGB(img image.Image) []byte {
 		}
 	}
 	return pixels
+}
+
+// decodeInput checks the header before decoding a bounded, immutable input copy.
+func decodeInput(input []byte) (image.Image, string, error) {
+	if err := imagelimit.CheckEncodedSize(len(input)); err != nil {
+		return nil, "", err
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(input))
+	if err != nil {
+		return nil, "", err
+	}
+	if err := imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
+		return nil, "", err
+	}
+	return image.Decode(bytes.NewReader(input))
 }

@@ -48,7 +48,8 @@ func CanReduceToGrayscale(pixels []byte, width, height int, colorType ColorType)
 		return false
 	}
 
-	return IsGrayscale(pixels, colorType)
+	// ColorGrayscale has no alpha channel, so only opaque RGBA can be reduced.
+	return IsGrayscale(pixels, colorType) && !HasAlpha(pixels, colorType)
 }
 
 // CanReduceToRGB reports whether pixels can be losslessly reduced from RGBA to RGB.

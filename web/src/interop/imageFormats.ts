@@ -4,6 +4,16 @@ import type { InputFormat } from './compressionSettings';
 export const MAX_IMAGE_PIXELS = 24_000_000;
 export const MAX_IMAGE_DIMENSION = 16_384;
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+// Count every reference, including aliases: UTIF creates one JS array per tag.
+const MAX_TIFF_METADATA_VALUES = 65_536;
+export const TIFF_TAG_VALUE_LIMITS: Readonly<Record<number, number>> = {
+  256:1,257:1,258:4,259:1,262:1,266:1,273:MAX_IMAGE_DIMENSION,274:1,
+  277:1,278:1,279:MAX_IMAGE_DIMENSION,284:1,317:1,320:768,338:4,339:4,
+};
+// SVG preflight stays on the main thread: at most 1 MiB and 10,000 tokens,
+// with a fixed number of linear passes and no suffix-rescanning URL regex.
+const MAX_SVG_BYTES = 1024 * 1024;
+const MAX_SVG_TOKENS = 10_000;
 const invalid = () => new Error('Invalid or corrupt image data');
 const animated = () => new Error('Animated images are not supported. Export a single still frame first.');
 const text = (b: Uint8Array, start: number, length: number) =>
@@ -45,7 +55,45 @@ export function sniffInputFormat(bytes: Uint8Array, _mime = ''): InputFormat {
   return 'unknown'; // A filename or MIME declaration cannot establish the actual codec.
 }
 
-export type ImageInfo = {format: InputFormat; width?: number; height?: number; bitDepth?: number};
+export type JpegOrientation = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type ImageInfo = {
+  format: InputFormat;
+  // Encoded storage dimensions. Native JPEG pixels/preview apply orientation.
+  width?: number; height?: number; bitDepth?: number;
+  orientation?: JpegOrientation;
+};
+
+export function imageDisplayDimensions(info: ImageInfo): {width: number; height: number} {
+  const {width,height}=info;
+  if (width===undefined || height===undefined) throw new Error('Image needs bounded dimensions before admission');
+  assertSafeDimensions(width,height);
+  return info.format==='jpeg' && (info.orientation ?? 1)>=5 ? {width:height,height:width} : {width,height};
+}
+
+// Read only IFD0's inline SHORT orientation. Never follow EXIF, thumbnail, maker
+// note or next-IFD pointers, nor allocate arrays from metadata-provided counts.
+function jpegExifOrientation(bytes: Uint8Array, start: number, end: number): JpegOrientation | undefined {
+  if (end-start<8) throw invalid();
+  const view=new DataView(bytes.buffer,bytes.byteOffset+start,end-start);
+  const order=view.getUint16(0);
+  if (order!==0x4949 && order!==0x4d4d) throw invalid();
+  const le=order===0x4949;
+  if (view.getUint16(2,le)!==42) throw invalid();
+  const ifd=view.getUint32(4,le);
+  if (ifd<8 || ifd>view.byteLength-2) throw invalid();
+  const count=view.getUint16(ifd,le);
+  if (count>1024 || ifd+2+count*12+4>view.byteLength) throw invalid();
+  let orientation: JpegOrientation | undefined;
+  for (let i=0;i<count;i++) {
+    const entry=ifd+2+i*12;
+    if (view.getUint16(entry,le)!==274) continue;
+    if (orientation!==undefined || view.getUint16(entry+2,le)!==3 || view.getUint32(entry+4,le)!==1) throw invalid();
+    const value=view.getUint16(entry+8,le);
+    if (value<1 || value>8) throw invalid();
+    orientation=value as JpegOrientation;
+  }
+  return orientation;
+}
 
 export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
   if (!bytes.length) throw new Error('Image is empty');
@@ -54,6 +102,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let width: number | undefined, height: number | undefined;
   let bitDepth: number | undefined;
+  let orientation: JpegOrientation | undefined;
   const u32 = (p: number, le = false) => view.getUint32(p, le);
   if (format === 'unknown') throw new Error('Unsupported or invalid image format');
   if (format === 'png') {
@@ -103,18 +152,26 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     }
     if (width===undefined) throw invalid();
   } else if (format === 'jpeg') {
-    let p=2;
-    while (p+4<=bytes.length) {
+    let p=2, exifSeen=false;
+    while (p<bytes.length) {
       if (bytes[p++]!==255) throw invalid();
       while (bytes[p]===255) p++;
+      if (p>=bytes.length) throw invalid();
       const marker=bytes[p++];
-      if (marker===217 || marker===218) break;
+      if (marker===217 || marker===218) break; // Metadata ends before scan data.
       if (marker===1 || (marker>=208 && marker<=215)) continue;
+      if (p+2>bytes.length) throw invalid();
       const n=view.getUint16(p);
       if (n<2 || n>bytes.length-p) throw invalid();
+      if (marker===225 && n>=8 && text(bytes,p+2,6)==='Exif\0\0') {
+        // Ambiguous duplicate EXIF blocks can disagree with native orientation.
+        if (exifSeen) throw invalid();
+        exifSeen=true;
+        orientation=jpegExifOrientation(bytes,p+8,p+n);
+      }
       if ([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker)) {
         if (n<7) throw invalid();
-        height=view.getUint16(p+3); width=view.getUint16(p+5); break;
+        height=view.getUint16(p+3); width=view.getUint16(p+5);
       }
       p+=n;
     }
@@ -129,12 +186,27 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     if (p<8 || p+2>bytes.length) throw invalid();
     const count=view.getUint16(p,le), end=p+2+count*12;
     if (count>1024 || end+4>bytes.length) throw invalid();
+    let metadataValues=0;
+    const tags=new Set<number>();
     for (let i=0;i<count;i++) {
       const s=p+2+i*12, tag=view.getUint16(s,le), type=view.getUint16(s+2,le), n=u32(s+4,le);
       const size=([0,1,1,2,4,8,1,1,2,4,8,4,8] as number[])[type];
       if (!size || n>1_000_000 || n*size>bytes.length) throw invalid();
+      metadataValues+=n;
+      if (metadataValues>MAX_TIFF_METADATA_VALUES) throw new Error('TIFF metadata exceeds the value budget limit');
+      if (tags.has(tag)) throw new Error('Duplicate TIFF metadata tags are not supported');
+      tags.add(tag);
+      const limit=TIFF_TAG_VALUE_LIMITS[tag];
+      if (limit!==undefined && (n<1 || n>limit || (type!==3 && type!==4))) {
+        throw new Error('Invalid TIFF metadata count or type for pixel layout, samples or channels');
+      }
       const value=n*size<=4 ? s+8 : u32(s+8,le);
       if (value>bytes.length-n*size) throw invalid();
+      // The private decoding copy rewrites the directory. Out-of-line values
+      // must not alias bytes whose meaning would change during sanitization.
+      if (n*size>4 && (value<8 || (value<end+4 && value+n*size>p))) {
+        throw new Error('TIFF metadata must not overlap its header or directory');
+      }
       if (tag===330 || tag===50706 || tag===33421) throw new Error('RAW / DNG TIFF images are not supported');
       if (tag===256 || tag===257) {
         if (n!==1 || (type!==3 && type!==4)) throw invalid();
@@ -186,19 +258,49 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     // No decoder should allocate from a container with no bounded spatial header.
     if (width===undefined) throw invalid();
   } else if (format === 'svg') {
+    if (bytes.length>MAX_SVG_BYTES) throw new Error('SVG exceeds the 1 MiB text limit');
     const svg=new TextDecoder().decode(bytes);
-    if (/<(?:animate\w*|set)\b|\banimation(?:-\w+)?\s*[:=]|@keyframes/i.test(svg)) throw animated();
-    if (/<!DOCTYPE|<!ENTITY|<script\b|<foreignObject\b|\bon\w+\s*=/i.test(svg)) throw new Error('SVG must be a self-contained static image');
-    const refs=[...svg.matchAll(/\b(?:href|src)\s*=\s*["']([^"']*)["']/gi)].map(m=>m[1]);
-    const urls=[...svg.matchAll(/url\(([^)]*)\)/gi)].map(m=>m[1].trim().replace(/^["']|["']$/g,''));
-    if (refs.concat(urls).some(ref=>!ref.trim().startsWith('#')) || /@import/i.test(svg)) {
-      throw new Error('SVG external resources are not supported; use a self-contained image');
+    if (/<(?:[^\s<>/:]+:)?(?:animate\w*|set)\b|\banimation(?:-\w+)?\s*[:=]|@keyframes/i.test(svg)) throw animated();
+    // Reject encodings that could turn into CSS URL/function names after this
+    // lexical check. The five predefined XML entities remain safe and usable.
+    if (/<!DOCTYPE|<!ENTITY|<(?:[^\s<>/:]+:)?(?:script|foreignObject)\b|\bon\w+\s*=|\bxml:base\s*=|\\|&(?!(?:amp|lt|gt|quot|apos);)/i.test(svg)) throw new Error('SVG must be a self-contained static image');
+    const external=() => new Error('SVG external resources are not supported; use a self-contained image');
+    const local=(ref: string) => /^#[^\s"'()<>\\&#]+$/.test(ref.trim());
+    if (/@import/i.test(svg)) throw external();
+    let tokens=0;
+    const token=/<|url\(|\b(?:href|src)\s*=/gi;
+    for (let match=token.exec(svg);match;match=token.exec(svg)) {
+      if (++tokens>MAX_SVG_TOKENS) throw new Error('SVG exceeds the token complexity limit');
+      if (match[0]==='<') continue;
+      let start=token.lastIndex, end: number;
+      if (match[0].toLowerCase()==='url(') {
+        end=svg.indexOf(')',start);
+        if (end<0) throw new Error('SVG contains an unterminated URL token');
+        let ref=svg.slice(start,end).trim();
+        if (ref[0]==='"' || ref[0]==="'") {
+          if (ref.at(-1)!==ref[0]) throw external();
+          ref=ref.slice(1,-1);
+        }
+        if (!local(ref)) throw external();
+      } else {
+        while (/\s/.test(svg[start] ?? '') && start<svg.length) start++;
+        const quote=svg[start++];
+        if (quote!=='"' && quote!=="'") throw external();
+        end=svg.indexOf(quote,start);
+        if (end<0 || !local(svg.slice(start,end))) throw external();
+      }
+      // Each token consumes its body once; unmatched url( fails on the first
+      // suffix scan instead of retrying from every nested prefix.
+      token.lastIndex=end+1;
     }
-    const root=svg.match(/<svg\b([^>]*)>/i)?.[1]; if (root===undefined) throw invalid();
+    const rootStart=/<svg\b/i.exec(svg);
+    const rootEnd=rootStart ? svg.indexOf('>',rootStart.index+4) : -1;
+    if (!rootStart || rootEnd<0) throw invalid();
+    const root=svg.slice(rootStart.index+4,rootEnd);
     const attr=(name: string) => root.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`,'i'))?.[1];
     const dimension=(value?: string) => value && /^\d+(?:\.\d+)?(?:px)?$/i.test(value) ? Math.ceil(parseFloat(value)) : undefined;
     width=dimension(attr('width')); height=dimension(attr('height'));
-    const box=attr('viewBox')?.trim().split(/[\s,]+/).map(Number);
+    const box=attr('viewBox')?.trim().split(/[\s,]+/,5).map(Number);
     if (box?.length===4 && box.every(Number.isFinite) && box[2]>0 && box[3]>0) {
       width??=Math.ceil(height ? height*box[2]/box[3] : box[2]);
       height??=Math.ceil(width*box[3]/box[2]);
@@ -206,7 +308,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     if (!width || !height) throw new Error('SVG needs bounded width/height or a viewBox');
   }
   if (width!==undefined && height!==undefined) assertSafeDimensions(width,height);
-  return {format,width,height,bitDepth}; // TIFF headers are checked by UTIF before decodeImage.
+  return {format,width,height,bitDepth,orientation};
 }
 
 export function inputMime(format: InputFormat): string {

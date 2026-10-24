@@ -136,6 +136,11 @@ export function initializeOffline(): void {
     value.addEventListener('updatefound', () => { watch(value.installing) })
     watch(value.installing)
     watch(serviceWorkers.controller)
+    // Identical registration options can reuse a broken worker without checking
+    // its script. A network-bypassing refresh must request the repaired version.
+    if (navigator.onLine) {
+      void value.update().catch(() => { /* Keep the verified offline build usable. */ })
+    }
     void verify(true)
   }).catch(() => {
     publish('unavailable', 'Offline setup failed. Reconnect and reload to try again.')

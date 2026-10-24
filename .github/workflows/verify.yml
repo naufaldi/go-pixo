@@ -22,6 +22,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test ./...
+      - name: Test WASM argument boundaries in Node
+        run: GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./src/wasm -run 'Test(Handlers|RecompressHandlers)'
 
   web:
     runs-on: ubuntu-latest
