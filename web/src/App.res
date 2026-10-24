@@ -28,6 +28,14 @@ let make = () => {
   let activeRef = React.useRef([]: array<string>)
   let removedRef = React.useRef([]: array<string>)
   let pendingDownloadRef = React.useRef(None: option<string>)
+  let zipExportRef = React.useRef(None: option<Download.abortController>)
+  let cancelZipExport = () => {
+    let previous = zipExportRef.current
+    // Invalidate ownership before abort can settle any old callbacks.
+    zipExportRef.current = None
+    previous->Option.forEach(Download.abort)
+    if previous->Option.isSome && mountedRef.current { dispatch(SetExportingZip(false)) }
+  }
   // Async callbacks read the latest committed intent; work snapshots settings at start.
   stateRef.current = state
 
@@ -36,6 +44,7 @@ let make = () => {
     poolRef.current = Some(createPool())
     Some(() => {
       mountedRef.current = false
+      cancelZipExport()
       epochRef.current = epochRef.current + 1
       poolRef.current->Option.forEach(terminatePool)
       stateRef.current.items->Array.forEach(revokeItemUrls)
@@ -137,7 +146,12 @@ let make = () => {
     None
   }, [state])
 
-  let handleFileSelect = files => dispatch(AddItems(files->Array.map(createQueueItem)))
+  let handleFileSelect = files => {
+    if files->Array.length > 0 {
+      cancelZipExport()
+      dispatch(AddItems(files->Array.map(createQueueItem)))
+    }
+  }
   let handleDragEnter = e => { ReactEvent.Mouse.preventDefault(e); dispatch(SetDragActive(true)) }
   let handleDragOver = e => ReactEvent.Mouse.preventDefault(e)
   let handleDragLeave = e => { ReactEvent.Mouse.preventDefault(e); dispatch(SetDragActive(false)) }
@@ -162,19 +176,21 @@ let make = () => {
     poolRef.current = Some(createPool())
   }
   let applySettingChange = update => {
+    cancelZipExport()
     pendingDownloadRef.current = None
     resetPool()
     update()
     dispatch(RequeueProcessedItemsForSettings)
   }
   let handleRemove = id => {
+    cancelZipExport()
     removedRef.current = removedRef.current->Array.concat([id])
     stateRef.current.items->Array.find(item => item.id == id)->Option.forEach(item =>
       poolRef.current->Option.forEach(workerPool => cancelTask(workerPool, taskKey(item))))
     if pendingDownloadRef.current == Some(id) { pendingDownloadRef.current = None }
     dispatch(RemoveItem(id))
   }
-  let handleClear = () => { resetPool(); pendingDownloadRef.current = None; dispatch(ClearAll) }
+  let handleClear = () => { cancelZipExport(); resetPool(); pendingDownloadRef.current = None; dispatch(ClearAll) }
   let selectedItem = state.items->Array.find(item => Some(item.id) == state.selectedId)
   let hasActive = state.items->Array.some(item => switch item.status {
     | Types.Pending | Types.Decoding | Types.Compressing => true
@@ -228,10 +244,23 @@ let make = () => {
     if !hasActive && completedCount > 0 { Download.downloadAll(state.items) }
   }
   let handleDownloadZip = () => {
-    if !hasActive && completedCount > 0 {
+    if !hasActive && completedCount > 0 && zipExportRef.current->Option.isNone {
+      let controller = Download.createAbortController()
+      // Reserve synchronously; React may batch multiple clicks before rendering.
+      zipExportRef.current = Some(controller)
       dispatch(SetDownloadError(None))
-      Download.downloadAllAsZip(state.items)->Promise.catch(error => {
-        if mountedRef.current { dispatch(SetDownloadError(Some(errorMessage(error)))) }
+      dispatch(SetExportingZip(true))
+      let ownsExport = () => mountedRef.current && zipExportRef.current->Option.map(current => current === controller)->Option.getOr(false)
+      Download.downloadAllAsZip(state.items, ~signal=Download.signal(controller))
+      ->Promise.catch(error => {
+        if ownsExport() { dispatch(SetDownloadError(Some(errorMessage(error)))) }
+        Promise.resolve()
+      })
+      ->Promise.then(_ => {
+        if ownsExport() {
+          zipExportRef.current = None
+          dispatch(SetExportingZip(false))
+        }
         Promise.resolve()
       })->ignore
     }
@@ -315,7 +344,7 @@ let make = () => {
     <BottomBar format=outputFormatText outputFormat={state.outputFormat} onOutputFormatChange={fmt => applySettingChange(() => dispatch(SetOutputFormat(fmt)))}
       preset={state.preset} lossless={state.lossless} onPresetChange={preset => applySettingChange(() => dispatch(SetPreset(preset)))}
       onLosslessChange={lossless => applySettingChange(() => { dispatch(SetLossless(lossless)); dispatch(SetQuantization(if lossless { Types.Lossless } else { Types.Colors256 })) })}
-      onDownload=handleDownload onDownloadFormat=handleDownloadFormat onDownloadAll=handleDownloadAll onDownloadZip=handleDownloadZip
+      onDownload=handleDownload onDownloadFormat=handleDownloadFormat onDownloadAll=handleDownloadAll onDownloadZip=handleDownloadZip exportingZip={state.exportingZip}
       hasCompletedItems={completedCount > 0} completedCount failedCount=errorCount appliedOptimizations processingAll=hasActive onCompressAll=handleCompressAll
       targetWidth=displayWidth targetHeight=displayHeight onTargetWidthChange=handleTargetWidthChange onTargetHeightChange=handleTargetHeightChange />
   </div>

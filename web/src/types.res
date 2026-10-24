@@ -84,6 +84,7 @@ type compressionProgress = {
 
 type appState = {
   downloadError: option<string>,
+  exportingZip: bool,
   wasmReady: bool,
   dragActive: bool,
   items: array<queueItem>,
