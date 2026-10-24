@@ -27,6 +27,7 @@ var (
 )
 
 type TrellisConfig struct {
+	// Lambda weights distortion in the cost: rate + Lambda*distortion.
 	Lambda        float64
 	MaxIterations int
 	UsePerceptual bool
@@ -117,19 +118,12 @@ func getACCategory(val int16) int {
 	return category
 }
 
-type viterbiState struct {
-	cost         float64
+// A state is indexed by its pending zero-run length. All nonzero candidates
+// reach state zero, so only its winning value and predecessor need storing.
+// A zero transition always comes from state (runLength - 1).
+type trellisPredecessor struct {
 	quantizedVal int16
-	prevIndex    int
-	runLength    int
-	isEOB        bool
-}
-
-type candidateValue struct {
-	value      int16
-	distortion float64
-	rate       int
-	cost       float64
+	prevIndex    uint8
 }
 
 func TrellisOptimizeFull(dct [64]float32, quantTable [64]float32, lambda float64) [64]int16 {
@@ -138,247 +132,97 @@ func TrellisOptimizeFull(dct [64]float32, quantTable [64]float32, lambda float64
 	return TrellisOptimizeWithConfig(dct, quantTable, config)
 }
 
+// TrellisOptimizeWithConfig optimizes AC coefficients using luminance rates.
+// Inputs and output use natural order; rate estimation follows JPEG zigzag order.
+// DC uses ordinary quantization and is never part of the trellis search.
 func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config TrellisConfig) [64]int16 {
+	return trellisOptimize(dct, quantTable, config, true)
+}
+
+func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConfig, isLuminance bool) [64]int16 {
 	if config.Lambda == 0 {
 		config.Lambda = DefaultTrellisConfig.Lambda
 	}
-	if config.MaxIterations == 0 {
-		config.MaxIterations = DefaultTrellisConfig.MaxIterations
-	}
 
-	result := [64]int16{}
+	var result [64]int16
+	result[0] = int16(math.Round(float64(dct[0] / quantTable[0])))
 
-	bestStates := make([][]viterbiState, 64)
-	for i := 0; i < 64; i++ {
-		bestStates[i] = make([]viterbiState, 0, 8)
-	}
-
-	candidates := generateCandidates(dct[0], quantTable[0], -255, 255)
-	for _, cand := range candidates {
-		distortion := calculateDistortion(dct[0], float32(cand)*quantTable[0], 0, config.UsePerceptual)
-		rate := estimateDCRate(int16(cand), true)
-		cost := float64(rate) + config.Lambda*distortion
-
-		bestStates[0] = append(bestStates[0], viterbiState{
-			cost:         cost,
-			quantizedVal: int16(cand),
-			prevIndex:    -1,
-			runLength:    0,
-			isEOB:        false,
-		})
-	}
-
+	// At scan position i there are i+1 possible pending runs, including zero.
+	// Costs roll between two fixed buffers; predecessors survive for backtracking.
+	// No state/candidate slices or pointers escape per block or transition.
+	var costs [2][64]float64
+	var predecessors [64]trellisPredecessor
+	zrlRate := estimateACRate(15, 0, isLuminance)
+	eobRate := estimateACRate(0, 0, isLuminance)
 	for i := 1; i < 64; i++ {
-		step := quantTable[i]
+		index := Zigzag[i]
+		previous, current := &costs[(i-1)%2], &costs[i%2]
+		current[0] = math.Inf(1)
 
-		for runLength := 0; runLength <= 16; runLength++ {
-			candidates := generateCandidatesWithRunLength(dct[i], step, runLength, -255, 255)
-
-			for _, cand := range candidates {
-				var distortion float64
-				if config.UsePerceptual {
-					quantizedVal := float32(cand.value) * step
-					distortion = calculatePerceptualDistortion(dct[i], quantizedVal, i)
-				} else {
-					distortion = calculateSquaredDistortion(dct[i], float32(cand.value)*step)
-				}
-
-				var prevBest *viterbiState
-				bestCost := math.Inf(1)
-
-				for _, state := range bestStates[i-1] {
-					newRunLength := state.runLength + 1
-					if cand.value == 0 {
-						newRunLength = state.runLength + 1
-					} else {
-						newRunLength = 0
-					}
-
-					var rate int
-					if cand.value == 0 && newRunLength >= 16 {
-						rate = estimateACRate(15, 0, true)
-					} else if cand.value == 0 {
-						rate = estimateACRate(uint8(newRunLength), 0, true)
-					} else {
-						acCategory := getACCategory(int16(cand.value))
-						rate = estimateACRate(uint8(newRunLength), uint8(acCategory), true)
-					}
-
-					cost := state.cost + float64(rate) + config.Lambda*distortion
-
-					if cost < bestCost {
-						bestCost = cost
-						prevState := state
-						prevBest = &prevState
-					}
-				}
-
-				if prevBest != nil {
-					newState := viterbiState{
-						cost:         bestCost,
-						quantizedVal: int16(cand.value),
-						prevIndex:    i - 1,
-						runLength:    0,
-						isEOB:        false,
-					}
-					if cand.value == 0 {
-						newState.runLength = prevBest.runLength + 1
-					}
-
-					addStateWithPruning(bestStates[i], newState, 8)
-				}
-			}
+		zeroCost := config.Lambda * calculateDistortion(dct[index], 0, index, config.UsePerceptual)
+		for runLength := 0; runLength < i; runLength++ {
+			// Defer zero-run rate until a nonzero value or EOB is emitted.
+			current[runLength+1] = previous[runLength] + zeroCost
 		}
 
-		if len(bestStates[i]) == 0 {
-			candidates := generateCandidates(dct[i], step, -255, 255)
-			for _, cand := range candidates {
-				var distortion float64
-				if config.UsePerceptual {
-					quantizedVal := float32(cand) * step
-					distortion = calculatePerceptualDistortion(dct[i], quantizedVal, i)
-				} else {
-					distortion = calculateSquaredDistortion(dct[i], float32(cand)*step)
-				}
-				rate := estimateACRate(0, uint8(getACCategory(int16(cand))), true)
-				cost := float64(rate) + config.Lambda*distortion
-
-				bestStates[i] = append(bestStates[i], viterbiState{
-					cost:         cost,
-					quantizedVal: int16(cand),
-					prevIndex:    i - 1,
-					runLength:    0,
-					isEOB:        false,
-				})
+		candidates, count := generateCandidates(dct[index], quantTable[index], -1023, 1023)
+		for _, value := range candidates[:count] {
+			if value == 0 {
+				continue
 			}
-		}
-	}
-
-	var bestFinalState *viterbiState
-	bestFinalCost := math.Inf(1)
-	for _, state := range bestStates[63] {
-		var eobRate int
-		if state.runLength > 0 {
-			eobRate = estimateACRate(uint8(state.runLength), 0, true)
-		} else {
-			eobRate = 0
-		}
-		totalCost := state.cost + float64(eobRate)
-
-		if totalCost < bestFinalCost {
-			bestFinalCost = totalCost
-			bestFinalState = &state
-		}
-	}
-
-	if bestFinalState != nil {
-		currentIndex := 63
-		for currentIndex >= 0 {
-			for _, state := range bestStates[currentIndex] {
-				if state.cost == bestFinalState.cost && state.quantizedVal == bestFinalState.quantizedVal {
-					result[currentIndex] = state.quantizedVal
-					if state.prevIndex >= 0 {
-						bestFinalState = &state
+			distortion := config.Lambda * calculateDistortion(dct[index], float32(value)*quantTable[index], index, config.UsePerceptual)
+			category := uint8(getACCategory(value))
+			for runLength := 0; runLength < i; runLength++ {
+				rate := (runLength/16)*zrlRate + estimateACRate(uint8(runLength%16), category, isLuminance)
+				cost := previous[runLength] + float64(rate) + distortion
+				if cost < current[0] {
+					current[0] = cost
+					predecessors[i] = trellisPredecessor{
+						quantizedVal: value,
+						prevIndex:    uint8(runLength),
 					}
-					break
-				}
-			}
-			currentIndex--
-			if currentIndex < 0 {
-				break
-			}
-			for _, s := range bestStates[currentIndex] {
-				if s.quantizedVal == result[currentIndex+1] {
-					bestFinalState = &s
-					break
 				}
 			}
 		}
 	}
 
+	bestIndex := 0
+	bestCost := costs[1][0]
+	for runLength := 1; runLength < 64; runLength++ {
+		// Trailing zeros use one EOB, even for runs longer than 16.
+		cost := costs[1][runLength] + float64(eobRate)
+		if cost < bestCost {
+			bestCost, bestIndex = cost, runLength
+		}
+	}
+	for i := 63; i > 0; i-- {
+		if bestIndex > 0 {
+			bestIndex--
+			continue
+		}
+		state := predecessors[i]
+		result[Zigzag[i]] = state.quantizedVal
+		bestIndex = int(state.prevIndex)
+	}
 	return result
 }
 
-func generateCandidates(coeff, step float32, minVal, maxVal int) []int16 {
+// generateCandidates includes ordinary rounding, its nearby alternatives and
+// zero. Baseline 8-bit JPEG permits AC magnitudes up to 1023, not just 255.
+func generateCandidates(coeff, step float32, minVal, maxVal int) ([8]int16, int) {
 	centerVal := int(math.Round(float64(coeff / step)))
-
-	candidates := make([]int16, 0)
+	var candidates [8]int16
+	count := 0
 	for delta := -3; delta <= 3; delta++ {
 		candidate := centerVal + delta
-		if candidate >= minVal && candidate <= maxVal {
-			candidates = append(candidates, int16(candidate))
+		if candidate != 0 && candidate >= minVal && candidate <= maxVal {
+			candidates[count] = int16(candidate)
+			count++
 		}
 	}
-
-	return candidates
-}
-
-func generateCandidatesWithRunLength(coeff, step float32, runLength int, minVal, maxVal int) []candidateValue {
-	candidates := make([]candidateValue, 0)
-
-	if runLength >= 16 {
-		candidates = append(candidates, candidateValue{value: 0, distortion: 0, rate: 0, cost: 0})
-		return candidates
-	}
-
-	centerVal := int(math.Round(float64(coeff / step)))
-
-	rangeSize := 3
-	if coeff == 0 {
-		rangeSize = 1
-	}
-
-	for delta := -rangeSize; delta <= rangeSize; delta++ {
-		candidate := centerVal + delta
-		if candidate < minVal || candidate > maxVal {
-			continue
-		}
-
-		quantizedVal := float32(candidate) * step
-		distortion := calculateSquaredDistortion(coeff, quantizedVal)
-		rate := 0
-		if candidate == 0 {
-			rate = estimateACRate(uint8(runLength+1), 0, true)
-		} else {
-			acCategory := getACCategory(int16(candidate))
-			rate = estimateACRate(uint8(runLength), uint8(acCategory), true)
-		}
-		cost := float64(rate) + distortion
-
-		candidates = append(candidates, candidateValue{
-			value:      int16(candidate),
-			distortion: distortion,
-			rate:       rate,
-			cost:       cost,
-		})
-	}
-
-	return candidates
-}
-
-func addStateWithPruning(states []viterbiState, newState viterbiState, maxStates int) {
-	for i, s := range states {
-		if s.quantizedVal == newState.quantizedVal && s.runLength == newState.runLength {
-			if newState.cost < s.cost {
-				states[i] = newState
-			}
-			return
-		}
-	}
-
-	states = append(states, newState)
-
-	for i := 0; i < len(states)-1; i++ {
-		for j := i + 1; j < len(states); j++ {
-			if states[i].cost > states[j].cost {
-				states[i], states[j] = states[j], states[i]
-			}
-		}
-	}
-
-	if len(states) > maxStates {
-		states = states[:maxStates]
-	}
+	// Zero is represented by the pending-run transition in the optimizer.
+	candidates[count] = 0
+	return candidates, count + 1
 }
 
 func calculateDistortion(original, quantized float32, index int, usePerceptual bool) float64 {
