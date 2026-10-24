@@ -17,12 +17,25 @@ import (
 
 func TestHandlersRejectMalformedArguments(t *testing.T) {
 	bytes := js.Global().Get("Uint8Array").New(4)
+	object := js.Global().Get("Object")
+	bytePrototype := js.Global().Get("Uint8Array").Get("prototype")
+	spoofedView := js.Global().Get("DataView").New(js.Global().Get("ArrayBuffer").New(4))
+	object.Call("setPrototypeOf", spoofedView, bytePrototype)
+	spoofedWords := js.Global().Get("Uint16Array").New(2)
+	object.Call("setPrototypeOf", spoofedWords, bytePrototype)
 	tests := []struct {
 		name   string
 		handle func(js.Value, []js.Value) any
 		args   []any
 	}{
 		{"png object", HandleEncodePng, []any{map[string]any{"length": 4}, 1, 1, 6, 2, false, 0}},
+		{"png spoofed DataView", HandleEncodePng, []any{spoofedView, 1, 1, 6, 2, false, 0}},
+		{"png spoofed Uint16Array", HandleEncodePng, []any{spoofedWords, 1, 1, 6, 2, false, 0}},
+		{"advanced spoofed DataView", HandleEncodePngAdvanced, []any{spoofedView, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0}},
+		{"jpeg spoofed DataView", HandleEncodeJpeg, []any{spoofedView, 4, 1, 1, 75}},
+		{"jpeg advanced spoofed DataView", HandleEncodeJpegAdvanced, []any{spoofedView, 4, 1, 1, 75, 0, false, false, false, 1}},
+		{"png recompress spoofed DataView", HandleRecompressPngLossless, []any{spoofedView, 2, 0}},
+		{"jpeg recompress spoofed DataView", HandleRecompressJpeg, []any{spoofedView, 1, 75, false, false, false}},
 		{"png truncated", HandleEncodePng, []any{bytes, 2, 1, 6, 2, false, 0}},
 		{"png zero", HandleEncodePng, []any{bytes, 0, 1, 6, 2, false, 0}},
 		{"png negative", HandleEncodePng, []any{bytes, -1, 1, 6, 2, false, 0}},
@@ -62,6 +75,26 @@ func TestHandlersRejectMalformedArguments(t *testing.T) {
 				t.Errorf("want error string, got %v", result)
 			}
 		})
+	}
+}
+
+func TestHandlersRejectTypedArrayInspectionExceptions(t *testing.T) {
+	pixels := js.Global().Get("Uint8Array").New(4)
+	object := js.Global().Get("Object")
+	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
+	descriptor := object.Call("getOwnPropertyDescriptor", prototype, "byteLength")
+	defer object.Call("defineProperty", prototype, "byteLength", descriptor)
+	object.Call("defineProperty", prototype, "byteLength", map[string]any{
+		"get": js.Global().Get("Function").New("throw new TypeError('inspection failed')"), "configurable": true,
+	})
+	defer func() {
+		if p := recover(); p != nil {
+			t.Errorf("JS inspection exception escaped the handler: %v", p)
+		}
+	}()
+	result := HandleEncodePng(js.Undefined(), []js.Value{pixels, js.ValueOf(1), js.ValueOf(1), js.ValueOf(6), js.ValueOf(2), js.ValueOf(false), js.ValueOf(0)}).(js.Value)
+	if result.Type() != js.TypeString || !strings.Contains(result.String(), "error:") {
+		t.Errorf("want error string, got %v", result)
 	}
 }
 
@@ -115,6 +148,17 @@ func TestRecompressHandlersRejectOversizedHeaders(t *testing.T) {
 func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 	pixels := js.Global().Get("Uint8Array").New(4)
 	clamped := js.Global().Get("Uint8ClampedArray").New(4)
+	view := js.Global().Get("Uint8Array").New(8).Call("subarray", 4, 8)
+	viewBytes := []byte{12, 34, 56, 255}
+	js.CopyBytesToJS(view, viewBytes)
+	js.Global().Get("Object").Call("defineProperty", view, "subarray", map[string]any{
+		"value": js.Global().Get("Function").New("throw new TypeError('untrusted subarray called')"),
+	})
+	if copied, err := copyJSBytes(view); err != nil || !bytes.Equal(copied, viewBytes) {
+		t.Fatalf("subview bytes/offset not preserved: %v, %v", copied, err)
+	}
+	// Own branding can also lie; validation must inspect the internal view type.
+	js.Global().Get("Object").Call("defineProperty", pixels, js.Global().Get("Symbol").Get("toStringTag"), map[string]any{"value": "DataView"})
 	// A misleading own length must not drive allocation or cause truncation.
 	js.Global().Get("Object").Call("defineProperty", clamped, "length", map[string]any{"value": 1024})
 	callback := js.FuncOf(func(js.Value, []js.Value) any { return nil })
@@ -125,6 +169,7 @@ func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 		args   []any
 	}{
 		{"png", HandleEncodePng, []any{pixels, 1, 1, 6, 2, false, 0}},
+		{"png intrinsic subview copy", HandleEncodePng, []any{view, 1, 1, 6, 2, false, 0}},
 		{"png clamped real size", HandleEncodePng, []any{clamped, 1, 1, 6, 2, false, 0}},
 		{"png advanced legacy", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0}},
 		{"png advanced legacy callback", HandleEncodePngAdvanced, []any{pixels, 1, 1, 6, 2, false, 0, false, 0.5, 75, 0, callback.Value}},

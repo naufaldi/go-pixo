@@ -52,7 +52,15 @@ func checkArguments(args []js.Value, rules []argumentRule) error {
 	return nil
 }
 
-func byteArrayLength(value js.Value) (int, error) {
+func byteArrayLength(value js.Value) (length int, err error) {
+	// Foreign JS inspection can throw, including on prototype-spoofed views.
+	// Keep that exception inside the argument boundary, before allocation/copy.
+	defer func() {
+		if recover() != nil {
+			length = 0
+			err = fmt.Errorf("could not inspect input byte array")
+		}
+	}()
 	if value.Type() != js.TypeObject || !js.Global().Get("ArrayBuffer").Call("isView", value).Bool() ||
 		(!value.InstanceOf(js.Global().Get("Uint8Array")) && !value.InstanceOf(js.Global().Get("Uint8ClampedArray"))) {
 		return 0, fmt.Errorf("input must be a Uint8Array or Uint8ClampedArray")
@@ -60,6 +68,13 @@ func byteArrayLength(value js.Value) (int, error) {
 	// Do not trust an own 'length' property shadowing the typed array's real size.
 	object := js.Global().Get("Object")
 	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
+	// instanceof follows prototypes. This intrinsic getter reads the internal
+	// typed-array kind instead, ignoring an own Symbol.toStringTag property.
+	tagGetter := object.Call("getOwnPropertyDescriptor", prototype, js.Global().Get("Symbol").Get("toStringTag")).Get("get")
+	kind := tagGetter.Call("call", value)
+	if kind.Type() != js.TypeString || (kind.String() != "Uint8Array" && kind.String() != "Uint8ClampedArray") {
+		return 0, fmt.Errorf("input must be a Uint8Array or Uint8ClampedArray")
+	}
 	getter := object.Call("getOwnPropertyDescriptor", prototype, "byteLength").Get("get")
 	return getter.Call("call", value).Int(), nil
 }
@@ -103,7 +118,13 @@ func checkEncodedBytes(value js.Value) error {
 	return imagelimit.CheckEncodedSize(n)
 }
 
-func copyJSBytes(value js.Value) ([]byte, error) {
+func copyJSBytes(value js.Value) (data []byte, err error) {
+	defer func() {
+		if recover() != nil {
+			data = nil
+			err = fmt.Errorf("could not prepare input byte array")
+		}
+	}()
 	n, err := byteArrayLength(value)
 	if err != nil {
 		return nil, err
@@ -112,8 +133,16 @@ func copyJSBytes(value js.Value) ([]byte, error) {
 	if n <= 0 || n > imagelimit.MaxPixels*4 {
 		return nil, fmt.Errorf("input buffer exceeds limit")
 	}
-	data := make([]byte, n)
-	if js.CopyBytesToGo(data, value) != n {
+	// Go's copy helper invokes src.subarray. Give it an owned, canonical view
+	// rather than invoking methods or shadowed properties on the caller's view.
+	// This shares the existing bytes and preserves the original view offset.
+	object := js.Global().Get("Object")
+	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
+	buffer := object.Call("getOwnPropertyDescriptor", prototype, "buffer").Get("get").Call("call", value)
+	offset := object.Call("getOwnPropertyDescriptor", prototype, "byteOffset").Get("get").Call("call", value)
+	view := js.Global().Get("Uint8Array").New(buffer, offset, n)
+	data = make([]byte, n)
+	if js.CopyBytesToGo(data, view) != n {
 		return nil, fmt.Errorf("could not copy complete input buffer")
 	}
 	return data, nil
