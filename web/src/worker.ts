@@ -21,6 +21,8 @@ interface CompressionRequest {
   preset: number;
   lossy: boolean;
   maxColors: number;
+  // Preset intent is explicit; custom quantizer requests remain strict.
+  pngAllowRGBAFallback?: boolean;
   dithering: boolean;
   ditherStrength?: number;
   qualityTarget?: number;
@@ -111,6 +113,7 @@ function encodePng(
   lossy: boolean = false,
   maxColors: number = 0,
   _dithering: boolean = false,
+  allowRGBAFallback: boolean = true,
 ): Uint8Array {
   // @ts-ignore - encodePng is exposed by Go WASM on the worker global
   if (!(self as any).encodePng) {
@@ -126,6 +129,7 @@ function encodePng(
     preset,
     lossy,
     maxColors,
+    allowRGBAFallback,
   );
 
   return unwrapWasmResult(result);
@@ -150,6 +154,7 @@ function encodePngAdvanced(
   optimalDeflate: boolean = false,
   filterEarlyTerm: boolean = false,
   onProgress?: (phase: string, progress: number) => void,
+  allowRGBAFallback: boolean = false,
 ): Uint8Array {
   // @ts-ignore - encodePngAdvanced is exposed by Go WASM on the worker global
   if (!(self as any).encodePngAdvanced) {
@@ -166,6 +171,7 @@ function encodePngAdvanced(
       lossy,
       maxColors,
       dithering,
+      allowRGBAFallback,
     );
   }
 
@@ -188,6 +194,7 @@ function encodePngAdvanced(
     optimalDeflate,
     filterEarlyTerm,
     onProgress,
+    allowRGBAFallback,
   );
 
   return unwrapWasmResult(result);
@@ -355,7 +362,7 @@ self.onmessage = async (event: MessageEvent) => {
       // Auto's PNG fallback is a quick lossless encode, with no palette search.
       if (fast) return encodePng(work.pixels,work.width,work.height,6,2,false,0,false);
       return encodePngAdvanced(work.pixels,work.width,work.height,6,req.preset,req.lossy,req.maxColors,req.dithering,
-        req.ditherStrength ?? 0.5,quality,req.zopfliIterations ?? 0,0,false,0,false,false,pngProgress);
+        req.ditherStrength ?? 0.5,quality,req.zopfliIterations ?? 0,0,false,0,false,false,pngProgress,req.pngAllowRGBAFallback === true);
     });
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end,{predictable:true,phaseTarget:STAGE.FINALIZING.end});
     const originalBytes=req.originalFileBytes?.length || req.pixels.length;

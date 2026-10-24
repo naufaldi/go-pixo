@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"image"
 	"image/color"
 	stdpng "image/png"
 	"io"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mac/go-pixo/src/png"
@@ -112,5 +115,120 @@ func TestEncodePngAdvancedRespectsDitheringSwitch(t *testing.T) {
 	}
 	if bytes.Equal(outputs[0], outputs[2]) {
 		t.Error("enabled dithering did not change output")
+	}
+}
+
+// Catches treating the basic API's full default budget as a required RGB palette,
+// or clearing hidden RGB when taking its RGBA fallback.
+func TestEncodePngDefaultPreservesRGBA(t *testing.T) {
+	for _, alpha := range []byte{128, 0, 255} {
+		t.Run(strconv.Itoa(int(alpha)), func(t *testing.T) {
+			pixels := []byte{12, 34, 56, alpha, 90, 100, 110, 255, 12, 34, 56, alpha, 90, 100, 110, 255}
+			original := bytes.Clone(pixels)
+			out, err := EncodePng(pixels, 2, 2, 6, 1, true, 256)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPngRGBA(t, out, 2, 2, pixels)
+			if alpha == 255 && out[25] != byte(png.ColorIndexed) {
+				t.Fatal("opaque default bypassed palette quantization")
+			}
+			if !bytes.Equal(pixels, original) {
+				t.Fatal("encoding modified caller pixels")
+			}
+		})
+	}
+}
+
+func assertPngRGBA(t *testing.T, out []byte, width, height int, pixels []byte) {
+	t.Helper()
+	decoded, err := stdpng.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Bounds() != image.Rect(0, 0, width, height) {
+		t.Fatalf("bounds=%v, want %dx%d", decoded.Bounds(), width, height)
+	}
+	for i := 0; i < width*height; i++ {
+		got := color.NRGBAModel.Convert(decoded.At(i%width, i/width)).(color.NRGBA)
+		want := color.NRGBA{pixels[i*4], pixels[i*4+1], pixels[i*4+2], pixels[i*4+3]}
+		if got != want {
+			t.Fatalf("pixel %d=%v, want %v", i, got, want)
+		}
+	}
+}
+
+// Uses the exact raw UI state and the actual derived Balanced worker settings.
+// Automatic fallback must preserve samples while leaving opaque quantization active.
+func TestEncodePngAdvancedPresetFallbackPreservesRGBA(t *testing.T) {
+	for _, alpha := range []byte{128, 0, 255} {
+		for _, tc := range []struct {
+			name                string
+			dithering           bool
+			strength            float64
+			quality, iterations int
+		}{
+			{"initial state", false, 0.5, 75, 0},
+			{"derived Balanced worker", true, 0.4, 85, 5},
+		} {
+			t.Run(tc.name+"/"+strconv.Itoa(int(alpha)), func(t *testing.T) {
+				pixels := []byte{12, 34, 56, alpha, 90, 100, 110, 255, 12, 34, 56, alpha, 90, 100, 110, 255}
+				original := bytes.Clone(pixels)
+				progress := 0
+				out, err := EncodePngAdvanced(pixels, 2, 2, 6, 1, true, 256, tc.dithering, tc.strength, tc.quality, tc.iterations, 0, false, 0, false, false, func(string, int) { progress++ }, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertPngRGBA(t, out, 2, 2, pixels)
+				if alpha == 255 && out[25] != byte(png.ColorIndexed) {
+					t.Fatal("opaque preset bypassed palette quantization")
+				}
+				if progress == 0 || !bytes.Equal(pixels, original) {
+					t.Fatal("progress was lost or caller pixels changed")
+				}
+			})
+		}
+	}
+}
+
+// Automatic RGBA fallback must retain encoder controls, independent of preset.
+func TestPngRGBAFallbackRetainsFilterSelection(t *testing.T) {
+	pixels := bytes.Repeat([]byte{12, 34, 56, 0, 90, 100, 110, 128}, 64)
+	for _, preset := range []int{0, 1, 2, 4} {
+		for _, filter := range []png.FilterStrategy{png.FilterStrategyNone, png.FilterStrategySub} {
+			out, err := EncodePngAdvanced(pixels, 2, 64, 6, preset, true, 256, false, 0, 100, 0, int(filter), false, 0, false, false, nil, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertPngRGBA(t, out, 2, 64, pixels)
+			if got := pngScanlines(t, out)[0]; got != byte(filter) {
+				t.Fatalf("preset=%d filter=%d: got row filter %d", preset, filter, got)
+			}
+		}
+	}
+}
+
+// Explicit palettes/quantizer controls stay strict, including a full palette cap.
+func TestPngPublicExplicitPaletteRejectsTransparency(t *testing.T) {
+	pixels := []byte{12, 34, 56, 0, 90, 100, 110, 128}
+	for _, tc := range []struct {
+		name   string
+		encode func() ([]byte, error)
+	}{
+		{"basic reduced palette", func() ([]byte, error) { return EncodePng(pixels, 2, 1, 6, 1, true, 128) }},
+		{"basic required full palette", func() ([]byte, error) { return EncodePng(pixels, 2, 1, 6, 1, true, 256, false) }},
+		{"advanced explicit quantizer", func() ([]byte, error) {
+			return EncodePngAdvanced(pixels, 2, 1, 6, 1, true, 256, true, 1, 0, 0, 0, true, 1, false, false, nil)
+		}},
+		{"advanced automatic reduced palette", func() ([]byte, error) {
+			return EncodePngAdvanced(pixels, 2, 1, 6, 1, true, 128, false, 0, 100, 0, 0, false, 0, false, false, nil, true)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := tc.encode()
+			if err == nil || !strings.Contains(err.Error(), "transparency") || len(out) != 0 {
+				t.Fatalf("explicit palette returned %d bytes, err=%v", len(out), err)
+			}
+		})
 	}
 }

@@ -7,7 +7,11 @@ import (
 	"github.com/mac/go-pixo/src/png"
 )
 
-func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int) ([]byte, error) {
+// EncodePng encodes pixels with preset compression. A full 256-color budget is
+// opportunistic: transparent RGBA falls back to sample-preserving compression.
+// Pass false as allowRGBAFallback to require a palette even at that budget.
+// Reduced budgets always require an opaque palette-compatible input.
+func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, allowRGBAFallback ...bool) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
 	case 0:
@@ -42,6 +46,9 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 		opts.OptimizeAlpha = false
 	}
 
+	allowFallback := len(allowRGBAFallback) == 0 || allowRGBAFallback[0]
+	applyPngRGBAFallback(&opts, pixels, allowFallback)
+
 	encoder, err := png.NewEncoderWithOptions(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoder: %w", err)
@@ -55,7 +62,12 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 	return pngBytes, nil
 }
 
-func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, filterStrategy int, usePerceptual bool, distanceMetric int, optimalDeflate bool, filterEarlyTerm bool, progressFunc func(string, int)) ([]byte, error) {
+// EncodePngAdvanced encodes pixels with explicit quantizer and compression controls.
+// Palette requests are strict by default. App presets may pass true as the optional
+// allowRGBAFallback argument to permit sample-preserving RGBA at a 256-color budget.
+// On that fallback only palette controls are inapplicable; filter/DEFLATE controls
+// remain active. Reduced palette budgets remain strict even with this opt-in.
+func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, filterStrategy int, usePerceptual bool, distanceMetric int, optimalDeflate bool, filterEarlyTerm bool, progressFunc func(string, int), allowRGBAFallback ...bool) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
 	case 0:
@@ -129,6 +141,8 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 		opts.OptimizeAlpha = false
 	}
 
+	applyPngRGBAFallback(&opts, pixels, len(allowRGBAFallback) > 0 && allowRGBAFallback[0])
+
 	encoder, err := png.NewEncoderWithOptions(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoder: %w", err)
@@ -140,6 +154,21 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 	}
 
 	return pngBytes, nil
+}
+
+// Keep this policy at the public compression boundary. The low-level encoder's
+// MaxColors contract always means a required RGB palette and stays strict.
+func applyPngRGBAFallback(opts *png.Options, pixels []byte, allow bool) {
+	if !allow || opts.MaxColors != 256 || opts.ColorType != png.ColorRGBA {
+		return
+	}
+	for i := 3; i < len(pixels); i += 4 {
+		if pixels[i] != 255 {
+			opts.ApplyLossless()
+			opts.OptimizeAlpha = false // Preserve RGB even under zero alpha.
+			return
+		}
+	}
 }
 
 func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) ([]byte, error) {

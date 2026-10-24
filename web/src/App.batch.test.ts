@@ -46,6 +46,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('bounded batch UI', () => {
+  it('allows RGBA fallback for default preset PNG requests without requiring a palette', async () => {
+    decodeFile.mockImplementation(async (file: File) => ({
+      ...decoded(),
+      pixels: new Uint8Array([12, 34, 56, file.name === 'partial.png' ? 128 : 0]),
+    }))
+    const { container } = render(createElement(App))
+    addFiles(container, ['partial.png', 'transparent.png'])
+    await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(2))
+    const messages = AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')
+    for (const message of messages) {
+      expect(message).toMatchObject({
+        format: 'png', outputFormat: 'same', preset: 1, lossy: true, maxColors: 256,
+        dithering: true, ditherStrength: 0.4, qualityTarget: 85, zopfliIterations: 5,
+        pngAllowRGBAFallback: true,
+      })
+    }
+    expect(messages.map(message => message.pixels[3]).sort()).toEqual([0, 128])
+  })
+
   it('bounds decoding and encoding together, refills a free slot, and records actual worker format', async () => {
     const { container } = render(createElement(App))
     addFiles(container)

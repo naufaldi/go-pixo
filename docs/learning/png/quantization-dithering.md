@@ -16,7 +16,7 @@ Lossy compression reduces file size by reducing the number of colors (quantizati
 ## Encoder option contract
 
 `Encoder.EncodeWithOptions` uses `QuantizeWithOptions` when `MaxColors` is 1..256.
-`EncodePngAdvanced` exposes the same settings without changing its argument order.
+`EncodePngAdvanced` exposes the same settings; existing argument positions are unchanged.
 These controls have distinct meanings:
 
 - `MaxColors` is a hard palette cap. Zero disables quantization.
@@ -46,9 +46,36 @@ optional LUT argument on standalone quantizer helpers retains its legacy behavio
 
 The current RGB palette cannot represent alpha. Palette requests reject grayscale
 and non-opaque RGBA inputs instead of panicking or silently discarding transparency.
-Use lossless encoding for these inputs. Both public PNG encode entry points disable
-quantization, dithering, and hidden-RGB optimization when `lossy=false`.
-`RecompressPNGBytesLossless` also overrides lossy template settings.
+Both public PNG encode entry points disable quantization, dithering, and hidden-RGB
+optimization when `lossy=false`. `RecompressPNGBytesLossless` also overrides lossy
+template settings.
+
+### Automatic compression versus a required palette
+
+`EncodePng(..., lossy=true, maxColors=256)` treats the full default palette budget
+as opportunistic. For non-opaque RGBA it compresses the original RGBA samples,
+including hidden RGB, instead of requiring an unsupported RGB palette. Filters,
+compression level, and DEFLATE effort still apply. Opaque input still uses the
+selected quantizer; a reduced budget (1..255) always requires a palette.
+
+Explicit low-level `Options.MaxColors` requests remain strict even at 256 colors.
+Basic Go/JS callers can also require a full palette by passing `false` as the new
+optional final `allowRGBAFallback` argument. Advanced calls remain strict by
+default, so explicit quality, dithering, and distance requests are not silently
+bypassed. An advanced caller can opt into the same fallback by appending `true`
+after the progress callback (JS argument 18). The progress callback stays at JS
+argument 17. Existing calls do not need new arguments.
+
+The app marks its preset-derived worker requests with `pngAllowRGBAFallback=true`.
+This records compression intent without identifying a preset by its numeric values.
+For transparent full-budget input, palette-only settings are inapplicable and RGBA
+samples are preserved. Reduced budgets, including the Ultra preset's 128 colors,
+continue to reject transparency. Custom worker requests omit the flag to require
+quantization. No alpha-aware palette or dithering implementation is implied.
+
+This raw-pixel fallback does not guarantee smaller files. The worker still compares
+successful same-format candidates with the original bytes and returns the original
+when it is no larger. Resized images must use the encoded candidate.
 
 ## When to Use Palette Quantization
 
