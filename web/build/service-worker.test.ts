@@ -46,7 +46,7 @@ async function worker() {
     .replace('__OFFLINE_MANIFEST__', JSON.stringify(manifest))
   vm.runInNewContext(source, {
     self: { location: { origin }, clients: { claim }, skipWaiting, addEventListener: (name: string, handler: (event: any) => void) => { handlers[name] = handler } },
-    caches: cacheStorage, URL, Set, Request: class extends Request {
+    caches: cacheStorage, URL, Set, Response, Request: class extends Request {
       constructor(url: string, options: RequestInit) { super(new URL(url, origin), options) }
     }, fetch: network,
   })
@@ -117,6 +117,28 @@ describe('offline service worker boundaries', () => {
     expect(sw.stores.has('another-app-cache')).toBe(true)
     expect(sw.stores.has('go-pixo-offline-other-scope-old')).toBe(true)
     expect(sw.claim).toHaveBeenCalledOnce()
+  })
+
+  it('serves redirected cached HTML as a navigation-safe response with the same bytes and headers', async () => {
+    const sw = await worker()
+    await sw.dispatch('install')
+    const shell = new Response('<!doctype html><title>Verified app</title>', {
+      status: 200, statusText: 'OK', headers: { 'Content-Type': 'text/html', 'X-Build': 'build-one' },
+    })
+    // Cloudflare canonicalizes /index.html to /. Cache.addAll follows that redirect.
+    Object.defineProperty(shell, 'redirected', { value: true })
+    sw.stores.get(manifest.cacheName)!.set(`${origin}/index.html`, shell)
+    const response = await sw.dispatch('fetch', {
+      request: { url: `${origin}/`, method: 'GET', mode: 'navigate', redirect: 'manual' },
+    })
+    expect(response!.redirected).toBe(false)
+    expect(response!.status).toBe(200)
+    expect(response!.statusText).toBe('OK')
+    expect(response!.headers.get('Content-Type')).toBe('text/html')
+    expect(response!.headers.get('X-Build')).toBe('build-one')
+    expect(await response!.text()).toBe('<!doctype html><title>Verified app</title>')
+    expect(sw.network).not.toHaveBeenCalled()
+    expect(sw.addAll).toHaveBeenCalledTimes(1)
   })
 
   it.each(['open', 'match'] as const)('falls back to the original network request when cache %s rejects', async (failure) => {

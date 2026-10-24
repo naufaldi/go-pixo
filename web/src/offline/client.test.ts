@@ -38,7 +38,7 @@ async function environment(online = false) {
   })
   vi.stubGlobal('navigator', { serviceWorker: serviceWorkers, onLine: online })
   const client = await import('./client')
-  return { client, controller, serviceWorkers, setReply: (value: unknown) => { reply = value } }
+  return { client, controller, registration, serviceWorkers, setReply: (value: unknown) => { reply = value } }
 }
 
 describe('offline readiness', () => {
@@ -70,6 +70,32 @@ describe('offline readiness', () => {
     expect(client.getOfflineStatus().state).toBe('unavailable')
     expect(listener).toHaveBeenCalled()
     unsubscribe()
+  })
+
+  it('checks an existing registration for updates online without delaying cache verification', async () => {
+    const { client, registration } = await environment(true)
+    registration.update.mockImplementation(() => new Promise(() => {}))
+    client.initializeOffline()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(registration.update).toHaveBeenCalledOnce()
+    expect(client.getOfflineStatus().state).toBe('ready')
+  })
+
+  it('keeps a verified offline build usable when the online update check fails', async () => {
+    const { client, registration } = await environment(true)
+    registration.update.mockRejectedValue(new Error('Update network unavailable'))
+    client.initializeOffline()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(registration.update).toHaveBeenCalledOnce()
+    expect(client.getOfflineStatus().state).toBe('ready')
+  })
+
+  it('does not force an update check while offline', async () => {
+    const { client, registration } = await environment(false)
+    client.initializeOffline()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(registration.update).not.toHaveBeenCalled()
+    expect(client.getOfflineStatus().state).toBe('ready')
   })
 
   it('rejects wrong worker replies and times out without claiming readiness', async () => {
