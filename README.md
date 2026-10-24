@@ -11,8 +11,9 @@ Private image compression and conversion in the browser. PNG/JPEG use Go → Web
 
 ### Requirements
 
-- Go 1.25.5+ (standard Go WASM support)
-- Bun (for web frontend)
+- Go 1.26+ (required by golang.org/x/image; CI and Docker track Go 1.26 patches)
+- Bun 1.4.3 (for web frontend; `web/bun.lock` is the only dependency lockfile)
+- Node.js 22.22.2+, 24.15+, or 26+ (CI and Docker use 24.22.1)
 
 ### Installation
 

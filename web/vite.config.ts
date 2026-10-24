@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { offlinePlugin } from './build/offline';
+import { offlinePlugin } from './build/offline.ts';
 
 export default defineConfig({
+  // Preserve Vite 7's browser baseline when upgrading the bundler.
+  build: { target: ['chrome107', 'edge107', 'firefox104', 'safari16'] },
   // Codec imports stay lazy inside the compression worker.
   worker: { format: 'es' },
   // These lazy worker imports escape the initial HTML dependency scan. Discover

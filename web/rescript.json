@@ -17,8 +17,7 @@
     "version": 4
   },
   "dependencies": [
-    "@rescript/react",
-    "@rescript/core"
+    "@rescript/react"
   ],
   "warnings": {
     "number": "+A-42-44-102"
