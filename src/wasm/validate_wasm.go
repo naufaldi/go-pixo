@@ -25,6 +25,12 @@ func numberArg(min, max float64) argumentRule {
 	return argumentRule{kind: js.TypeNumber, min: min, max: max}
 }
 
+// Lossy palette bounds shared by argument validation and HandleQuantizeInfo.
+const (
+	minPaletteColors = 1
+	maxPaletteColors = 256
+)
+
 var booleanArg = argumentRule{kind: js.TypeBoolean}
 
 // checkArguments runs before Int/Bool conversions or any input buffer copies.
@@ -163,15 +169,15 @@ func checkOptionalBoolean(args []js.Value, index int) error {
 }
 
 func checkPNGArguments(args []js.Value, advanced bool) error {
-	rules := []argumentRule{integerArg(1, imagelimit.MaxDimension), integerArg(1, imagelimit.MaxDimension), integerArg(0, 6), integerArg(0, 4), booleanArg, integerArg(0, 256)}
+	rules := []argumentRule{integerArg(1, imagelimit.MaxDimension), integerArg(1, imagelimit.MaxDimension), integerArg(0, 6), integerArg(0, 4), booleanArg, integerArg(0, maxPaletteColors)}
 	if advanced {
 		rules = append(rules, booleanArg, numberArg(0, 1), integerArg(0, 100), integerArg(0, 50))
 	}
 	if err := checkArguments(args, rules); err != nil {
 		return err
 	}
-	if args[5].Bool() && args[6].Int() < 1 {
-		return fmt.Errorf("lossy PNG requires 1 to 256 colors")
+	if args[5].Bool() && args[6].Int() < minPaletteColors {
+		return fmt.Errorf("lossy PNG requires %d to %d colors", minPaletteColors, maxPaletteColors)
 	}
 	if !advanced {
 		if err := checkOptionalBoolean(args, 7); err != nil {

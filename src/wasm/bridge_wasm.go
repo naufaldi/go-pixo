@@ -244,9 +244,9 @@ func HandleBytesPerPixel(this js.Value, args []js.Value) any {
 // No arguments required.
 func HandleQuantizeInfo(this js.Value, args []js.Value) any {
 	return js.ValueOf(map[string]interface{}{
-		"maxColors":           256,
+		"maxColors":           maxPaletteColors,
 		"ditheringSupported":  true,
-		"minColors":           2,
+		"minColors":           minPaletteColors,
 		"maxDitherStrength":   1.0,
 		"minDitherStrength":   0.0,
 		"qualityTargetMin":    0,
