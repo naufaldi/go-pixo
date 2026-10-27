@@ -75,7 +75,7 @@ func writeSOF(w io.Writer, marker uint16, width, height uint16, colorType ColorT
 
 	numComponents := uint8(colorType)
 	// Length (2 + 1 + 2 + 2 + 1 + numComponents * 3)
-	length := uint16(8 + uint16(numComponents)*3)
+	length := 8 + uint16(numComponents)*3
 	if err := binary.Write(w, binary.BigEndian, length); err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func WriteDHT(w io.Writer, tableID uint8, bits [16]uint8, vals []uint8) error {
 func WriteSOS(w io.Writer, colorType ColorType) error {
 	numComponents := uint8(colorType)
 	// Length (2 + 1 + numComponents * 2 + 3)
-	length := uint16(6 + uint16(numComponents)*2)
+	length := 6 + uint16(numComponents)*2
 
 	if err := binary.Write(w, binary.BigEndian, SOS); err != nil {
 		return err
@@ -202,7 +202,7 @@ func WriteSOS(w io.Writer, colorType ColorType) error {
 func WriteSOSProgressive(w io.Writer, scan *ScanSpec, colorType ColorType) error {
 	numComponents := uint8(len(scan.Components))
 	// Length (2 + 1 + numComponents * 2 + 3)
-	length := uint16(6 + uint16(numComponents)*2)
+	length := 6 + uint16(numComponents)*2
 
 	if err := binary.Write(w, binary.BigEndian, SOS); err != nil {
 		return err

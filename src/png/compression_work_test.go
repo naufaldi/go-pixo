@@ -66,7 +66,7 @@ func TestPNGCompressionWorkPixelRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(idat, concatChunkData(parsePNGChunks(t, out), "IDAT")) {
+		if !bytes.Equal(idat, concatIDATData(parsePNGChunks(t, out))) {
 			t.Error("IDAT helper and PNG writer differ")
 		}
 	}
@@ -110,7 +110,7 @@ func TestScratchEntropyPreservesUnscaledOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotIDAT := concatChunkData(parsePNGChunks(t, out), "IDAT"); !bytes.Equal(gotIDAT, wantIDAT) {
+	if gotIDAT := concatIDATData(parsePNGChunks(t, out)); !bytes.Equal(gotIDAT, wantIDAT) {
 		t.Errorf("scratch IDAT (%d bytes) differs from allocating selection (%d bytes)", len(gotIDAT), len(wantIDAT))
 	}
 	decoded, err := stdpng.Decode(bytes.NewReader(out))
@@ -155,7 +155,7 @@ func TestStoredPNGSkipsOptimalWorkAndPreservesMetadata(t *testing.T) {
 	if deflateUpdates != 0 {
 		t.Errorf("stored path reported %d optimization steps", deflateUpdates)
 	}
-	idat := concatChunkData(parsePNGChunks(t, out), "IDAT")
+	idat := concatIDATData(parsePNGChunks(t, out))
 	raw := idat[2 : len(idat)-4]
 	for block := 0; ; block++ {
 		if len(raw) < 5 || raw[0]&6 != 0 {

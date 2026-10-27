@@ -4,12 +4,14 @@ import (
 	"sync"
 )
 
+// CacheKey identifies a cached Huffman table set by quality, subsampling, and whether it is optimized.
 type CacheKey struct {
 	Quality     uint8
 	Subsampling string
 	Optimized   bool
 }
 
+// HuffmanCache is a concurrency-safe cache of Huffman table sets that tracks hit and miss counts.
 type HuffmanCache struct {
 	mu        sync.RWMutex
 	tables    map[CacheKey]*HuffmanTables
@@ -17,12 +19,14 @@ type HuffmanCache struct {
 	missCount int64
 }
 
+// NewHuffmanCache returns an empty HuffmanCache.
 func NewHuffmanCache() *HuffmanCache {
 	return &HuffmanCache{
 		tables: make(map[CacheKey]*HuffmanTables),
 	}
 }
 
+// GetHuffmanTables returns the cached tables for the given key, creating and storing them on a miss.
 func (c *HuffmanCache) GetHuffmanTables(quality uint8, subsampling Subsampling, optimized bool) *HuffmanTables {
 	subsamplingStr := "444"
 	if subsampling == Subsampling420 {
@@ -57,16 +61,13 @@ func (c *HuffmanCache) GetHuffmanTables(quality uint8, subsampling Subsampling, 
 
 	c.missCount++
 
-	if optimized {
-		tables = NewHuffmanTables()
-	} else {
-		tables = NewHuffmanTables()
-	}
+	tables = NewHuffmanTables()
 
 	c.tables[key] = tables
 	return tables
 }
 
+// Prewarm populates the cache for qualities 50, 75, and 90 across both subsampling modes and optimization flags.
 func (c *HuffmanCache) Prewarm() {
 	qualities := []uint8{50, 75, 90}
 	subsamplings := []Subsampling{Subsampling444, Subsampling420}
@@ -95,6 +96,7 @@ func subsamplingString(s Subsampling) string {
 	return "444"
 }
 
+// HitRate returns the percentage of lookups served from the cache, or 0 if there have been none.
 func (c *HuffmanCache) HitRate() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -105,18 +107,21 @@ func (c *HuffmanCache) HitRate() float64 {
 	return float64(c.hitCount) / float64(total) * 100
 }
 
+// Stats returns the cache hit and miss counts.
 func (c *HuffmanCache) Stats() (hits, misses int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.hitCount, c.missCount
 }
 
+// Len returns the number of cached table sets.
 func (c *HuffmanCache) Len() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.tables)
 }
 
+// ResetStats zeroes the hit and miss counters without evicting cached tables.
 func (c *HuffmanCache) ResetStats() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

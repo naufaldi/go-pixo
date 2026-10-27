@@ -82,6 +82,6 @@ rg -n "//go:build js" src/wasm/*.go
 
 Before committing:
 - [ ] `go test ./...` passes
-- [ ] `golangci-lint run` passes (Go)
+- [ ] `golangci-lint run ./...` and `GOOS=js GOARCH=wasm golangci-lint run ./...` pass (Go, golangci-lint v2)
 - [ ] `cd web && npm run build` passes (Web)
 - [ ] All tests green (Go + Web)

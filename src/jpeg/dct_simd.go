@@ -5,11 +5,15 @@ import (
 	"sync"
 )
 
+// dctMethodScalar names the portable, non-SIMD DCT implementation.
+const dctMethodScalar = "scalar"
+
 var (
 	dctSIMD     *DCTSIMD
 	dctSIMDOnce sync.Once
 )
 
+// DCTSIMD records the CPU SIMD features detected for the DCT and the method selected to use them.
 type DCTSIMD struct {
 	HasAVX2         bool
 	HasSSSE3        bool
@@ -18,56 +22,55 @@ type DCTSIMD struct {
 	PreferredMethod string
 }
 
+// DetectCPUFeatures detects SIMD support once per process and returns the cached result.
 func DetectCPUFeatures() *DCTSIMD {
 	dctSIMDOnce.Do(func() {
 		dctSIMD = &DCTSIMD{}
-		arch := runtime.GOARCH
-		os := runtime.GOOS
-
-		switch arch {
+		switch runtime.GOARCH {
 		case "amd64":
-			dctSIMD.detectAMD64Features(os)
+			dctSIMD.detectAMD64Features()
 		case "arm64":
-			dctSIMD.detectARM64Features(os)
+			dctSIMD.detectARM64Features()
 		case "386", "arm":
 			dctSIMD.HasSSE2 = false
 			dctSIMD.HasSSSE3 = false
 			dctSIMD.HasAVX2 = false
 			dctSIMD.HasNEON = false
-			dctSIMD.PreferredMethod = "scalar"
+			dctSIMD.PreferredMethod = dctMethodScalar
 		default:
 			dctSIMD.HasSSE2 = false
 			dctSIMD.HasSSSE3 = false
 			dctSIMD.HasAVX2 = false
 			dctSIMD.HasNEON = false
-			dctSIMD.PreferredMethod = "scalar"
+			dctSIMD.PreferredMethod = dctMethodScalar
 		}
 	})
 	return dctSIMD
 }
 
-func (d *DCTSIMD) detectAMD64Features(os string) {
+func (d *DCTSIMD) detectAMD64Features() {
 	d.HasSSE2 = true
 	d.HasSSSE3 = true
 	d.HasAVX2 = runtime.GOARCH == "amd64" && cpuHasAVX2()
 
-	if d.HasAVX2 {
+	switch {
+	case d.HasAVX2:
 		d.PreferredMethod = "avx2"
-	} else if d.HasSSSE3 {
+	case d.HasSSSE3:
 		d.PreferredMethod = "ssse3"
-	} else if d.HasSSE2 {
+	case d.HasSSE2:
 		d.PreferredMethod = "sse2"
-	} else {
-		d.PreferredMethod = "scalar"
+	default:
+		d.PreferredMethod = dctMethodScalar
 	}
 }
 
-func (d *DCTSIMD) detectARM64Features(os string) {
+func (d *DCTSIMD) detectARM64Features() {
 	d.HasNEON = cpuHasNEON()
 	if d.HasNEON {
 		d.PreferredMethod = "neon"
 	} else {
-		d.PreferredMethod = "scalar"
+		d.PreferredMethod = dctMethodScalar
 	}
 }
 
@@ -79,6 +82,7 @@ func cpuHasNEON() bool {
 	return false
 }
 
+// ForwardDCTSIMD computes the 8x8 forward DCT using the method selected by DetectCPUFeatures.
 func ForwardDCTSIMD(block [64]float32) [64]float32 {
 	simd := DetectCPUFeatures()
 
@@ -142,9 +146,10 @@ func forwardDCTOptimized(block [64]float32) [64]float32 {
 	return result
 }
 
+// ForwardDCTSIMDParallel computes ForwardDCTSIMD for each block, splitting large inputs across CPUs.
 func ForwardDCTSIMDParallel(blocks [][64]float32) [][64]float32 {
 	simd := DetectCPUFeatures()
-	if simd.PreferredMethod == "scalar" {
+	if simd.PreferredMethod == dctMethodScalar {
 		return ForwardDCTParallel(blocks)
 	}
 
@@ -179,6 +184,7 @@ func ForwardDCTSIMDParallel(blocks [][64]float32) [][64]float32 {
 	return results
 }
 
+// ForwardDCTParallel computes the scalar ForwardDCT for each block, splitting large inputs across CPUs.
 func ForwardDCTParallel(blocks [][64]float32) [][64]float32 {
 	results := make([][64]float32, len(blocks))
 	numCPU := runtime.NumCPU()

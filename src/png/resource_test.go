@@ -19,10 +19,10 @@ func TestRecompressRejectsOversizedHeaderBeforeDecode(t *testing.T) {
 		binary.BigEndian.PutUint32(data, uint32(size[0]))
 		binary.BigEndian.PutUint32(data[4:], uint32(size[1]))
 		data[8], data[9] = 8, 6
-		binary.Write(&input, binary.BigEndian, uint32(len(data)))
+		_ = binary.Write(&input, binary.BigEndian, uint32(len(data))) // bytes.Buffer writes cannot fail
 		input.WriteString("IHDR")
 		input.Write(data)
-		binary.Write(&input, binary.BigEndian, crc32.ChecksumIEEE(append([]byte("IHDR"), data...)))
+		_ = binary.Write(&input, binary.BigEndian, crc32.ChecksumIEEE(append([]byte("IHDR"), data...)))
 		if err := WriteIEND(&input); err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func TestPNGAcceptsDimensionBoundaryAndRejectsTruncatedPixels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := enc.Encode(make([]byte, 16383)); err == nil {
+	if _, err = enc.Encode(make([]byte, 16383)); err == nil {
 		t.Fatal("accepted truncated pixels")
 	}
 	output, err := enc.Encode(make([]byte, 16384))

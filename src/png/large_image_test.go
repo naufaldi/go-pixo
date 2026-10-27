@@ -12,7 +12,7 @@ func TestEncodeLargeImageStoredBlocks(t *testing.T) {
 	// 500x500 RGBA = 1,000,000 bytes of pixel data.
 	width, height := 500, 500
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	
+
 	// Fill with some data
 	for i := 0; i < len(img.Pix); i++ {
 		img.Pix[i] = byte(i % 256)
@@ -44,7 +44,7 @@ func TestEncodeLargeImageCompressed(t *testing.T) {
 	// 500x500 RGBA = 1,000,000 bytes
 	width, height := 500, 500
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	
+
 	// Fill with compressible data
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
@@ -72,7 +72,7 @@ func TestEncodeLargeImageCompressed(t *testing.T) {
 	}
 
 	if decoded.Bounds().Dx() != width || decoded.Bounds().Dy() != height {
-		t.Errorf("Decoded image dimensions mismatch: got %dx%d, want %dx%d", 
+		t.Errorf("Decoded image dimensions mismatch: got %dx%d, want %dx%d",
 			decoded.Bounds().Dx(), decoded.Bounds().Dy(), width, height)
 	}
 }

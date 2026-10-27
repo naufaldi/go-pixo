@@ -15,7 +15,8 @@ type lengthLimitLevel struct {
 	needed       int
 }
 
-func buildLengthLimitedHuffmanTable(freq []int, maxLen int) (bits [16]uint8, vals []uint8) {
+// buildLengthLimitedHuffmanTable builds JPEG BITS/HUFFVAL tables whose code lengths do not exceed maxLen (capped at 16).
+func buildLengthLimitedHuffmanTable(freq []int, maxLen int) (bits [16]uint8, vals []uint8) { //nolint:unparam // maxLen is an input of the length-limiting algorithm; current callers all use the JPEG maximum of 16
 	nodes := make([]lengthLimitNode, 0, len(freq))
 	for sym, f := range freq {
 		if f > 0 {

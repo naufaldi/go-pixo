@@ -305,7 +305,7 @@ func clamp(v int) int {
 	return v
 }
 
-func calculateQuantizationError(pixels []byte, indexed []byte, palette *Palette, colorType int) float64 {
+func calculateQuantizationError(pixels []byte, indexed []byte, palette *Palette, colorType int) float64 { //nolint:unparam // colorType mirrors calculatePerceptualQuantizationError; current callers only pass RGB
 	bpp := BytesPerPixel(ColorType(colorType))
 	width := len(pixels) / bpp
 	var totalError float64
@@ -522,11 +522,12 @@ func QuantizeWithOptions(pixels []byte, colorType int, maxColors int, opts Optio
 			G: uint8(clamp(int(pixels[offset+1]) + carry[1])),
 			B: uint8(clamp(int(pixels[offset+2]) + carry[2])),
 		}
-		if lut != nil {
+		switch {
+		case lut != nil:
 			indexed[i] = lut.Lookup(c.R, c.G, c.B, 255)
-		} else if usePerceptual {
+		case usePerceptual:
 			indexed[i] = uint8(palette.FindNearestPerceptual(c))
-		} else {
+		default:
 			indexed[i] = uint8(palette.FindNearest(c))
 		}
 		if opts.Dithering && strength > 0 && palette.NumColors > 0 {

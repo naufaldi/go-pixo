@@ -148,7 +148,9 @@ func BenchmarkEncoder_ScalarDCT(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -165,7 +167,9 @@ func BenchmarkEncoder_SIMDDCT(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -183,7 +187,9 @@ func BenchmarkEncoder_Progressive_Scalar(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -201,7 +207,9 @@ func BenchmarkEncoder_Progressive_SIMD(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -219,7 +227,9 @@ func BenchmarkEncoder_OptimizedHuffman_Scalar(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -237,7 +247,9 @@ func BenchmarkEncoder_OptimizedHuffman_SIMD(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -346,8 +358,13 @@ func BenchmarkEncoder_CacheHitRate(b *testing.B) {
 		huffmanCache.ResetStats()
 		for i := 0; i < b.N; i++ {
 			opts := BalancedOptions(width, height, 75)
-			encoder, _ := NewEncoder(opts)
-			encoder.Encode(pixels)
+			encoder, err := NewEncoder(opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if _, err := encoder.Encode(pixels); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 
@@ -528,7 +545,9 @@ func BenchmarkEncoder_Trellis(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encoder.Encode(pixels)
+		if _, err := encoder.Encode(pixels); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -546,7 +565,9 @@ func BenchmarkEncoder_TrellisComparison(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			encoder.Encode(pixels)
+			if _, err := encoder.Encode(pixels); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 
@@ -559,7 +580,9 @@ func BenchmarkEncoder_TrellisComparison(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			encoder.Encode(pixels)
+			if _, err := encoder.Encode(pixels); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 }

@@ -263,11 +263,11 @@ func TestWriteDynamicBlock_BoundaryDistances(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// A match distance must not exceed the number of bytes already emitted in
 			// the current block. Emit a prefix of length == distance, then a match.
-			prefix := make([]Token, tt.distance)
-			for i := range prefix {
-				prefix[i] = TokenLiteral('A')
+			tokens := make([]Token, tt.distance, tt.distance+1)
+			for i := range tokens {
+				tokens[i] = TokenLiteral('A')
 			}
-			tokens := append(prefix, TokenMatch(uint16(tt.distance), 3))
+			tokens = append(tokens, TokenMatch(uint16(tt.distance), 3))
 
 			var buf bytes.Buffer
 			if err := WriteDynamicBlock(&buf, true, tokens); err != nil {

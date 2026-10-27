@@ -91,6 +91,9 @@ func TestEncodeDC_Differential(t *testing.T) {
 	if cat != 6 {
 		t.Errorf("cat: got %d, want 6", cat)
 	}
+	if len != 6 {
+		t.Errorf("len: got %d, want 6", len)
+	}
 	// -50 in 6 bits one's complement: -50-1 = -51 = 11001101... masked to 6 bits = 001101 = 13
 	if bits != 13 {
 		t.Errorf("bits: got %d, want 13", bits)

@@ -684,4 +684,3 @@ func TestEarlyTerminationNoRegression(t *testing.T) {
 		})
 	}
 }
-

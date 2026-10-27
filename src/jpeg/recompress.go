@@ -23,7 +23,7 @@ func RecompressJPEGBytes(inputJPEG []byte, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jpeg: decode config: %w", err)
 	}
-	if err := imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
+	if err = imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
 		return nil, err
 	}
 

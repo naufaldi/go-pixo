@@ -171,6 +171,7 @@ func applyPngRGBAFallback(opts *png.Options, pixels []byte, allow bool) {
 	}
 }
 
+// EncodeJpeg encodes raw grayscale (colorType 1) or RGB (colorType 3) pixels as JPEG using the balanced preset.
 func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) ([]byte, error) {
 	var jpegColorType jpeg.ColorType
 	switch colorType {
@@ -196,6 +197,7 @@ func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) 
 	return encoder.Encode(pixels)
 }
 
+// EncodeJpegAdvanced encodes raw pixels as JPEG with an explicit preset, subsampling (1 = 4:4:4, otherwise 4:2:0), progressive, trellis, and Huffman options.
 func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int) ([]byte, error) {
 	var jpegColorType jpeg.ColorType
 	switch colorType {
@@ -246,6 +248,7 @@ func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality
 	return encoder.Encode(pixels)
 }
 
+// RecompressPngLossless losslessly re-encodes PNG file bytes with the numbered preset and optional Zopfli iteration override.
 func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, progressFunc func(string, int)) ([]byte, error) {
 	var opts png.Options
 	switch preset {
@@ -273,6 +276,7 @@ func RecompressPngLossless(inputPNG []byte, preset int, zopfliIterations int, pr
 	return png.RecompressPNGBytesLossless(inputPNG, opts)
 }
 
+// RecompressJpeg decodes JPEG file bytes and re-encodes them with the numbered preset, quality, and encoder options.
 func RecompressJpeg(inputJPEG []byte, preset int, quality uint8, progressive bool, trellis bool, optimizeHuffman bool) ([]byte, error) {
 	var opts jpeg.Options
 	switch preset {
@@ -298,6 +302,7 @@ func RecompressJpeg(inputJPEG []byte, preset int, quality uint8, progressive boo
 	return jpeg.RecompressJPEGBytes(inputJPEG, opts)
 }
 
+// BytesPerPixel returns the bytes per pixel for a PNG color type number, defaulting to 4.
 func BytesPerPixel(colorType int) int {
 	switch colorType {
 	case 0:

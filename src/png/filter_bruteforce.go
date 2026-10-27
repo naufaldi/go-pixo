@@ -65,24 +65,6 @@ func applyFilterWithScratch(filterType FilterType, row, prevRow []byte, bpp int,
 	}
 }
 
-// applyFilter applies a single filter to a row.
-func applyFilter(filterType FilterType, row, prevRow []byte, bpp int) []byte {
-	switch filterType {
-	case FilterNone:
-		return ApplyFilterNone(row)
-	case FilterSub:
-		return ApplyFilterSub(row, bpp)
-	case FilterUp:
-		return ApplyFilterUp(row, prevRow)
-	case FilterAverage:
-		return ApplyFilterAverage(row, prevRow, bpp)
-	case FilterPaeth:
-		return ApplyFilterPaeth(row, prevRow, bpp)
-	default:
-		return ApplyFilterNone(row)
-	}
-}
-
 // compressSingleRow returns actual DEFLATE bytes for standalone row comparisons.
 func compressSingleRow(filteredRow []byte) []byte {
 	if len(filteredRow) == 0 {

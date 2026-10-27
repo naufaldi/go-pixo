@@ -54,6 +54,7 @@ const (
 // DistanceMetric selects the color distance formula for quantization.
 type DistanceMetric int
 
+// Supported quantization distance metrics: plain RGB Euclidean and red-mean perceptual.
 const (
 	DistanceMetricEuclidean DistanceMetric = iota
 	DistanceMetricRedmean

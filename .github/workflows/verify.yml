@@ -29,6 +29,22 @@ jobs:
       - name: Test WASM argument boundaries in Node
         run: GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./src/wasm -run 'Test(Handlers|RecompressHandlers)'
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache: true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+      # The WASM bridge only builds under js/wasm, so lint that target too.
+      - name: Lint js/wasm target
+        run: GOOS=js GOARCH=wasm golangci-lint run ./...
+
   web:
     runs-on: ubuntu-latest
     defaults:

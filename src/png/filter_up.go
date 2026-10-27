@@ -13,6 +13,7 @@ func ApplyFilterUp(row []byte, prev []byte) []byte {
 	return result
 }
 
+// ApplyFilterUpWithScratch writes the filter-type byte and Up-filtered row into the scratch buffer and returns that slice.
 func ApplyFilterUpWithScratch(row []byte, prev []byte, scratch *AdaptiveScratch) []byte {
 	filtered := scratch.GetFilteredRow()
 	filtered[0] = 2
@@ -26,6 +27,7 @@ func ApplyFilterUpWithScratch(row []byte, prev []byte, scratch *AdaptiveScratch)
 	return filtered[:len(row)+1]
 }
 
+// ApplyFilterUpWithScratchDst writes the filter-type byte and Up-filtered row into dst, which must hold len(row)+1 bytes.
 func ApplyFilterUpWithScratchDst(row []byte, prev []byte, dst []byte) []byte {
 	dst[0] = 2
 	for i := 0; i < len(row); i++ {

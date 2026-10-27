@@ -17,14 +17,14 @@ func TestDecodeInputChecksHeaderBeforeFullDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := png.WriteIHDR(&b, ihdr); err != nil {
+	if err = png.WriteIHDR(&b, ihdr); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := decodeInput(b.Bytes()); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, _, err = decodeInput(b.Bytes()); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("want limit before missing pixels, got %v", err)
 	}
 	b.Reset()
-	if err := stdpng.Encode(&b, image.NewNRGBA(image.Rect(0, 0, 2, 3))); err != nil {
+	if err = stdpng.Encode(&b, image.NewNRGBA(image.Rect(0, 0, 2, 3))); err != nil {
 		t.Fatal(err)
 	}
 	img, format, err := decodeInput(b.Bytes())

@@ -25,7 +25,7 @@ func WriteIDATWithOptions(w interface{ Write([]byte) (int, error) }, pixels []by
 	if err != nil {
 		return err
 	}
-	if err := validateFilterOptions(opts); err != nil {
+	if err = validateFilterOptions(opts); err != nil {
 		return err
 	}
 
@@ -122,7 +122,7 @@ func IDATDataBytesWithOptions(pixels []byte, width, height int, colorType ColorT
 	if err != nil {
 		return nil, err
 	}
-	if err := validateFilterOptions(opts); err != nil {
+	if err = validateFilterOptions(opts); err != nil {
 		return nil, err
 	}
 	bpp := BytesPerPixel(colorType)

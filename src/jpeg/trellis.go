@@ -17,15 +17,9 @@ var (
 		0.45, 0.45, 0.40, 0.40, 0.35, 0.35, 0.35, 0.35,
 		0.40, 0.40, 0.40, 0.35, 0.35, 0.35, 0.35, 0.35,
 	}
-
-	dcLuminanceBits   = [16]uint8{0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}
-	dcLuminanceVals   = []uint8{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
-	dcChrominanceBits = [16]uint8{0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0}
-	dcChrominanceVals = []uint8{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
-	acLuminanceBits   = [16]uint8{0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 125}
-	acChrominanceBits = [16]uint8{0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 119}
 )
 
+// TrellisConfig tunes rate-distortion trellis quantization of AC coefficients.
 type TrellisConfig struct {
 	// Lambda weights distortion in the cost: rate + Lambda*distortion.
 	Lambda        float64
@@ -33,12 +27,14 @@ type TrellisConfig struct {
 	UsePerceptual bool
 }
 
+// DefaultTrellisConfig is the trellis configuration used when callers only supply a lambda.
 var DefaultTrellisConfig = TrellisConfig{
 	Lambda:        1.0,
 	MaxIterations: 64,
 	UsePerceptual: true,
 }
 
+// PerceptualDistortion returns the squared error between dct and quantized, weighted by per-frequency visual sensitivity.
 func PerceptualDistortion(dct, quantized [64]float32) float64 {
 	totalDistortion := 0.0
 	for i := 0; i < 64; i++ {
@@ -49,6 +45,7 @@ func PerceptualDistortion(dct, quantized [64]float32) float64 {
 	return totalDistortion
 }
 
+// EstimateSymbolRate estimates the bits needed to entropy-code a quantized block with the standard Huffman tables.
 func EstimateSymbolRate(coeffs [64]int16, isLuminance bool) int {
 	totalBits := 0
 
@@ -126,6 +123,7 @@ type trellisPredecessor struct {
 	prevIndex    uint8
 }
 
+// TrellisOptimizeFull runs luminance trellis quantization using DefaultTrellisConfig with the given lambda.
 func TrellisOptimizeFull(dct [64]float32, quantTable [64]float32, lambda float64) [64]int16 {
 	config := DefaultTrellisConfig
 	config.Lambda = lambda
@@ -261,6 +259,7 @@ func estimateACRate(runLength, category uint8, isLuminance bool) int {
 	return bits
 }
 
+// TrellisQuantize runs luminance trellis quantization with the given lambda, 64 iterations, and perceptual weighting.
 func TrellisQuantize(dct [64]float32, quantTable [64]float32, lambda float32) [64]int16 {
 	config := TrellisConfig{
 		Lambda:        float64(lambda),
@@ -304,7 +303,7 @@ func quantizeSingleCoefficient(coeff float32, quant float32, minVal, maxVal int,
 }
 
 func calculateRate(quantVal int16) float32 {
-	absVal := int16(absInt16(quantVal))
+	absVal := absInt16(quantVal)
 
 	category := uint8(0)
 	temp := absVal
@@ -336,11 +335,11 @@ func absInt16(v int16) int16 {
 	return v
 }
 
+// CalculateLambda maps a 1-100 quality to the trellis rate-distortion weight, giving lower quality a larger lambda.
 func CalculateLambda(quality uint8) float32 {
 	qualityFloat := float32(quality)
 	if qualityFloat >= 50 {
 		return 0.1 + (100-qualityFloat)/50*0.9
-	} else {
-		return 1.0 + (50-qualityFloat)/50*4.0
 	}
+	return 1.0 + (50-qualityFloat)/50*4.0
 }

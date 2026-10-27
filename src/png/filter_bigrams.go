@@ -42,10 +42,12 @@ func selectBigrams(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
 	return bestFilter, bestFiltered
 }
 
+// SelectFilterBigrams picks the filter whose output has the fewest distinct byte bigrams and returns it with the filtered row.
 func SelectFilterBigrams(row []byte, prevRow []byte, bpp int) (FilterType, []byte) {
 	return selectBigrams(row, prevRow, bpp)
 }
 
+// SelectAllBigrams chooses a filter for every scanline of pixels using SelectFilterBigrams.
 func SelectAllBigrams(pixels []byte, width, height, bpp int) []FilterType {
 	filters := make([]FilterType, height)
 	var prevRow []byte
@@ -61,6 +63,7 @@ func SelectAllBigrams(pixels []byte, width, height, bpp int) []FilterType {
 	return filters
 }
 
+// ApplyBigrams returns row filtered with the filter chosen by SelectFilterBigrams.
 func ApplyBigrams(row []byte, prevRow []byte, bpp int) []byte {
 	_, filtered := selectBigrams(row, prevRow, bpp)
 	return filtered

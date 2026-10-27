@@ -7,10 +7,8 @@ import (
 	"syscall/js"
 )
 
-/**
- * HandleEncodePng converts JS arguments to Go and calls EncodePng.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, allowRGBAFallback?: boolean)
- */
+// HandleEncodePng converts JS arguments to Go and calls EncodePng.
+// Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, allowRGBAFallback?: boolean)
 func HandleEncodePng(this js.Value, args []js.Value) any {
 	if err := checkPNGArguments(args, false); err != nil {
 		return argumentError(err)
@@ -48,10 +46,8 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 	return dst
 }
 
-/**
- * HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, [filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean], [progressCallback: function], [allowRGBAFallback: boolean])
- */
+// HandleEncodePngAdvanced converts JS arguments to Go and calls EncodePngAdvanced.
+// Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, preset: number, lossy: boolean, maxColors: number, dithering: boolean, ditherStrength: number, qualityTarget: number, zopfliIterations: number, [filterStrategy: number, usePerceptual: boolean, distanceMetric: number, optimalDeflate: boolean, filterEarlyTerm: boolean], [progressCallback: function], [allowRGBAFallback: boolean])
 func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	if err := checkPNGArguments(args, true); err != nil {
 		return argumentError(err)
@@ -130,10 +126,8 @@ func HandleEncodePngAdvanced(this js.Value, args []js.Value) any {
 	return dst
 }
 
-/**
- * HandleEncodeJpeg converts JS arguments to Go and calls EncodeJpeg.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number)
- */
+// HandleEncodeJpeg converts JS arguments to Go and calls EncodeJpeg.
+// Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number)
 func HandleEncodeJpeg(this js.Value, args []js.Value) any {
 	if err := checkJPEGArguments(args, false); err != nil {
 		return argumentError(err)
@@ -163,10 +157,8 @@ func HandleEncodeJpeg(this js.Value, args []js.Value) any {
 	return dst
 }
 
-/**
- * HandleEncodeJpegAdvanced converts JS arguments to Go and calls EncodeJpegAdvanced.
- * Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number, subsampling: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean, preset: number)
- */
+// HandleEncodeJpegAdvanced converts JS arguments to Go and calls EncodeJpegAdvanced.
+// Expected arguments: (pixels: Uint8Array, width: number, height: number, colorType: number, quality: number, subsampling: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean, preset: number)
 func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
 	if err := checkJPEGArguments(args, true); err != nil {
 		return argumentError(err)
@@ -201,10 +193,8 @@ func HandleEncodeJpegAdvanced(this js.Value, args []js.Value) any {
 	return dst
 }
 
-/**
- * HandleRecompressJpeg recompresses an input JPEG (provided as file bytes).
- * Expected args: (jpegBytes: Uint8Array, preset: number, quality: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean)
- */
+// HandleRecompressJpeg recompresses an input JPEG (provided as file bytes).
+// Expected args: (jpegBytes: Uint8Array, preset: number, quality: number, progressive: boolean, trellis: boolean, optimizeHuffman: boolean)
 func HandleRecompressJpeg(this js.Value, args []js.Value) any {
 	if err := checkArguments(args, []argumentRule{integerArg(0, 4), integerArg(1, 100), booleanArg, booleanArg, booleanArg}); err != nil {
 		return argumentError(err)
@@ -234,10 +224,8 @@ func HandleRecompressJpeg(this js.Value, args []js.Value) any {
 	return dst
 }
 
-/**
- * HandleBytesPerPixel returns the bytes per pixel for a given color type.
- * Expected arguments: (colorType: number)
- */
+// HandleBytesPerPixel returns the bytes per pixel for a given color type.
+// Expected arguments: (colorType: number)
 func HandleBytesPerPixel(this js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return js.ValueOf(0)
@@ -252,10 +240,8 @@ func HandleBytesPerPixel(this js.Value, args []js.Value) any {
 	return js.ValueOf(BytesPerPixel(int(value)))
 }
 
-/**
- * HandleQuantizeInfo returns quantization capabilities.
- * No arguments required.
- */
+// HandleQuantizeInfo returns quantization capabilities.
+// No arguments required.
 func HandleQuantizeInfo(this js.Value, args []js.Value) any {
 	return js.ValueOf(map[string]interface{}{
 		"maxColors":           256,
@@ -269,10 +255,8 @@ func HandleQuantizeInfo(this js.Value, args []js.Value) any {
 	})
 }
 
-/**
- * HandleGetPresets returns available compression presets.
- * No arguments required.
- */
+// HandleGetPresets returns available compression presets.
+// No arguments required.
 func HandleGetPresets(this js.Value, args []js.Value) any {
 	return js.ValueOf(map[string]interface{}{
 		"fast":     0,
@@ -282,10 +266,8 @@ func HandleGetPresets(this js.Value, args []js.Value) any {
 	})
 }
 
-/**
- * HandleRecompressPngLossless recompresses an input PNG (provided as file bytes) in lossless mode.
- * Expected arguments: (pngBytes: Uint8Array, preset: number, zopfliIterations: number, progressCallback?: function)
- */
+// HandleRecompressPngLossless recompresses an input PNG (provided as file bytes) in lossless mode.
+// Expected arguments: (pngBytes: Uint8Array, preset: number, zopfliIterations: number, progressCallback?: function)
 func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
 	if err := checkArguments(args, []argumentRule{integerArg(0, 4), integerArg(0, 50)}); err != nil {
 		return argumentError(err)

@@ -437,7 +437,6 @@ func TestQuantizePerceptualVsEuclidean(t *testing.T) {
 }
 
 func TestQuantizePerceptualSkinTones(t *testing.T) {
-	var pixels []byte
 	skinTones := []Color{
 		{255, 224, 189},
 		{241, 194, 125},
@@ -449,6 +448,7 @@ func TestQuantizePerceptualSkinTones(t *testing.T) {
 		{153, 85, 51},
 	}
 
+	pixels := make([]byte, 0, 3*len(skinTones))
 	for _, c := range skinTones {
 		pixels = append(pixels, c.R, c.G, c.B)
 	}

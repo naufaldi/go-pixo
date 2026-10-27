@@ -13,6 +13,7 @@ func ApplyFilterSub(row []byte, bpp int) []byte {
 	return result
 }
 
+// ApplyFilterSubWithScratch writes the filter-type byte and Sub-filtered row into the scratch buffer and returns that slice.
 func ApplyFilterSubWithScratch(row []byte, bpp int, scratch *AdaptiveScratch) []byte {
 	filtered := scratch.GetFilteredRow()
 	filtered[0] = 1
@@ -26,6 +27,7 @@ func ApplyFilterSubWithScratch(row []byte, bpp int, scratch *AdaptiveScratch) []
 	return filtered[:len(row)+1]
 }
 
+// ApplyFilterSubWithScratchDst writes the filter-type byte and Sub-filtered row into dst, which must hold len(row)+1 bytes.
 func ApplyFilterSubWithScratchDst(row []byte, bpp int, dst []byte) []byte {
 	dst[0] = 1
 	for i := 0; i < len(row); i++ {

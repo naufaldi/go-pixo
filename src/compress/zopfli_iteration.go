@@ -5,6 +5,7 @@ import (
 	"sort"
 )
 
+// Tuning defaults for the Zopfli-style iterative compressor.
 const (
 	DefaultZopfliIterations = 10
 	DefaultBlockSize        = 65535
@@ -13,6 +14,7 @@ const (
 	MinImprovementForSplit  = 0.001
 )
 
+// ZopfliIterationConfig controls the Zopfli-style iterative DEFLATE search run by ZopfliIterate.
 type ZopfliIterationConfig struct {
 	Iterations       int
 	BlockSize        int
@@ -22,6 +24,7 @@ type ZopfliIterationConfig struct {
 	ProgressCallback func(iteration, improvement float64, size int)
 }
 
+// NewZopfliIterationConfig returns a ZopfliIterationConfig populated with the package defaults.
 func NewZopfliIterationConfig() ZopfliIterationConfig {
 	return ZopfliIterationConfig{
 		Iterations:     DefaultZopfliIterations,
@@ -30,12 +33,6 @@ func NewZopfliIterationConfig() ZopfliIterationConfig {
 		BlockSplitting: true,
 		Verbose:        false,
 	}
-}
-
-type blockSplit struct {
-	splitPoints []int
-	cost        float64
-	size        int
 }
 
 type zopfliIterationState struct {
@@ -83,6 +80,7 @@ func newZopfliIterationState(data []byte, config ZopfliIterationConfig) *zopfliI
 	return state
 }
 
+// ZopfliIterate repeatedly re-encodes data with trial configurations and returns the smallest DEFLATE output found.
 func ZopfliIterate(data []byte, config ZopfliIterationConfig) ([]byte, error) {
 	if len(data) == 0 {
 		return []byte{}, nil
@@ -113,6 +111,7 @@ func ZopfliIterate(data []byte, config ZopfliIterationConfig) ([]byte, error) {
 	return state.bestResult, nil
 }
 
+// ZopfliEncodeIterative runs ZopfliIterate with default settings and the given iteration count (12 when iterations <= 0).
 func ZopfliEncodeIterative(data []byte, iterations int) ([]byte, error) {
 	config := NewZopfliIterationConfig()
 	if iterations <= 0 {
@@ -126,7 +125,7 @@ func (s *zopfliIterationState) runIteration() float64 {
 	encoder := NewDeflateEncoder()
 	encoder.SetCompressionLevel(9)
 
-	var bestCost float64 = s.bestCost
+	bestCost := s.bestCost
 
 	trialConfigs := s.generateTrialConfigs()
 
@@ -432,16 +431,10 @@ func (s *zopfliIterationState) hasConverged() bool {
 	return false
 }
 
+// CalculateZopfliImprovement returns how much smaller optimized is than original, as a percentage of original.
 func CalculateZopfliImprovement(original, optimized []byte) float64 {
 	if len(original) == 0 {
 		return 0
 	}
 	return (float64(len(original)) - float64(len(optimized))) / float64(len(original)) * 100
-}
-
-func (s *zopfliIterationState) calculateCompressionRatio(original, compressed []byte) float64 {
-	if len(original) == 0 {
-		return 0
-	}
-	return float64(len(compressed)) / float64(len(original))
 }
