@@ -3,6 +3,7 @@ package jpeg
 // Preset represents a JPEG compression preset.
 type Preset int
 
+// Presets selectable with OptionsBuilder.Preset, mapping to FastOptions, BalancedOptions, and MaxOptions.
 const (
 	PresetFast Preset = iota
 	PresetBalanced
@@ -12,6 +13,7 @@ const (
 // QualityPreset represents the quality level for JPEG encoding.
 type QualityPreset int
 
+// Named quality levels for JPEG encoding.
 const (
 	QualityLow     QualityPreset = iota // Quality ~60, smaller files
 	QualityMedium                       // Quality ~75, balanced

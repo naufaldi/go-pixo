@@ -18,6 +18,7 @@ func ApplyFilterAverage(row []byte, prev []byte, bpp int) []byte {
 	return result
 }
 
+// ApplyFilterAverageWithScratch writes the filter-type byte and Average-filtered row into the scratch buffer and returns that slice.
 func ApplyFilterAverageWithScratch(row []byte, prev []byte, bpp int, scratch *AdaptiveScratch) []byte {
 	filtered := scratch.GetFilteredRow()
 	filtered[0] = 3
@@ -36,6 +37,7 @@ func ApplyFilterAverageWithScratch(row []byte, prev []byte, bpp int, scratch *Ad
 	return filtered[:len(row)+1]
 }
 
+// ApplyFilterAverageWithScratchDst writes the filter-type byte and Average-filtered row into dst, which must hold len(row)+1 bytes.
 func ApplyFilterAverageWithScratchDst(row []byte, prev []byte, bpp int, dst []byte) []byte {
 	dst[0] = 3
 	for i := 0; i < len(row); i++ {

@@ -1,3 +1,4 @@
+// Package jpeg implements a baseline and progressive JPEG encoder with optional Huffman optimization and trellis quantization.
 package jpeg
 
 import (
@@ -419,7 +420,7 @@ func (e *Encoder) encodeProgressive(buf *bytes.Buffer, pixels []byte, ht *Huffma
 
 func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *QuantizationTables) [64]int16 {
 	var dct [64]float32
-	if e.dctSIMD != nil && e.dctSIMD.PreferredMethod != "scalar" {
+	if e.dctSIMD != nil && e.dctSIMD.PreferredMethod != dctMethodScalar {
 		dct = ForwardDCTSIMD(block)
 	} else {
 		dct = ForwardDCT(block)

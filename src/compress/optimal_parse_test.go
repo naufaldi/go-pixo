@@ -136,7 +136,7 @@ func TestOptimalParse_SimpleData(t *testing.T) {
 		t.Fatal("expected tokens, got nil")
 	}
 
-	encoded, err := encodeTokensForTest(tokens, true)
+	encoded, err := encodeTokensForTest(tokens)
 	if err != nil {
 		t.Fatalf("encoding failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestOptimalParse_RepetitiveData(t *testing.T) {
 		t.Fatal("expected tokens, got nil")
 	}
 
-	encoded, err := encodeTokensForTest(tokens, true)
+	encoded, err := encodeTokensForTest(tokens)
 	if err != nil {
 		t.Fatalf("encoding failed: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestConvergenceDetection(t *testing.T) {
 		t.Fatal("expected tokens")
 	}
 
-	encoded, err := encodeTokensForTest(tokens, true)
+	encoded, err := encodeTokensForTest(tokens)
 	if err != nil {
 		t.Fatalf("encoding failed: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestOptimalParse_BlockSplitting(t *testing.T) {
 		t.Fatal("expected tokens")
 	}
 
-	encoded, err := encodeTokensForTest(tokens, true)
+	encoded, err := encodeTokensForTest(tokens)
 	if err != nil {
 		t.Fatalf("encoding failed: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestOptimalParse_CostModelAccuracy(t *testing.T) {
 		t.Fatalf("OptimalParse failed: %v", err)
 	}
 
-	encoded, err := encodeTokensForTest(tokens, true)
+	encoded, err := encodeTokensForTest(tokens)
 	if err != nil {
 		t.Fatalf("encoding failed: %v", err)
 	}
@@ -385,15 +385,9 @@ func TestOptimalParse_CostModelAccuracy(t *testing.T) {
 	}
 }
 
-func encodeTokensForTest(tokens []Token, useDynamic bool) ([]byte, error) {
+func encodeTokensForTest(tokens []Token) ([]byte, error) {
 	var buf bytes.Buffer
-	var err error
-	if useDynamic {
-		err = WriteDynamicBlock(&buf, true, tokens)
-	} else {
-		err = WriteFixedBlock(&buf, true, tokens)
-	}
-	if err != nil {
+	if err := WriteDynamicBlock(&buf, true, tokens); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

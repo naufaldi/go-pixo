@@ -13,11 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/image/draw"
+
 	"github.com/mac/go-pixo/src/internal/imagelimit"
 	"github.com/mac/go-pixo/src/jpeg"
 	"github.com/mac/go-pixo/src/png"
-	"golang.org/x/image/draw"
 )
+
+// formatJPEG is the -output-format value that selects JPEG output.
+const formatJPEG = "jpeg"
 
 func main() {
 	os.Exit(run())
@@ -53,7 +57,7 @@ func run() int {
 		return 2
 	}
 
-	if *outputFormat != "png" && *outputFormat != "jpeg" {
+	if *outputFormat != "png" && *outputFormat != formatJPEG {
 		fmt.Fprintf(os.Stderr, "Error: -output-format must be png or jpeg\n")
 		return 2
 	}
@@ -70,7 +74,7 @@ func run() int {
 		} else {
 			base = (*inputFile)[:len(*inputFile)-len(ext)]
 		}
-		if *outputFormat == "jpeg" {
+		if *outputFormat == formatJPEG {
 			*outputFile = base + ".jpg"
 		} else {
 			*outputFile = base + ".png"
@@ -171,14 +175,15 @@ func run() int {
 			fmt.Printf("Dither Strength: %.2f\n", *ditherStrength)
 		}
 		fmt.Printf("Zopfli Iterations: %d\n", *iterations)
-		if *outputFormat == "jpeg" {
+		if *outputFormat == formatJPEG {
 			fmt.Printf("  JPEG quality:   %d\n", *jpegQuality)
 			fmt.Printf("  Progressive:    %v\n", *progressive)
 			fmt.Printf("  Trellis:        %v\n", *trellis)
 		}
 	}
 
-	if *benchmark {
+	switch {
+	case *benchmark:
 		fmt.Printf("\n=== Benchmark Mode (%d runs) ===\n", *benchmarkRuns)
 
 		var sizes []int
@@ -265,7 +270,7 @@ func run() int {
 			fmt.Printf("Ratio (vs File): %.2f%%\n", ratio)
 			fmt.Printf("Savings (vs File): %.2f%%\n", savings)
 		}
-	} else if *outputFormat == "jpeg" {
+	case *outputFormat == formatJPEG:
 		jpegQualityByte := uint8(*jpegQuality)
 
 		// If input is JPEG and no lossy changes — use RecompressJPEGBytes for best quality.
@@ -320,7 +325,7 @@ func run() int {
 			fmt.Printf("Ratio (vs File): %.2f%%\n", ratio)
 			fmt.Printf("Savings (vs File): %.2f%%\n", savings)
 		}
-	} else {
+	default:
 		// PNG encoding path.
 		var opts png.Options
 		switch *preset {

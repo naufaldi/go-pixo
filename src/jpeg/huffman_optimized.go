@@ -44,12 +44,12 @@ func BuildOptimizedTables(pixels []byte, width, height int, colorType ColorType,
 
 	// 2. Build tables from frequencies
 	ht := &HuffmanTables{}
-	ht.DCLumBits, ht.DCLumVals = buildJpegHuffmanTable(dcLumFreq, 12)
-	ht.ACLumBits, ht.ACLumVals = buildJpegHuffmanTable(acLumFreq, 256)
+	ht.DCLumBits, ht.DCLumVals = buildJpegHuffmanTable(dcLumFreq)
+	ht.ACLumBits, ht.ACLumVals = buildJpegHuffmanTable(acLumFreq)
 
 	if colorType == ColorRGB {
-		ht.DCChromBits, ht.DCChromVals = buildJpegHuffmanTable(dcChromFreq, 12)
-		ht.ACChromBits, ht.ACChromVals = buildJpegHuffmanTable(acChromFreq, 256)
+		ht.DCChromBits, ht.DCChromVals = buildJpegHuffmanTable(dcChromFreq)
+		ht.ACChromBits, ht.ACChromVals = buildJpegHuffmanTable(acChromFreq)
 	}
 
 	// 3. Build lookup tables for encoding
@@ -91,7 +91,7 @@ func countBlockFreqs(block [64]float32, prevDC int16, dcFreq []int, acFreq []int
 	return dc
 }
 
-func buildJpegHuffmanTable(frequencies []int, numSymbols int) (bits [16]uint8, vals []uint8) {
+func buildJpegHuffmanTable(frequencies []int) (bits [16]uint8, vals []uint8) {
 	// Check how many symbols have non-zero frequency
 	nonZeroSymbols := 0
 	firstSymbol := -1

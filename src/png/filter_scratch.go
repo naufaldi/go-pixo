@@ -1,11 +1,13 @@
 package png
 
+// Default early-termination thresholds for filter selection.
 const (
 	DefaultMinSumThreshold  = 0.0
 	DefaultEntropyThreshold = 0.0
 	DefaultMinFiltersToTry  = 2
 )
 
+// FilterSelectionConfig holds early-termination and threshold settings for adaptive filter selection.
 type FilterSelectionConfig struct {
 	EarlyTerminationEnabled   bool
 	FilterSelectionThreshold  float64
@@ -13,6 +15,7 @@ type FilterSelectionConfig struct {
 	MinFiltersToTry           int
 }
 
+// SelectAllWithScratch chooses an adaptive filter for every scanline, deriving dimensions from the scratch buffer and reusing it.
 func SelectAllWithScratch(pixels []byte, scratch *AdaptiveScratch) []FilterType {
 	return SelectAllWithStrategyAndScratch(
 		pixels,
@@ -24,6 +27,7 @@ func SelectAllWithScratch(pixels []byte, scratch *AdaptiveScratch) []FilterType 
 	)
 }
 
+// SelectAllWithStrategyAndScratch chooses a filter for every scanline with the given strategy, reusing scratch buffers across rows.
 func SelectAllWithStrategyAndScratch(pixels []byte, width, height, bpp int, strategy FilterStrategy, scratch *AdaptiveScratch) []FilterType {
 	filters := make([]FilterType, height)
 	var prevRow []byte

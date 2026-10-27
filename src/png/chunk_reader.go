@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// Ancillary color-management chunk types preserved by lossless recompression.
 var (
 	ChunkSRGB ChunkType = "sRGB"
 	ChunkICCP ChunkType = "iCCP"
@@ -12,6 +13,7 @@ var (
 	ChunkCHRM ChunkType = "cHRM"
 )
 
+// ExtractPreserveChunks returns the color-management chunks (sRGB, iCCP, gAMA, cHRM) found in a PNG file, in file order.
 func ExtractPreserveChunks(pngBytes []byte) ([]Chunk, error) {
 	chunks, err := ReadChunks(pngBytes)
 	if err != nil {
@@ -29,6 +31,7 @@ func ExtractPreserveChunks(pngBytes []byte) ([]Chunk, error) {
 	return preserved, nil
 }
 
+// ReadChunks validates the PNG signature and parses every chunk in pngBytes.
 func ReadChunks(pngBytes []byte) ([]Chunk, error) {
 	signature := Signature()
 	if len(pngBytes) < len(signature) {

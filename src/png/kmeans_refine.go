@@ -5,6 +5,7 @@ import (
 	"sort"
 )
 
+// ColorCount pairs a color with its pixel count and float channel values for k-means refinement.
 type ColorCount struct {
 	Color Color
 	Count int
@@ -13,6 +14,7 @@ type ColorCount struct {
 	B     float64
 }
 
+// ToColorCount converts a color histogram into ColorCount entries sorted by descending count.
 func ToColorCount(colorMap map[Color]int) []ColorCount {
 	result := make([]ColorCount, 0, len(colorMap))
 
@@ -40,6 +42,7 @@ func colorDistance(c1, c2 Color) float64 {
 	return dr*dr + dg*dg + db*db
 }
 
+// RefinePaletteKmeans moves each palette entry toward the count-weighted mean of its nearest colors for up to iterations rounds.
 func RefinePaletteKmeans(palette *Palette, colors []ColorCount, iterations int) []Color {
 	if len(colors) == 0 || palette.NumColors == 0 {
 		return palette.Colors[:palette.NumColors]

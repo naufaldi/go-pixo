@@ -29,7 +29,7 @@ func EstimateCompressedSize(data []byte) (int, int) {
 			}
 		} else {
 			// Literal: 1 byte
-			estimatedSize += 1
+			estimatedSize++
 			window.Write(data[pos])
 			pos++
 		}

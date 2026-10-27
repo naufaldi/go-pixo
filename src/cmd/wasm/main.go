@@ -1,5 +1,6 @@
 //go:build js && wasm
 
+// Command wasm registers the go-pixo encoders as JavaScript globals and keeps the WebAssembly module alive.
 package main
 
 import (
@@ -9,7 +10,7 @@ import (
 )
 
 func main() {
-	c := make(chan struct{}, 0)
+	c := make(chan struct{})
 
 	// Register functions
 	js.Global().Set("encodePng", js.FuncOf(wasm.HandleEncodePng))

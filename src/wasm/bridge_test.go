@@ -12,9 +12,9 @@ func TestEncodeJpeg(t *testing.T) {
 	// 8x8 RGB image (all red)
 	pixels := make([]byte, width*height*3)
 	for i := 0; i < len(pixels); i += 3 {
-		pixels[i] = 255   // R
-		pixels[i+1] = 0   // G
-		pixels[i+2] = 0   // B
+		pixels[i] = 255 // R
+		pixels[i+1] = 0 // G
+		pixels[i+2] = 0 // B
 	}
 
 	quality := uint8(75)

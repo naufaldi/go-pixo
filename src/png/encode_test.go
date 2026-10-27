@@ -434,7 +434,7 @@ func assertIDATZlibScanlines(t *testing.T, pngData []byte, width, height int, co
 	t.Helper()
 
 	chunks := parsePNGChunks(t, pngData)
-	idatData := concatChunkData(chunks, "IDAT")
+	idatData := concatIDATData(chunks)
 	if len(idatData) == 0 {
 		t.Fatalf("missing IDAT data")
 	}
@@ -528,10 +528,7 @@ func parsePNGChunks(t *testing.T, pngData []byte) []parsedChunk {
 	off := 8
 	chunks := make([]parsedChunk, 0, 4)
 
-	for {
-		if off == len(pngData) {
-			break
-		}
+	for off != len(pngData) {
 		if off+12 > len(pngData) {
 			t.Fatalf("truncated chunk header at offset %d", off)
 		}
@@ -591,10 +588,10 @@ func findFirstChunk(t *testing.T, chunks []parsedChunk, typ string) parsedChunk 
 	return parsedChunk{}
 }
 
-func concatChunkData(chunks []parsedChunk, typ string) []byte {
+func concatIDATData(chunks []parsedChunk) []byte {
 	var out []byte
 	for _, c := range chunks {
-		if c.Type == typ {
+		if c.Type == "IDAT" {
 			out = append(out, c.Data...)
 		}
 	}

@@ -24,6 +24,7 @@ func ApplyFilterPaeth(row []byte, prev []byte, bpp int) []byte {
 	return result
 }
 
+// ApplyFilterPaethWithScratch writes the filter-type byte and Paeth-filtered row into the scratch buffer and returns that slice.
 func ApplyFilterPaethWithScratch(row []byte, prev []byte, bpp int, scratch *AdaptiveScratch) []byte {
 	filtered := scratch.GetFilteredRow()
 	filtered[0] = 4
@@ -48,6 +49,7 @@ func ApplyFilterPaethWithScratch(row []byte, prev []byte, bpp int, scratch *Adap
 	return filtered[:len(row)+1]
 }
 
+// ApplyFilterPaethWithScratchDst writes the filter-type byte and Paeth-filtered row into dst, which must hold len(row)+1 bytes.
 func ApplyFilterPaethWithScratchDst(row []byte, prev []byte, bpp int, dst []byte) []byte {
 	dst[0] = 4
 	for i := 0; i < len(row); i++ {

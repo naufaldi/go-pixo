@@ -24,35 +24,35 @@ func TestOptimalDeflate_CompressionImprovement(t *testing.T) {
 		description string
 	}{
 		{
-			name:    "repetitive_pattern",
-			width:   32,
-			height:  32,
-			bpp:     3,
-			dataGen: generateRepetitiveData,
+			name:        "repetitive_pattern",
+			width:       32,
+			height:      32,
+			bpp:         3,
+			dataGen:     generateRepetitiveData,
 			description: "highly repetitive data",
 		},
 		{
-			name:    "gradient_data",
-			width:   50,
-			height:  50,
-			bpp:     4,
-			dataGen: generateGradientData,
+			name:        "gradient_data",
+			width:       50,
+			height:      50,
+			bpp:         4,
+			dataGen:     generateGradientData,
 			description: "smooth gradient data",
 		},
 		{
-			name:    "checkerboard",
-			width:   32,
-			height:  32,
-			bpp:     3,
-			dataGen: generateCheckerboardData,
+			name:        "checkerboard",
+			width:       32,
+			height:      32,
+			bpp:         3,
+			dataGen:     generateCheckerboardData,
 			description: "checkerboard pattern",
 		},
 		{
-			name:    "text_like",
-			width:   50,
-			height:  50,
-			bpp:     1,
-			dataGen: generateTextLikeData,
+			name:        "text_like",
+			width:       50,
+			height:      50,
+			bpp:         1,
+			dataGen:     generateTextLikeData,
 			description: "text-like repeated data",
 		},
 	}
@@ -61,9 +61,10 @@ func TestOptimalDeflate_CompressionImprovement(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pixels := tc.dataGen(tc.width, tc.height, tc.bpp)
 			colorType := ColorRGB
-			if tc.bpp == 4 {
+			switch tc.bpp {
+			case 4:
 				colorType = ColorRGBA
-			} else if tc.bpp == 1 {
+			case 1:
 				colorType = ColorGrayscale
 			}
 
@@ -96,7 +97,7 @@ func TestOptimalDeflate_CompressionImprovement(t *testing.T) {
 			t.Logf("  Uncompressed: %d bytes", uncompressedSize)
 			t.Logf("  No optimal: %d bytes (%.2f%%)", len(dataNoOptimal), ratioNoOptimal*100)
 			t.Logf("  Optimal: %d bytes (%.2f%%)", len(dataOptimal), ratioOptimal*100)
-			
+
 			diff := len(dataOptimal) - len(dataNoOptimal)
 			if diff < 0 {
 				t.Logf("  Improvement: %d bytes (%.2f%%)", -diff, float64(-diff)/float64(len(dataNoOptimal))*100)
@@ -115,16 +116,15 @@ func TestOptimalDeflate_CompressionImprovement(t *testing.T) {
 			}
 
 			// Verify both outputs can be decoded to the same data
-			if !verifyIDATDataMatches(pixels, dataNoOptimal, tc.width, tc.height, colorType) {
+			if !verifyIDATDataMatches(dataNoOptimal, tc.width, tc.height, colorType) {
 				t.Errorf("No-optimal output does not match original data")
 			}
-			if !verifyIDATDataMatches(pixels, dataOptimal, tc.width, tc.height, colorType) {
+			if !verifyIDATDataMatches(dataOptimal, tc.width, tc.height, colorType) {
 				t.Errorf("Optimal output does not match original data")
 			}
 		})
 	}
 }
-
 
 func TestOptimalDeflate_ConvergenceDetection(t *testing.T) {
 	if testing.Short() {
@@ -257,9 +257,10 @@ func TestOptimalDeflate_DifferentImageTypes(t *testing.T) {
 			width, height := 50, 50
 			pixels := tc.dataGen(width, height, tc.bpp)
 			colorType := ColorGrayscale
-			if tc.bpp == 3 {
+			switch tc.bpp {
+			case 3:
 				colorType = ColorRGB
-			} else if tc.bpp == 4 {
+			case 4:
 				colorType = ColorRGBA
 			}
 
@@ -348,8 +349,8 @@ func generateGraphicalData(width, height, bpp int) []byte {
 		for x := 0; x < width; x++ {
 			offset := (y*width + x) * bpp
 			// Create synthetic graphical patterns
-			circleX := width/2
-			circleY := height/2
+			circleX := width / 2
+			circleY := height / 2
 			dist := int(sqrt(float64((x-circleX)*(x-circleX) + (y-circleY)*(y-circleY))))
 			if dist < height/4 {
 				// Inside circle - solid color
@@ -414,25 +415,26 @@ func sqrt(n float64) float64 {
 	return x
 }
 
-func verifyIDATDataMatches(pixels []byte, idatData []byte, width, height int, colorType ColorType) bool {
+func verifyIDATDataMatches(idatData []byte, width, height int, colorType ColorType) bool {
 	bpp := BytesPerPixel(colorType)
 	expectedRawLen := width * bpp * height
-	
+
 	zlibReader, err := zlib.NewReader(bytes.NewReader(idatData))
 	if err != nil {
 		return false
 	}
-	defer zlibReader.Close()
-	
 	decompressed, err := io.ReadAll(zlibReader)
 	if err != nil {
 		return false
 	}
-	
+	if err := zlibReader.Close(); err != nil {
+		return false
+	}
+
 	// The decompressed data should be scanline data with filter bytes
 	if len(decompressed) < expectedRawLen+height {
 		return false
 	}
-	
+
 	return true
 }

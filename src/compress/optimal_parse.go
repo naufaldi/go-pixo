@@ -11,6 +11,7 @@ const (
 	defaultBlockSize            = 65535
 )
 
+// OptimalConfig controls the iterative optimal LZ77 parser used by OptimalParse.
 type OptimalConfig struct {
 	MaxIterations        int
 	ConvergenceThreshold float64
@@ -21,6 +22,7 @@ type OptimalConfig struct {
 	ProgressCallback     func(iteration, improvement float64)
 }
 
+// DefaultOptimalConfig returns the baseline optimal-parse settings (20 iterations, block splitting, 256-entry hash chains).
 func DefaultOptimalConfig() OptimalConfig {
 	return OptimalConfig{
 		MaxIterations:        defaultMaxIterations,
@@ -32,6 +34,7 @@ func DefaultOptimalConfig() OptimalConfig {
 	}
 }
 
+// OptimalConfigForLevel scales iterations, block splitting, and chain length to a 1-9 compression level.
 func OptimalConfigForLevel(level int) OptimalConfig {
 	config := DefaultOptimalConfig()
 	switch level {
@@ -57,12 +60,6 @@ func OptimalConfigForLevel(level int) OptimalConfig {
 		config.MaxChainLen = 1024
 	}
 	return config
-}
-
-type parseResult struct {
-	tokens []Token
-	cost   float64
-	size   int
 }
 
 func estimateBlockCost(tokens []Token, useDynamic bool) float64 {
@@ -133,14 +130,13 @@ func estimateBlockCost(tokens []Token, useDynamic bool) float64 {
 
 		for i := 0; i < 30; i++ {
 			if distFreq[i] > 0 {
-				distCodeBits := 0
-				if i < 4 {
+				var distCodeBits int
+				switch {
+				case i < 8:
 					distCodeBits = 5
-				} else if i < 8 {
-					distCodeBits = 5
-				} else if i < 16 {
+				case i < 16:
 					distCodeBits = 7
-				} else {
+				default:
 					distCodeBits = 8
 				}
 				p := float64(distFreq[i]) / float64(totalSymbols)
@@ -242,11 +238,12 @@ func calculateHLITCost(freq []int, maxCode int) float64 {
 			codeLen := 1
 			if nonZeroCount > 1 {
 				avgFreq := float64(totalFreq(freq[:maxCode])) / float64(nonZeroCount)
-				if float64(freq[i]) > avgFreq {
+				switch {
+				case float64(freq[i]) > avgFreq:
 					codeLen = 1
-				} else if float64(freq[i]) > avgFreq/2.0 {
+				case float64(freq[i]) > avgFreq/2.0:
 					codeLen = 2
-				} else {
+				default:
 					codeLen = 3
 				}
 			}
@@ -541,7 +538,7 @@ func (p *optimalParser) tryCombineMatch(tokens []Token, pos int) []Token {
 	lit1 := tokens[pos].Literal
 	lit2 := tokens[pos+1].Literal
 
-		searchPos := p.findBackwardMatch(pos, lit1, lit2)
+	searchPos := p.findBackwardMatch(pos, lit1, lit2)
 	if searchPos < 0 {
 		return nil
 	}
@@ -694,6 +691,7 @@ func (p *optimalParser) hasConverged() bool {
 	return false
 }
 
+// OptimalParse iteratively searches for the lowest-cost LZ77 token stream for data, stopping early once cost converges.
 func OptimalParse(data []byte, config OptimalConfig) ([]Token, error) {
 	if len(data) == 0 {
 		return nil, nil
@@ -732,6 +730,7 @@ func OptimalParse(data []byte, config OptimalConfig) ([]Token, error) {
 	return parser.bestTokens, nil
 }
 
+// EncodeOptimalLZ77 optimally parses data and writes it as a single final dynamic-Huffman DEFLATE block.
 func EncodeOptimalLZ77(data []byte, config OptimalConfig) ([]byte, error) {
 	tokens, err := OptimalParse(data, config)
 	if err != nil {

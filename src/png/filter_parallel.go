@@ -5,12 +5,14 @@ import (
 	"sync"
 )
 
+// ParallelConfig controls concurrent per-row filter selection: worker count, minimum rows per worker, and strategy.
 type ParallelConfig struct {
 	NumWorkers int
 	Threshold  int
 	Strategy   FilterStrategy
 }
 
+// DefaultParallelConfig uses one worker per CPU, a 32-row threshold, and the adaptive strategy.
 func DefaultParallelConfig() ParallelConfig {
 	return ParallelConfig{
 		NumWorkers: runtime.NumCPU(),
@@ -19,10 +21,12 @@ func DefaultParallelConfig() ParallelConfig {
 	}
 }
 
+// SelectAllParallel chooses a filter for every scanline concurrently using DefaultParallelConfig.
 func SelectAllParallel(pixels []byte, width, height, bpp int) []FilterType {
 	return SelectAllParallelWithConfig(pixels, width, height, bpp, DefaultParallelConfig())
 }
 
+// SelectAllParallelWithConfig chooses a filter for every scanline, splitting rows across workers when height exceeds config.Threshold.
 func SelectAllParallelWithConfig(pixels []byte, width, height, bpp int, config ParallelConfig) []FilterType {
 	if height <= config.Threshold {
 		return SelectAllWithStrategy(pixels, width, height, bpp, config.Strategy)
@@ -107,10 +111,12 @@ func selectRowFilterBigrams(row, prevRow []byte, bpp int) FilterType {
 	return filterType
 }
 
+// SelectAllParallelBigrams is the concurrent form of SelectAllBigrams using DefaultParallelConfig.
 func SelectAllParallelBigrams(pixels []byte, width, height, bpp int) []FilterType {
 	return SelectAllParallelBigramsWithConfig(pixels, width, height, bpp, DefaultParallelConfig())
 }
 
+// SelectAllParallelBigramsWithConfig is the concurrent form of SelectAllBigrams, splitting rows across workers when height exceeds config.Threshold.
 func SelectAllParallelBigramsWithConfig(pixels []byte, width, height, bpp int, config ParallelConfig) []FilterType {
 	if height <= config.Threshold {
 		return SelectAllBigrams(pixels, width, height, bpp)

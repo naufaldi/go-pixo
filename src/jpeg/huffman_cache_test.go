@@ -106,7 +106,7 @@ func TestHuffmanCacheThreadSafety(t *testing.T) {
 	t.Run("concurrent reads", func(t *testing.T) {
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
-			go func(id int) {
+			go func() {
 				defer wg.Done()
 				for j := 0; j < numAccesses; j++ {
 					quality := uint8((j % 100) + 1)
@@ -114,7 +114,7 @@ func TestHuffmanCacheThreadSafety(t *testing.T) {
 					optimized := j%2 == 0
 					_ = cache.GetHuffmanTables(quality, subsampling, optimized)
 				}
-			}(i)
+			}()
 		}
 		wg.Wait()
 	})
@@ -126,7 +126,7 @@ func TestHuffmanCacheThreadSafety(t *testing.T) {
 
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
-			go func(id int) {
+			go func() {
 				defer wg.Done()
 				for j := 0; j < numAccesses; j++ {
 					quality := uint8((j % 100) + 1)
@@ -140,7 +140,7 @@ func TestHuffmanCacheThreadSafety(t *testing.T) {
 					missSum = misses
 					mu.Unlock()
 				}
-			}(i)
+			}()
 		}
 		wg.Wait()
 

@@ -29,9 +29,11 @@ func pngScanlines(t *testing.T, data []byte) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
 	result, err := io.ReadAll(r)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return result
@@ -99,7 +101,7 @@ func TestEncodePngAdvancedRespectsDitheringSwitch(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		pixels[i*3], pixels[i*3+1], pixels[i*3+2] = byte(i*4), byte(i*4), byte(i*4)
 	}
-	var outputs [][]byte
+	outputs := make([][]byte, 0, 3)
 	for _, tc := range []struct {
 		enabled  bool
 		strength float64

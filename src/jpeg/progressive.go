@@ -90,11 +90,12 @@ func BalancedProgressiveScript() []ScanSpec {
 
 // GetProgressiveScript returns the appropriate progressive scan script based on quality.
 func GetProgressiveScript(quality uint8) []ScanSpec {
-	if quality >= 90 {
+	switch {
+	case quality >= 90:
 		return HighQualityProgressiveScript()
-	} else if quality >= 70 {
+	case quality >= 70:
 		return BalancedProgressiveScript()
-	} else {
+	default:
 		return WebOptimizedProgressiveScript()
 	}
 }
@@ -179,7 +180,7 @@ func EncodeACFirstScan(bw *BitWriter, scan *ScanSpec, mcuCoeffs [][64]int16, ht 
 					return err
 				}
 
-				bits, bitLen := EncodeValue(int16(val))
+				bits, bitLen := EncodeValue(val)
 				if err := bw.Write(uint32(bits), bitLen); err != nil {
 					return err
 				}

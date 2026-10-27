@@ -104,9 +104,9 @@ func calculateColorVariance(colors []ColorWithCount) float64 {
 	var totalR, totalG, totalB int
 	totalCount := 0
 	for _, c := range colors {
-		totalR += int(c.Color.R) * c.Count
-		totalG += int(c.Color.G) * c.Count
-		totalB += int(c.Color.B) * c.Count
+		totalR += int(c.R) * c.Count
+		totalG += int(c.G) * c.Count
+		totalB += int(c.B) * c.Count
 		totalCount += c.Count
 	}
 
@@ -117,9 +117,9 @@ func calculateColorVariance(colors []ColorWithCount) float64 {
 	var variance float64
 	for _, c := range colors {
 		weight := float64(c.Count)
-		dr := float64(c.Color.R) - meanR
-		dg := float64(c.Color.G) - meanG
-		db := float64(c.Color.B) - meanB
+		dr := float64(c.R) - meanR
+		dg := float64(c.G) - meanG
+		db := float64(c.B) - meanB
 		variance += weight * (dr*dr + dg*dg + db*db)
 	}
 
@@ -211,9 +211,9 @@ func averageColors(colors []ColorWithCount) Color {
 	var totalCount int
 
 	for _, c := range colors {
-		totalR += int(c.Color.R) * c.Count
-		totalG += int(c.Color.G) * c.Count
-		totalB += int(c.Color.B) * c.Count
+		totalR += int(c.R) * c.Count
+		totalG += int(c.G) * c.Count
+		totalB += int(c.B) * c.Count
 		totalCount += c.Count
 	}
 
@@ -300,9 +300,9 @@ func calculateColorVarianceWithAlpha(colors []ColorWithCount) float64 {
 	var totalR, totalG, totalB int
 	totalCount := 0
 	for _, c := range colors {
-		totalR += int(c.Color.R) * c.Count
-		totalG += int(c.Color.G) * c.Count
-		totalB += int(c.Color.B) * c.Count
+		totalR += int(c.R) * c.Count
+		totalG += int(c.G) * c.Count
+		totalB += int(c.B) * c.Count
 		totalCount += c.Count
 	}
 
@@ -313,9 +313,9 @@ func calculateColorVarianceWithAlpha(colors []ColorWithCount) float64 {
 	var variance float64
 	for _, c := range colors {
 		weight := float64(c.Count)
-		dr := float64(c.Color.R) - meanR
-		dg := float64(c.Color.G) - meanG
-		db := float64(c.Color.B) - meanB
+		dr := float64(c.R) - meanR
+		dg := float64(c.G) - meanG
+		db := float64(c.B) - meanB
 		variance += weight * (dr*dr + dg*dg + db*db)
 	}
 
@@ -405,9 +405,9 @@ func averageColorsWithAlpha(colors []ColorWithCount) Color {
 	var totalCount int
 
 	for _, c := range colors {
-		totalR += int(c.Color.R) * c.Count
-		totalG += int(c.Color.G) * c.Count
-		totalB += int(c.Color.B) * c.Count
+		totalR += int(c.R) * c.Count
+		totalG += int(c.G) * c.Count
+		totalB += int(c.B) * c.Count
 		totalCount += c.Count
 	}
 

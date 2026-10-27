@@ -16,6 +16,7 @@ const (
 // ColorType represents the color space of the image.
 type ColorType uint8
 
+// Supported JPEG color types, valued by component count.
 const (
 	ColorGrayscale ColorType = 1 // JPEG format value for 1 component
 	ColorRGB       ColorType = 3 // JPEG format value for 3 components
@@ -24,6 +25,7 @@ const (
 // Subsampling represents the chroma subsampling mode.
 type Subsampling uint8
 
+// Supported chroma subsampling modes.
 const (
 	Subsampling444 Subsampling = iota // 4:4:4, no subsampling
 	Subsampling420                    // 4:2:0, 2x2 chroma downsample

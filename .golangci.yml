@@ -1,71 +1,81 @@
+version: "2"
 run:
-  timeout: 5m
   modules-download-mode: readonly
   allow-parallel-runners: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
+    - bodyclose
     - errcheck
-    - gosimple
-    - staticcheck
-    - unused
-    - govet
-    - ineffassign
-    - typecheck
-    - revive
-    - gofmt
-    - goimports
-    - misspell
     - errname
-    - whitespace
     - goconst
     - gocritic
-    - bodyclose
+    - govet
+    - ineffassign
+    - misspell
     - nilnil
     - noctx
     - prealloc
+    - revive
+    - staticcheck
     - unconvert
     - unparam
-
-linters-settings:
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  revive:
+    - unused
+    - whitespace
+  settings:
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: package-comments
+          severity: warning
+        - name: blank-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+  exclusions:
+    generated: lax
     rules:
-      - name: exported
-        severity: warning
-      - name: package-comments
-        severity: warning
-      - name: blank-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/mac/go-pixo
-  misspell:
-    locale: US
-
+      - linters:
+          - goconst
+          - gocritic
+          - revive
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - goconst
-        - gocritic
-        - revive
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/mac/go-pixo
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

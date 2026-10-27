@@ -115,7 +115,9 @@ func TestRecompressHandlersRejectOversizedHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	jfif := []byte{0xff, 0xd8, 0xff, 0xe0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0}
-	header := append(jfif, j.Bytes()[2:]...)
+	header := make([]byte, 0, len(jfif)+j.Len()-2)
+	header = append(header, jfif...)
+	header = append(header, j.Bytes()[2:]...)
 	sof := bytes.Index(header, []byte{0xff, 0xc0})
 	if sof < 0 {
 		t.Fatal("missing SOF")
