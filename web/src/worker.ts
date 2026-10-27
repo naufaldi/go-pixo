@@ -5,7 +5,7 @@ import {
 } from './interop/compressionSettings';
 import { compressWithCandidates } from './interop/codecsCompression';
 import { encodeAvif, encodeWebp } from './interop/codecs';
-import { INITIAL_PROGRESS, STAGE, mapPngPhaseToGlobal } from './interop/progress';
+import { INITIAL_PROGRESS, STAGE, createProgressThrottle, mapPngPhaseToGlobal } from './interop/progress';
 import { unwrapWasmResult } from './interop/wasmResult';
 import { assertRgbaPixelBuffer, ownedImageDataPixels } from './interop/pixels';
 import { imageDisplayDimensions, inspectImage } from './interop/imageFormats';
@@ -366,14 +366,9 @@ self.onmessage = async (event: MessageEvent) => {
       postProgress(STAGE.RESIZING.label,STAGE.RESIZING.start);
       work=resizePixels(requirePixels(),req.width,req.height,size.width,size.height);
     }
-    let lastPngPhase = '';
-    let lastPngUpdate = -Infinity;
+    const shouldPostPngProgress = createProgressThrottle(() => performance.now());
     const pngProgress=(phase: string,progress: number)=>{
-      const now = performance.now();
-      // Time only limits message traffic; it never changes the reported work.
-      if (phase === lastPngPhase && progress !== 0 && progress !== 100 && now-lastPngUpdate < 80) return;
-      lastPngPhase = phase;
-      lastPngUpdate = now;
+      if (!shouldPostPngProgress(phase,progress)) return;
       postProgress(phase,mapPngPhaseToGlobal(phase,progress),{
       // Only these phases expose completed units. Boundary-only and legacy
       // deflate callbacks stay indeterminate until a real pass finishes.

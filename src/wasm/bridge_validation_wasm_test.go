@@ -206,3 +206,32 @@ func TestHandlersKeepOrdinaryCallsWorking(t *testing.T) {
 		})
 	}
 }
+
+func TestQuantizeInfoMatchesAcceptedPaletteBounds(t *testing.T) {
+	info := HandleQuantizeInfo(js.Undefined(), nil).(js.Value)
+	opaque := js.Global().Get("Uint8Array").New(4)
+	js.CopyBytesToJS(opaque, []byte{12, 34, 56, 255})
+	encode := func(maxColors int) js.Value {
+		args := []js.Value{opaque, js.ValueOf(1), js.ValueOf(1), js.ValueOf(6), js.ValueOf(2), js.ValueOf(true), js.ValueOf(maxColors)}
+		return HandleEncodePng(js.Undefined(), args).(js.Value)
+	}
+	isBytes := func(v js.Value) bool { return v.InstanceOf(js.Global().Get("Uint8Array")) }
+
+	minColors, maxColors := info.Get("minColors").Int(), info.Get("maxColors").Int()
+	for _, tt := range []struct {
+		name      string
+		maxColors int
+		accepted  bool
+	}{
+		{"advertised minimum", minColors, true},
+		{"advertised maximum", maxColors, true},
+		{"below advertised minimum", minColors - 1, false},
+		{"above advertised maximum", maxColors + 1, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBytes(encode(tt.maxColors)); got != tt.accepted {
+				t.Fatalf("maxColors=%d accepted=%v, want %v", tt.maxColors, got, tt.accepted)
+			}
+		})
+	}
+}
