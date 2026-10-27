@@ -194,3 +194,50 @@ func TestTrellisDoesNotAllocatePerBlock(t *testing.T) {
 		t.Errorf("trellis allocated %g times per block; scratch storage must be reusable", allocs)
 	}
 }
+
+// The encoder must run trellis with the rate tables of the component being
+// coded; equal quantization tables isolate the luma/chroma rate difference.
+func TestEncoder_TrellisUsesComponentRateTables(t *testing.T) {
+	opts := BalancedOptions(8, 8, 75)
+	opts.TrellisQuant = true
+	opts.UseSIMD = false
+	encoder, err := NewEncoder(opts)
+	if err != nil {
+		t.Fatalf("NewEncoder() error = %v", err)
+	}
+	standard := NewQuantizationTables(75)
+	qt := &QuantizationTables{Luminance: standard.Luminance, Chrominance: standard.Luminance}
+
+	tests := []struct {
+		name        string
+		isLuminance bool
+	}{
+		{"luminance", true},
+		{"chrominance", false},
+	}
+
+	seed := uint32(1)
+	var block [64]float32
+	found := false
+	for attempt := 0; attempt < 256 && !found; attempt++ {
+		for i := range block {
+			seed = seed*1664525 + 1013904223
+			block[i] = float32(seed>>24) - 128
+		}
+		dct := ForwardDCT(block)
+		found = trellisOptimize(dct, qt.Luminance, encoder.trellisConfig, true) !=
+			trellisOptimize(dct, qt.Luminance, encoder.trellisConfig, false)
+	}
+	if !found {
+		t.Fatal("no block found where luminance and chrominance trellis differ")
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := ZigzagReorder(trellisOptimize(ForwardDCT(block), qt.Luminance, encoder.trellisConfig, tt.isLuminance))
+			if got := encoder.quantizeBlock(block, tt.isLuminance, qt); got != want {
+				t.Fatalf("quantizeBlock(isLuminance=%t) = %v, want %v", tt.isLuminance, got, want)
+			}
+		})
+	}
+}
