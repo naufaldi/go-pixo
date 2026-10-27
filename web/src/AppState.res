@@ -1,5 +1,6 @@
 type action =
   | SetDownloadError(option<string>)
+  | SetExportingZip(bool)
   | SetWasmReady(bool)
   | SetDragActive(bool)
   | AddItems(array<Types.queueItem>)
@@ -55,6 +56,7 @@ let createQueueItem = (file: Types.Web.File.t): Types.queueItem => {
 
 let initialState: Types.appState = {
   downloadError: None,
+  exportingZip: false,
   wasmReady: false,
   dragActive: false,
   items: [],
@@ -101,6 +103,7 @@ let revokeItemUrls = (item: Types.queueItem) => {
 let reducer = (state: Types.appState, action: action): Types.appState => {
   switch action {
   | SetDownloadError(downloadError) => {...state, downloadError}
+  | SetExportingZip(exportingZip) => {...state, exportingZip}
   | SetWasmReady(ready) => {...state, wasmReady: ready}
   | SetDragActive(active) => {...state, dragActive: active}
   | AddItems(newItems) => {

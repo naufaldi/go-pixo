@@ -45,7 +45,19 @@ self.addEventListener('fetch', (event) => {
       // Every entry has this build's verified bytes. Header variants (notably
       // module requests' Origin) cannot select a different representation here.
       const cached = await cache.match(isNavigation ? shellURL : request, { ignoreVary: true });
-      if (cached) return cached;
+      if (cached) {
+        // Cloudflare redirects /index.html to /. Navigations use redirect mode
+        // "manual", which cannot accept that cached redirect history. Keep the
+        // integrity-verified body/headers while returning a fresh response.
+        if (isNavigation && cached.redirected) {
+          return new Response(cached.body, {
+            status: cached.status,
+            statusText: cached.statusText,
+            headers: cached.headers,
+          });
+        }
+        return cached;
+      }
     } catch {
       // Storage may be unavailable even while online. Keep navigation/assets usable.
     }
