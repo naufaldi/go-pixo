@@ -24,7 +24,7 @@ The default is 3 iterations (`--iterations=N` or `BENCHMARK_ITERATIONS` override
 
 ## CI baseline (GitHub-hosted `ubuntu-latest`)
 
-Five runs of the `benchmark` job in `verify.yml` (run 40463040100, attempts 1 to 5, commit `45096f9`) on 2026-10-27. Each runner reported Linux X64, 4 vCPU, Node v24.22.1, Bun 1.4.3, Go 1.26.10, Playwright 1.64.1.
+Five runs of the `benchmark` job in `verify.yml` (run 40463040100, attempts 1 to 5; `45096f9` is the PR merge commit of `4d4d16c`) on 2026-10-27. Each runner reported Linux X64, 4 vCPU, Node v24.22.1, Bun 1.4.3, Go 1.26.10, Playwright 1.64.1.
 
 Per-run step **Avg** in ms (P95 = slowest of 3 in parentheses):
 
@@ -50,11 +50,37 @@ Job wall time: 56 to 59 s (setup, install, Playwright browser install and the be
 
 ## Local baseline (Apple M1)
 
-Machine: Apple M1, 8 cores, 8 GB RAM, macOS 15.1.1 (24B91). Node v24.18.1, Bun 1.4.3, Go 1.27.3, Playwright 1.64.1, commit `311092b`. Five sequential default runs on 2026-10-27, about 21 s each.
+Machine: Apple M1, 8 cores, 8 GB RAM, macOS 15.1.1 (24B91). Node v24.18.1, Bun 1.4.3, Go 1.27.3, Playwright 1.64.1, commit `311092b`. Two series of five sequential default runs on 2026-10-27. Other sessions shared the machine and could not be stopped, so neither series is from an idle host; the 1-minute load average is recorded for each.
 
-**The host was contended.** Other workloads were running throughout (1-minute load average about 19 on 8 cores at the end of the series). Treat these numbers as an upper bound for this machine, not a clean baseline.
+### Series B: lighter load (preferred local reference)
+
+Started once the 1-minute load average fell below 3 (2.87); it rose to 10.8 by the end. About 9 to 14 s per run.
+
+| Run | Load before | 3. Initial Compress Avg (P95) | E2E total Avg (P95) |
+| --- | --- | --- | --- |
+| B1 | 2.87 | 1995.5 (2336.7) | 3406.0 (4381.5) |
+| B2 | 4.10 | 1819.5 (1829.5) | 2633.5 (2669.1) |
+| B3 | 3.93 | 2392.7 (2937.0) | 3686.5 (4960.4) |
+| B4 | 6.64 | 2215.1 (2421.9) | 3313.3 (3589.5) |
+| B5 | 10.52 | 1815.0 (1833.7) | 2706.4 (3090.3) |
 
 Range across the 5 runs (per-run Avg; P95 = slowest of 3):
+
+| Step | Avg range (median) | P95 range (median) | CV of Avg |
+| --- | --- | --- | --- |
+| 1. Load App | 204.0–511.3 (293.2) | 233.9–1157.1 (567.6) | 38% |
+| 2. Upload Image | 25.4–90.5 (33.2) | 28.5–213.5 (39.4) | 61% |
+| 3. Initial Compress | 1815.0–2392.7 (1995.5) | 1829.5–2937.0 (2336.7) | 12% |
+| 4. Switch To WebP | 302.3–451.6 (401.9) | 319.3–668.0 (509.3) | 18% |
+| 5. Resize Output | 123.1–211.5 (147.6) | 124.8–250.1 (154.7) | 23% |
+| 6. Download WebP | 53.4–80.9 (62.2) | 55.0–111.0 (83.4) | 16% |
+| **E2E total** | 2633.5–3686.5 (3313.3) | 2669.1–4960.4 (3589.5) | 15% |
+
+Success rate 100% (3/3) in all 5 runs; completion throughput 0.22–0.34/s. The two fastest runs (B2, B5) agree within 5 ms on Initial Compress, which is roughly what this machine does without contention.
+
+### Series A: heavily contended
+
+Run first, while other browser and benchmark workloads were active (1-minute load average about 19 on 8 cores at the end). About 20 to 25 s per run. Kept to show how much host contention moves the numbers; do not use it as a reference.
 
 | Step | Avg range (median) | P95 range (median) | CV of Avg |
 | --- | --- | --- | --- |
@@ -66,7 +92,7 @@ Range across the 5 runs (per-run Avg; P95 = slowest of 3):
 | 6. Download WebP | 66.1–91.1 (71.9) | 69.5–131.8 (98.2) | 14% |
 | **E2E total** | 4793.1–6626.0 (5416.4) | 5609.0–9632.2 (6303.4) | 12% |
 
-Success rate 100% (3/3) in all 5 runs; completion throughput 0.12–0.16/s.
+Success rate 100% in all 5 runs; completion throughput 0.12–0.16/s. Median Initial Compress is 1.7× series B. Local numbers are only comparable when the load is recorded.
 
 ## CI behavior: artifact-only
 
