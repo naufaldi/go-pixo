@@ -89,6 +89,14 @@ bunx playwright test --config playwright.offline.config.ts
 
 The dedicated config previews the existing `dist` on `127.0.0.1:4173` with service workers enabled. It explicitly selects `e2e/offline.production.ts`; the default dev-server suite's `*.spec.ts` glob excludes that file. Production artifacts use `test-results-offline/`, separate from the dev suite's default output directory. The test disables Chromium's HTTP cache so a warm HTTP response cannot mask a service-worker cache miss. It checks every emitted asset is cached, disconnects and reloads before creating new input, then validates real PNG/JPEG/WebP/AVIF bytes and decoded dimensions. While still offline it adds another image with the same filename, downloads a ZIP, and verifies both unique entries, distinct AVIF contents and decoded dimensions. It also checks cache eviction removes the ready claim and a successful HTML fallback at a missing Go WASM URL fails installation. Keep this suite separate from development-server tests. CI must build Go WASM, compile ReScript and build Vite before invoking it.
 
+### E2E benchmark
+
+```bash
+bun run benchmark:e2e
+```
+
+Diagnostic timings for the full browser flow. CI runs it on every pull request and uploads the report as the `e2e-benchmark-report` artifact without gating on timings. Baselines, variance and proposed thresholds: [docs/benchmarks/e2e-baseline.md](../docs/benchmarks/e2e-baseline.md).
+
 Focused offline build/lifecycle tests:
 
 ```bash

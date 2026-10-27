@@ -79,3 +79,57 @@ jobs:
             web/test-results/
             web/test-results-offline/
           retention-days: 7
+
+  # Diagnostic only: timings never fail this job (see docs/benchmarks/e2e-baseline.md).
+  # It fails only when the runner itself exits non-zero, i.e. every iteration failed.
+  benchmark:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      # Match a local checkout: compiled ReScript exists before the dev server starts.
+      - run: bun run rescript:build
+      - run: bunx playwright install --with-deps chromium
+      - name: Run E2E benchmark
+        shell: bash
+        run: |
+          mkdir -p benchmark-report
+          {
+            echo "commit: ${GITHUB_SHA}"
+            echo "runner: ${RUNNER_OS} ${RUNNER_ARCH} $(nproc) vCPU"
+            echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+            echo "node: $(node --version) bun: $(bun --version) go: $(go version | cut -d' ' -f3)"
+          } > benchmark-report/environment.txt
+          bun run benchmark:e2e 2>&1 | tee benchmark-report/report.txt
+      - name: Add report to job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## E2E benchmark (artifact-only, not a gate)'
+            echo '```'
+            cat benchmark-report/environment.txt
+            echo
+            sed -n '/Step Breakdown/,/^Config:/p' benchmark-report/report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-benchmark-report
+          path: web/benchmark-report/
+          retention-days: 30
