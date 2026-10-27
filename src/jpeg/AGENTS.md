@@ -56,7 +56,7 @@ RGB → YCbCr → Blocks → DCT → Quantize → Zigzag → Huffman → Markers
 
 **Trellis Quantization** (see `src/jpeg/trellis.go:23-67`):
 - ✅ DO: Enable with `TrellisQuant: true` in options
-- ✅ DO: Use `CalculateLambda()` based on quality (1-100)
+- ❌ DON'T: Derive the preset lambda from `CalculateLambda()` without new RD evidence; issue #78 measured it larger than fixed `1.0` at matched SSIM for q85-q90
 - ❌ DON'T: Apply trellis to DC coefficient (index 0)
 - Expected: 5-15% compression improvement
 

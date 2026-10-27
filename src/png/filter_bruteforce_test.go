@@ -275,3 +275,57 @@ func TestBruteForceFilters_UsesLZ77(t *testing.T) {
 		}
 	}
 }
+
+// Brute force must choose the candidate with the fewest compressed bytes, not
+// the first candidate: every filter has the same uncompressed length.
+func TestSelectBruteForce_PicksSmallestCompressedFilter(t *testing.T) {
+	// Rows of at least 128 bytes reach BestSpeed LZ77 matching rather than its
+	// small-input stored/Huffman-only fallback.
+	ramp := make([]byte, 1024)
+	noise := make([]byte, 1024)
+	seed := uint32(7)
+	for i := range ramp {
+		ramp[i] = byte(i * 3)
+		seed = seed*1664525 + 1013904223
+		noise[i] = byte(seed >> 24)
+	}
+	shifted := make([]byte, len(noise))
+	for i := range noise {
+		shifted[i] = noise[i] + 1
+	}
+
+	tests := []struct {
+		name    string
+		row     []byte
+		prevRow []byte
+		bpp     int
+		want    FilterType
+	}{
+		{"row equals previous row picks Up", noise, noise, 1, FilterUp},
+		{"row is previous row plus one picks Up", shifted, noise, 1, FilterUp},
+		{"constant horizontal step picks Sub", ramp, noise, 1, FilterSub},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scratch := NewAdaptiveScratch(len(tt.row), tt.bpp)
+			sizes := make([]int, 0, 5)
+			for candidate := FilterNone; candidate <= FilterPaeth; candidate++ {
+				sizes = append(sizes, len(compressSingleRow(applyFilterWithScratch(candidate, tt.row, tt.prevRow, tt.bpp, scratch))))
+			}
+			got, filtered := selectBruteForce(tt.row, tt.prevRow, tt.bpp)
+			if got != tt.want {
+				t.Fatalf("selectBruteForce() = %d, want %d; compressed sizes by filter = %v", got, tt.want, sizes)
+			}
+			for candidate, size := range sizes {
+				if size < sizes[got] {
+					t.Fatalf("filter %d compresses to %d bytes, smaller than chosen %d (%d bytes)", candidate, size, got, sizes[got])
+				}
+			}
+			want := applyFilterWithScratch(got, tt.row, tt.prevRow, tt.bpp, scratch)[1:]
+			if !bytes.Equal(filtered, want) {
+				t.Fatal("selectBruteForce() filtered bytes do not match the chosen filter")
+			}
+		})
+	}
+}
