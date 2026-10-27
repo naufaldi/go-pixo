@@ -35,6 +35,7 @@ external buildCompressMessage: (
 @get external phase: parsed => option<string> = "phase"
 @get external progress: parsed => option<int> = "progress"
 @get external predictable: parsed => bool = "predictable"
+@get external phasePercent: parsed => option<int> = "phasePercent"
 @get external phaseTarget: parsed => option<int> = "phaseTarget"
 @get external compressedBytes: parsed => 'a = "compressedBytes"
 @get external outputFormat: parsed => string = "outputFormat"

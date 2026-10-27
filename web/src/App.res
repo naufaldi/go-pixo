@@ -7,7 +7,7 @@ type compressionResult = {compressedBytes: array<int>, outputFormat: string}
 @get external capacity: pool => int = "capacity"
 @send external terminatePool: pool => unit = "terminate"
 @send external cancelTask: (pool, string) => unit = "cancel"
-@send external submit: (pool, WorkerMessages.compressMessage, (string, int, bool, option<int>) => unit) => Promise.t<compressionResult> = "submit"
+@send external submit: (pool, WorkerMessages.compressMessage, (string, int, bool, option<int>, option<int>) => unit) => Promise.t<compressionResult> = "submit"
 type taskRegistry
 @new @module("./interop/taskRegistry.ts") external createTaskRegistry: unit => taskRegistry = "TaskRegistry"
 @get external activeCount: taskRegistry => int = "size"
@@ -108,11 +108,12 @@ let make = () => {
           // Presets allow palette compression; they do not require indexed PNG.
           true,
         )
-        submit(workerPool, message, (phase, percent, predictable, phaseTarget) => {
+        dispatch(SetTaskProgress(item.id, item.generation, Some({...Progress.seedProgress(item.id, item.originalBytes, now()), startTime: started, phase: "initializing"})))
+        submit(workerPool, message, (phase, percent, predictable, phaseTarget, phasePercent) => {
           if isCurrent(item, epoch) {
             let previous = stateRef.current.activeCompressions
               ->Array.find(((id, _)) => id == item.id)->Option.map(((_, p)) => p)
-            let progress = Progress.applyWorkerUpdate(previous, phase, percent, predictable, phaseTarget->Option.getOr(percent), now())
+            let progress = Progress.applyWorkerUpdate(previous, phase, percent, predictable, phaseTarget->Option.getOr(percent), now(), phasePercent)
             dispatch(SetTaskProgress(item.id, item.generation, Some({...progress, itemId: item.id, fileSize: item.originalBytes, startTime: started})))
           }
         })

@@ -36,6 +36,9 @@ func RecompressPNGBytesLossless(inputPNG []byte, opts Options) ([]byte, error) {
 		return nil, err
 	}
 
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("decode-png", 0)
+	}
 	img, err := stdpng.Decode(bytes.NewReader(inputPNG))
 	if err != nil {
 		return nil, fmt.Errorf("png: decode input: %w", err)
@@ -87,6 +90,9 @@ func RecompressPNGBytesLossless(inputPNG []byte, opts Options) ([]byte, error) {
 		return nil, err
 	}
 
+	if opts.ProgressCallback != nil {
+		opts.ProgressCallback("verifying", 0)
+	}
 	if _, err := stdpng.Decode(bytes.NewReader(out)); err != nil {
 		return nil, fmt.Errorf("png: output decode failed: %w", err)
 	}

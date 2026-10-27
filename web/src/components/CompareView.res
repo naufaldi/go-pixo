@@ -77,64 +77,18 @@ let make = (~originalUrl, ~compressedUrl, ~originalBytes, ~compressedBytes, ~wid
   }
 
   switch (originalUrl, compressedUrl) {
-  | (None, None) =>
+  | (None, None) | (Some(_), None) =>
     <div className="mt-8 flex flex-col items-center justify-center h-96 bg-neutral-900/50 rounded-lg border border-neutral-800">
-      <div className="w-10 h-10 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-      <p className="text-neutral-400">{React.string("processing image")}</p>
+      {switch compressionProgress {
+      | Some(progress) => <ProgressStatus progress />
+      | None =>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-neutral-400">{React.string("Waiting to process image")}</p>
+        </div>
+      }}
+      <p className="text-neutral-400 text-sm mt-4">{React.string(Display.formatSize(originalBytes))}</p>
     </div>
-  | (Some(_), None) =>
-    switch compressionProgress {
-    | Some(progress) =>
-      let elapsed = %raw("performance.now()") -. progress.startTime
-      <div className="mt-8 flex flex-col items-center justify-center h-96 bg-neutral-900/50 rounded-lg border border-neutral-800">
-        <div className="w-20 h-20 mb-6 relative">
-          <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
-            <path
-              className="text-neutral-700"
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            />
-            <path
-              className="text-blue-500 transition-all duration-300"
-              strokeDasharray={`${Float.toString(Float.fromInt(progress.progress))}, 100`}
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-lg font-semibold text-white" dataTestId="compression-percent">
-              {React.string(`${Int.toString(progress.progress)}%`)}
-            </span>
-          </div>
-        </div>
-        <p className="text-neutral-300 text-base font-medium mb-2 capitalize" dataTestId="compression-phase">
-          {React.string(Progress.phaseLabel(progress.phase))}
-        </p>
-        <p className="text-neutral-400 text-sm mb-4">
-          {React.string(Display.formatSize(originalBytes))}
-        </p>
-        <div className="w-64 bg-neutral-800 rounded-full h-2 mb-4 overflow-hidden">
-          <div
-            className="bg-blue-500 h-2 rounded-full transition-all duration-300 ease-out"
-            style={ReactDOM.Style._dictToStyle(Dict.fromArray([("width", Int.toString(progress.progress) ++ "%")]))}
-          />
-        </div>
-        <p className="text-neutral-500 text-xs">
-          {React.string("Time elapsed: " ++ Display.formatTimeFloat(elapsed))}
-        </p>
-      </div>
-    | None =>
-      <div className="mt-8 flex flex-col items-center justify-center h-96 bg-neutral-900/50 rounded-lg border border-neutral-800">
-        <div className="w-10 h-10 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-        <p className="text-neutral-400">{React.string("compressing")}</p>
-        <p className="text-neutral-500 text-sm mt-2">{React.string(Display.formatSize(originalBytes))}</p>
-      </div>
-    }
   | (Some(orig), Some(comp)) =>
     let compressedSize = compressedBytes->Option.getOr(0)
     let savings = Display.calculateSavings(originalBytes, compressedSize)

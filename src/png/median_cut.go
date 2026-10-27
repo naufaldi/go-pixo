@@ -20,15 +20,22 @@ func MedianCut(colorsWithCount []ColorWithCount, maxColors int) []Color {
 // The quality parameter (0.0-1.0) controls the trade-off between color accuracy and palette size.
 // Lower quality values result in more aggressive quantization with fewer distinct colors.
 func MedianCutWithQuality(colorsWithCount []ColorWithCount, maxColors int, quality float64) []Color {
+	return medianCutWithProgress(colorsWithCount, maxColors, quality, nil)
+}
+
+func medianCutWithProgress(colorsWithCount []ColorWithCount, maxColors int, quality float64, callback func(string, int)) []Color {
 	if len(colorsWithCount) == 0 {
 		return []Color{}
 	}
 
 	if len(colorsWithCount) <= maxColors {
+		progress := newWorkProgress(callback, "palette", len(colorsWithCount), 1)
 		result := make([]Color, len(colorsWithCount))
 		for i, cwc := range colorsWithCount {
 			result[i] = cwc.Color
+			progress.report(i + 1)
 		}
+		progress.finish()
 		return result
 	}
 
@@ -41,14 +48,18 @@ func MedianCutWithQuality(colorsWithCount []ColorWithCount, maxColors int, quali
 		}
 	}
 
+	progress := newWorkProgress(callback, "palette", effectiveMaxColors-1, 1)
 	buckets := []bucket{{colors: colorsWithCount}}
+	// Variance depends only on a bucket's colors. Keep it local to this build,
+	// preserving scan/tie order and recomputing both children after each split.
+	variances := []float64{calculateColorVariance(colorsWithCount)}
 
 	for len(buckets) < effectiveMaxColors {
 		// Find bucket with most color variance
 		largestIdx := -1
 		maxVariance := 0.0
 		for i := range buckets {
-			variance := calculateColorVariance(buckets[i].colors)
+			variance := variances[i]
 			if variance > maxVariance && len(buckets[i].colors) >= 2 {
 				maxVariance = variance
 				largestIdx = i
@@ -64,8 +75,11 @@ func MedianCutWithQuality(colorsWithCount []ColorWithCount, maxColors int, quali
 
 		// Replace the bucket with left, add right
 		buckets[largestIdx].colors = left
+		variances[largestIdx] = calculateColorVariance(left)
 		if len(right) > 0 {
 			buckets = append(buckets, bucket{colors: right})
+			variances = append(variances, calculateColorVariance(right))
+			progress.report(len(buckets) - 1)
 		}
 	}
 
@@ -76,6 +90,7 @@ func MedianCutWithQuality(colorsWithCount []ColorWithCount, maxColors int, quali
 		}
 	}
 
+	progress.finish()
 	return result
 }
 

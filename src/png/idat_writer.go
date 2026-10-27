@@ -145,20 +145,19 @@ func filterScanlines(pixels []byte, width, height, bpp int, opts Options) []byte
 		EarlyTerminationThreshold: 0.5 * float64(width*bpp),
 		MinFiltersToTry:           DefaultMinFiltersToTry,
 	})
+	progress := newWorkProgress(opts.ProgressCallback, "filtering", height, 1)
 	var prevRow []byte
 	for y := 0; y < height; y++ {
-		if opts.ProgressCallback != nil && y%100 == 0 {
-			opts.ProgressCallback("filtering", y*100/height)
-		}
 		offset := y * width * bpp
 		row := pixels[offset : offset+width*bpp]
 		filterType, filteredRow := SelectFilterWithStrategyAndScratch(row, prevRow, bpp, opts.FilterStrategy, scratch)
 		scanlineData = append(scanlineData, byte(filterType))
 		scanlineData = append(scanlineData, filteredRow...)
 		prevRow = row
+		progress.report(y + 1)
 	}
+	progress.finish()
 	if opts.ProgressCallback != nil {
-		opts.ProgressCallback("filtering", 100)
 		opts.ProgressCallback("deflate", 0)
 	}
 	return scanlineData

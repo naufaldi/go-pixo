@@ -1,9 +1,10 @@
+import { measuredPhasePercent } from './interop/progress';
 import { receivedBytes } from './interop/workerMessages';
 
 // A worker lazily owns its required codecs. The app bounds reads and workspace admission.
 export type CompressionResult = { compressedBytes: Uint8Array; outputFormat: string };
 type CompressionRequest = { id: string; [field: string]: unknown };
-type ProgressCallback = (phase: string, progress: number, predictable?: boolean, phaseTarget?: number) => void;
+type ProgressCallback = (phase: string, progress: number, predictable?: boolean, phaseTarget?: number, phasePercent?: number) => void;
 type Task = {
   data: CompressionRequest;
   resolve: (result: CompressionResult) => void;
@@ -76,7 +77,7 @@ export class WorkerPool {
     if (!task || data.id !== task.data.id) return;
     if (data.type === 'progress') {
       if (typeof data.phase === 'string' && Number.isFinite(data.progress)) {
-        task.onProgress(data.phase, Math.max(0, Math.min(99, Math.round(data.progress))), data.predictable === true, data.phaseTarget);
+        task.onProgress(data.phase, Math.max(0, Math.min(99, Math.round(data.progress))), false, data.phaseTarget, measuredPhasePercent(data.phasePercent));
       }
       return;
     }
