@@ -4,7 +4,7 @@ React + ReScript + Tailwind v4 image compression app. PNG/JPEG use Go WASM; bund
 
 ## Setup
 
-Use Bun 1.4.3 and Node.js 22.22.2+, 24.15+, or 26+. CI and Docker use Node 24.22.1.
+Use Bun 1.4.3 and Node.js 22.22.2+, 24.15+, or 26+. CI uses Node 24.22.1.
 `bun.lock` is the supported lockfile; use Bun to update dependencies rather than creating another package manager's lockfile.
 
 1. Install dependencies:
