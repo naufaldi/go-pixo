@@ -60,6 +60,8 @@ linters:
       - third_party$
       - builtin$
       - examples$
+      # npm packages can ship Go sources (e.g. flatted); they are not ours.
+      - web/node_modules
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
@@ -79,3 +81,5 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+      # npm packages can ship Go sources (e.g. flatted); they are not ours.
+      - web/node_modules
