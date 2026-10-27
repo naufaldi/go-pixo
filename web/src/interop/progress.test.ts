@@ -1,5 +1,5 @@
 import {describe, it, expect} from 'vitest';
-import {advancePredictedProgress, applyRealProgress, createInitialSnapshot, phaseLabel} from './progress';
+import {advancePredictedProgress, applyRealProgress, createInitialSnapshot, createProgressThrottle, phaseLabel} from './progress';
 
 describe('measured progress', () => {
   it('never infers work from elapsed time or file size, including legacy predictable snapshots', () => {
@@ -28,5 +28,23 @@ describe('measured progress', () => {
     expect(phaseLabel('histogram')).toBe('Counting pixel colors');
     expect(phaseLabel('quantize')).toBe('Mapping pixels to palette');
     expect(phaseLabel('legacy-phase')).toBe('legacy-phase');
+  });
+});
+
+describe('worker progress throttle', () => {
+  const run = (calls: [number, string, number][]) => {
+    let clock = 0;
+    const allow = createProgressThrottle(() => clock, 80);
+    return calls.filter(([at, phase, progress]) => { clock = at; return allow(phase, progress); });
+  };
+
+  it('limits interior updates within a phase to one per interval', () => {
+    expect(run([[0, 'palette', 0], [10, 'palette', 20], [79, 'palette', 40], [80, 'palette', 60], [120, 'palette', 70], [170, 'palette', 80]]))
+      .toEqual([[0, 'palette', 0], [80, 'palette', 60], [170, 'palette', 80]]);
+  });
+
+  it('always passes phase changes and boundaries, so a fast phase may report only its boundaries', () => {
+    expect(run([[0, 'histogram', 0], [5, 'histogram', 50], [9, 'histogram', 100], [10, 'palette', 0], [12, 'palette', 50], [15, 'palette', 100], [16, 'quantize', 30]]))
+      .toEqual([[0, 'histogram', 0], [9, 'histogram', 100], [10, 'palette', 0], [15, 'palette', 100], [16, 'quantize', 30]]);
   });
 });

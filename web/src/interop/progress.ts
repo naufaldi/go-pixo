@@ -72,6 +72,25 @@ export function mapPngPhaseToGlobal(phase: string, subProgress: number): number 
   return Math.round(STAGE.ENCODING.start + (legacy / 100) * span);
 }
 
+export const PROGRESS_MESSAGE_INTERVAL_MS = 80;
+
+/**
+ * Limits interior progress messages within one phase to one per interval.
+ * Phase changes and 0%/100% boundaries always pass, so fast phases may emit
+ * only their boundaries. Time limits message traffic; it never changes work.
+ */
+export function createProgressThrottle(now: () => number, intervalMs = PROGRESS_MESSAGE_INTERVAL_MS) {
+  let lastPhase = '';
+  let lastSent = -Infinity;
+  return (phase: string, progress: number): boolean => {
+    const at = now();
+    if (phase === lastPhase && progress !== 0 && progress !== 100 && at - lastSent < intervalMs) return false;
+    lastPhase = phase;
+    lastSent = at;
+    return true;
+  };
+}
+
 export function clampProgress(previous: number, next: number): number {
   return Math.max(previous, Math.min(MAX_PREDICTED_PROGRESS, Math.round(next)));
 }
