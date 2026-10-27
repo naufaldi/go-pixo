@@ -41,7 +41,7 @@ web/
     └── og-image.png, favicon.*, icon-*.png
 ```
 
-Vite copies `web/public/` into `web/dist/` on build. Caddy serves `dist/` in production.
+Vite copies `web/public/` into `web/dist/` on build. Cloudflare Workers static assets serve `dist/` in production.
 
 Canonical site URL: `https://go-pixo.faldi.xyz/`
 
