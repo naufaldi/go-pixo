@@ -24,7 +24,7 @@ The default is 3 iterations (`--iterations=N` or `BENCHMARK_ITERATIONS` override
 
 ## CI baseline (GitHub-hosted `ubuntu-latest`)
 
-Five runs of the `benchmark` job in `verify.yml` (run 40463040100, attempts 1 to 5; `45096f9` is the PR merge commit of `4d4d16c`) on 2026-10-27. Each runner reported Linux X64, 4 vCPU, Node v24.22.1, Bun 1.4.3, Go 1.26.10, Playwright 1.64.1.
+Five runs of the `benchmark` job in `verify.yml` (run 40463040100, attempts 1 to 5; `45096f9` is the PR merge commit of `4d4d16c`) on 2026-10-27. Each runner reported Linux X64, 4 vCPU, Node v24.22.1, Bun 1.4.3 and Go 1.26.10; Playwright is 1.64.1 from the lockfile.
 
 Per-run step **Avg** in ms (P95 = slowest of 3 in parentheses):
 
@@ -76,7 +76,7 @@ Range across the 5 runs (per-run Avg; P95 = slowest of 3):
 | 6. Download WebP | 53.4–80.9 (62.2) | 55.0–111.0 (83.4) | 16% |
 | **E2E total** | 2633.5–3686.5 (3313.3) | 2669.1–4960.4 (3589.5) | 15% |
 
-Success rate 100% (3/3) in all 5 runs; completion throughput 0.22–0.34/s. The two fastest runs (B2, B5) agree within 5 ms on Initial Compress, which is roughly what this machine does without contention.
+Success rate 100% (3/3) in all 5 runs; completion throughput 0.22–0.34/s. The two fastest runs (B2, B5) agree within 5 ms on Initial Compress and are the fastest observed in either local series.
 
 ### Series A: heavily contended
 
