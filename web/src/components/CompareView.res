@@ -6,6 +6,7 @@ type gesture = {pointerId: Dom.eventPointerId, startPos: float, touch: bool}
 @send external setPointerCapture: (Dom.element, Dom.eventPointerId) => unit = "setPointerCapture"
 @send external releasePointerCapture: (Dom.element, Dom.eventPointerId) => unit = "releasePointerCapture"
 @send external hasPointerCapture: (Dom.element, Dom.eventPointerId) => bool = "hasPointerCapture"
+@send external focusElement: Dom.element => unit = "focus"
 
 @react.component
 let make = (
@@ -21,6 +22,22 @@ let make = (
 ) => {
   let (sliderPos, setSliderPos) = React.useState(() => 50.0)
   let dragRef: React.ref<option<gesture>> = React.useRef(None)
+  let handleRef = React.useRef(Nullable.null)
+  let handleKeyDown = (e: ReactEvent.Keyboard.t) => {
+    let next = switch ReactEvent.Keyboard.key(e) {
+    | "ArrowRight" | "ArrowUp" => Some(sliderPos +. 1.0)
+    | "ArrowLeft" | "ArrowDown" => Some(sliderPos -. 1.0)
+    | "Home" => Some(0.0)
+    | "End" => Some(100.0)
+    | _ => None
+    }
+    switch next {
+    | Some(value) =>
+      ReactEvent.Keyboard.preventDefault(e)
+      setSliderPos(_ => Math.max(0.0, Math.min(100.0, value)))
+    | None => ()
+    }
+  }
   let updatePosition = e => {
     let rect = getBoundingClientRect(pointerFrame(e))
     if rect.width > 0.0 {
@@ -68,7 +85,7 @@ let make = (
         <p>{React.string(Display.formatSize(originalBytes))}</p>
         <p>{React.string("Processing image…")}</p>
       </div>
-      <div className="rounded-lg border border-neutral-800 bg-neutral-900/50">
+      <div className="flex min-h-16 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900/50">
       <div
         style=compareFrameStyle
         className={"mx-auto flex flex-col items-center justify-center " ++ if knownDimensions {
@@ -89,7 +106,6 @@ let make = (
         }}
       </div>
       </div>
-      <div ariaHidden=true className="h-16" />
     </div>
   | (Some(orig), Some(comp)) =>
     let compressedSize = compressedBytes->Option.getOr(0)
@@ -148,17 +164,18 @@ let make = (
           }
         }}
       </div>
-      <div className="relative rounded-lg overflow-hidden select-none border border-neutral-800">
+      <div className="relative flex min-h-16 items-center justify-center rounded-lg overflow-hidden select-none border border-neutral-800">
         <div
           dataTestId="comparison-frame"
           onPointerDown={e => {
-            if dragRef.current == None && ReactEvent.Pointer.button(e) == 0 {
+            if dragRef.current == None && ReactEvent.Pointer.isPrimary(e) && ReactEvent.Pointer.button(e) == 0 {
               let touch = ReactEvent.Pointer.pointerType(e) == "touch"
               let pointerId = ReactEvent.Pointer.pointerId(e)
               dragRef.current = Some({pointerId, startPos: sliderPos, touch})
               setPointerCapture(pointerFrame(e), pointerId)
               if !touch {
                 ReactEvent.Pointer.preventDefault(e)
+                handleRef.current->Nullable.toOption->Option.forEach(focusElement)
                 updatePosition(e)
               }
             }
@@ -220,18 +237,35 @@ let make = (
             </div>
           }
 
-          /* The frame and native keyboard range share the same split. */
+          /* The divider follows the exact split; keep the handle inside at the endpoints. */
           <div
             className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white z-10 shadow-xl"
             style={ReactDOM.Style._dictToStyle(Dict.fromArray([("left", to1dp(sliderPos) ++ "%")]))}
             ariaHidden=true
+          />
+          <div
+            ref={ReactDOM.Ref.domRef(handleRef)}
+            role="slider"
+            tabIndex=0
+            ariaLabel="Compare original and compressed"
+            ariaOrientation=#horizontal
+            ariaValuemin=0.0
+            ariaValuemax=100.0
+            ariaValuenow=sliderPos
+            ariaValuetext={to1dp(sliderPos) ++ "% original, " ++ to1dp(100.0 -. sliderPos) ++ "% compressed"}
+            onKeyDown=handleKeyDown
+            className="absolute top-1/2 z-10 flex size-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-neutral-300"
+            style={ReactDOM.Style._dictToStyle(Dict.fromArray([
+              ("left", "clamp(min(24px, 50%), " ++ to1dp(sliderPos) ++ "%, max(calc(100% - 24px), 50%))"),
+            ]))}
           >
-            <div className="absolute top-1/2 left-1/2 size-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-neutral-900 shadow-md flex items-center justify-center">
+            <div ariaHidden=true className="pointer-events-none size-8 rounded-full bg-white text-neutral-900 shadow-md flex items-center justify-center">
               <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M8 8l-4 4 4 4m8-8l4 4-4 4M4 12h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
           </div>
+        </div>
 
           <div
             className="pointer-events-none absolute bottom-4 left-4 bg-black/50 text-white px-4 py-2 rounded text-xs font-medium"
@@ -243,30 +277,7 @@ let make = (
           >
             {React.string("Compressed")}
           </div>
-        </div>
       </div>
-      <label className="flex h-16 flex-col text-base leading-4 text-neutral-300">
-        <span> {React.string("Compare original and compressed")} </span>
-        <input
-          type_="range"
-          min="0"
-          max="100"
-          step=1.0
-          value={Float.toString(Math.round(sliderPos))}
-          ariaValuetext={Float.toString(Math.round(sliderPos)) ++
-          "% original, " ++
-          Float.toString(100.0 -. Math.round(sliderPos)) ++ "% compressed"}
-          onChange={e => {
-            let value =
-              ReactEvent.Form.target(e)["value"]
-              ->Option.flatMap(value => Int.fromString(value))
-              ->Option.getOr(50)
-              ->Int.toFloat
-            setSliderPos(_ => Math.max(0.0, Math.min(100.0, value)))
-          }}
-          className="w-full min-h-12 cursor-ew-resize accent-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300"
-        />
-      </label>
     </div>
   | _ => React.null
   }

@@ -6,20 +6,33 @@ import { make as BottomBar } from './BottomBar.res.js'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it('uses a named native comparison range and updates the original image clip at both endpoints', () => {
+it('has one in-image comparison handle with keyboard steps, endpoints, and accessible percentages', () => {
   const { container } = render(createElement(CompareView, {
     originalUrl: 'blob:original', compressedUrl: 'blob:compressed', originalBytes: 100,
     compressedBytes: 50, width: 200, height: 100, onRemove() {},
   }))
   const slider = screen.getByRole('slider', { name: 'Compare original and compressed' })
-  expect(slider).toHaveAttribute('type', 'range')
-  expect(slider).toHaveValue('50')
+  expect(screen.getAllByRole('slider')).toEqual([slider])
+  expect(screen.getByTestId('comparison-frame')).toContainElement(slider)
+  expect(container.querySelector('input[type="range"]')).toBeNull()
+  expect(slider).toHaveAttribute('tabindex', '0')
+  expect(slider).toHaveAttribute('aria-valuemin', '0')
+  expect(slider).toHaveAttribute('aria-valuemax', '100')
+  expect(slider).toHaveAttribute('aria-orientation', 'horizontal')
+  expect(slider).toHaveAttribute('aria-valuenow', '50')
   const original = screen.getByRole('img', { name: 'Original' }).parentElement!
-  for (const value of ['0', '25', '100']) {
-    fireEvent.change(slider, { target: { value } })
+  for (const [key, value] of [
+    ['Home', '0'], ['ArrowLeft', '0'], ['ArrowDown', '0'], ['ArrowRight', '1'],
+    ['ArrowUp', '2'], ['End', '100'], ['ArrowRight', '100'], ['ArrowUp', '100'],
+    ['ArrowLeft', '99'], ['ArrowDown', '98'],
+  ]) {
+    expect(fireEvent.keyDown(slider, { key })).toBe(false)
+    expect(slider).toHaveAttribute('aria-valuenow', value)
     expect(slider).toHaveAttribute('aria-valuetext', `${value}% original, ${100 - Number(value)}% compressed`)
     expect(original.style.clipPath).toContain(`${value}% 0`)
   }
+  expect(fireEvent.keyDown(slider, { key: 'Tab' })).toBe(true)
+  expect(slider).toHaveAttribute('aria-valuenow', '98')
   expect(container.querySelector('[style*="aspect-ratio"]')).toHaveStyle({ aspectRatio: '200 / 100' })
 })
 
@@ -130,9 +143,12 @@ it('uses the same known aspect frame for loading and finished previews', () => {
   const view = render(createElement(CompareView, props))
   const loadingFrame = view.container.querySelector('[style*="aspect-ratio"]') as HTMLElement
   const loadingStyle = loadingFrame.style.cssText
+  expect(view.container.firstElementChild?.children).toHaveLength(2)
+  expect(screen.queryByRole('slider')).not.toBeInTheDocument()
   view.rerender(createElement(CompareView, { ...props, compressedUrl: 'blob:output', compressedBytes: 50 }))
   const finishedFrame = view.container.querySelector('[style*="aspect-ratio"]') as HTMLElement
   expect(finishedFrame.style.cssText).toBe(loadingStyle)
+  expect(view.container.firstElementChild?.children).toHaveLength(2)
   expect(screen.queryByRole('button', { name: 'Remove image' })).not.toBeInTheDocument()
 })
 
@@ -146,10 +162,12 @@ function renderPointerComparison() {
   class TestPointerEvent extends MouseEvent {
     pointerId: number
     pointerType: string
+    isPrimary: boolean
     constructor(type: string, init: PointerEventInit = {}) {
       super(type, init)
       this.pointerId = init.pointerId ?? 1
       this.pointerType = init.pointerType ?? 'mouse'
+      this.isPrimary = init.isPrimary ?? true
     }
   }
   vi.stubGlobal('PointerEvent', TestPointerEvent)
@@ -163,8 +181,8 @@ function renderPointerComparison() {
   const slider = screen.getByRole('slider', { name: 'Compare original and compressed' })
   const clip = screen.getByRole('img', { name: 'Original' }).parentElement!
   const assertSplit = (value: number) => {
-    expect(slider).toHaveValue(String(Math.round(value)))
-    expect(slider).toHaveAttribute('aria-valuetext', `${Math.round(value)}% original, ${100 - Math.round(value)}% compressed`)
+    expect(slider).toHaveAttribute('aria-valuenow', String(value))
+    expect(slider).toHaveAttribute('aria-valuetext', `${value}% original, ${100 - value}% compressed`)
     expect(clip.style.clipPath).toContain(`${value}% 0`)
     expect(frame.querySelector('[style*="left:"]')).toHaveStyle({ left: `${value}%` })
   }
@@ -174,10 +192,12 @@ function renderPointerComparison() {
 it('keeps one pointer owner from down through outside release and clamps to image bounds', () => {
   const { frame, assertSplit } = renderPointerComparison()
   fireEvent.pointerDown(frame, { pointerId: 1, clientX: 150, button: 2 })
+  fireEvent.pointerDown(frame, { pointerId: 2, clientX: 150, button: 0, isPrimary: false })
   expect(frame.setPointerCapture).not.toHaveBeenCalled()
   assertSplit(50)
   fireEvent.pointerDown(frame, { pointerId: 1, clientX: 150, button: 0 })
   assertSplit(25)
+  expect(screen.getByRole('slider')).toHaveFocus()
   fireEvent.pointerDown(frame, { pointerId: 2, clientX: 290, button: 0 })
   fireEvent.pointerMove(frame, { pointerId: 2, clientX: 290 })
   fireEvent.pointerUp(frame, { pointerId: 2, clientX: 290 })
@@ -194,7 +214,7 @@ it('keeps one pointer owner from down through outside release and clamps to imag
 
 it('restores the starting touch split on cancel and permits a later touch tap', () => {
   const { frame, slider, assertSplit } = renderPointerComparison()
-  fireEvent.change(slider, { target: { value: '40' } })
+  for (let i = 0; i < 10; i++) fireEvent.keyDown(slider, { key: 'ArrowLeft' })
   fireEvent.pointerDown(frame, { pointerId: 1, pointerType: 'touch', clientX: 250 })
   assertSplit(40)
   fireEvent.pointerMove(frame, { pointerId: 1, pointerType: 'touch', clientX: 250 })
@@ -222,13 +242,13 @@ it('ends ownership on capture loss, retains fractional clip precision, and reset
   fireEvent.lostPointerCapture(frame, { pointerId: 1 })
   fireEvent.pointerMove(frame, { pointerId: 1, clientX: 290 })
   assertSplit(30)
-  fireEvent.change(slider, { target: { value: '80' } })
-  assertSplit(80)
+  fireEvent.keyDown(slider, { key: 'End' })
+  assertSplit(100)
   fireEvent.pointerDown(frame, { pointerId: 3, clientX: 150 })
   rerender(createElement(CompareView, { ...comparisonProps, key: 'another-image' }))
-  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveValue('50')
+  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveAttribute('aria-valuenow', '50')
   fireEvent.pointerMove(screen.getByTestId('comparison-frame'), { pointerId: 3, clientX: 290 })
-  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveValue('50')
+  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveAttribute('aria-valuenow', '50')
   expect(() => unmount()).not.toThrow()
 })
 
