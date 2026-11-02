@@ -52,6 +52,32 @@ describe('image byte preflight', () => {
     expect(imageDisplayDimensions(portrait)).toEqual({width:3024,height:4032});
     expect(imageOperation(portrait,{lossy:true,targetHeight:5000})).toMatchObject({width:3750,height:5000});
     expect(imageDisplayDimensions(inspectImage(heic(2)))).toEqual({width:4032,height:3024});
+
+    // Associations split over several ipma boxes (narrow and wide indexes):
+    // the primary item's irot sits in the first box, another item in the second.
+    const split = (wide: number) => new Uint8Array([
+      ...box('ftyp',[...ascii('heic'),0,0,0,0,...ascii('mif1heic')]),
+      ...box('meta',[0,0,0,0,
+        ...box('pitm',[0,0,0,0,0,1]),
+        ...box('iprp',[...ipco,
+          ...box('ipma',[0,0,0,wide,...u32(1), 0,1,2,...(wide ? [0,1,0,2] : [1,2])]),
+          ...box('ipma',[0,0,0,0,...u32(1), 0,2,1,1])])]),
+    ]);
+    expect(imageDisplayDimensions(inspectImage(split(0)))).toEqual({width:3024,height:4032});
+    expect(imageDisplayDimensions(inspectImage(split(1)))).toEqual({width:3024,height:4032});
+  });
+  it.each([
+    ['truncated version 1', [1,0,0,0,0,1]],
+    ['unsupported version 2', [2,0,0,0,0,0,0,1]],
+  ])('ignores a %s pitm instead of reading past it', (_case, pitm) => {
+    const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];
+    const u32 = (v: number) => [v>>>24&255, v>>>16&255, v>>>8&255, v&255];
+    const ipco = box('ipco',[...box('ispe',[0,0,0,0,...u32(40),...u32(30)]),...box('irot',[1])]);
+    const bytes = new Uint8Array([
+      ...box('ftyp',[...ascii('heic'),0,0,0,0,...ascii('mif1heic')]),
+      ...box('meta',[0,0,0,0,...box('iprp',[...ipco,...box('ipma',[0,0,0,0,...u32(1), 0,1,2,1,2])]),...box('pitm',pitm)]),
+    ]);
+    expect(imageDisplayDimensions(inspectImage(bytes))).toEqual({width:40,height:30});
   });
   it('treats HEIC as a sequence only when it has a moov track and no still image', () => {
     const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];

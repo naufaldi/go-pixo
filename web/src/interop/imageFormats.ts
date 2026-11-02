@@ -73,28 +73,37 @@ export function imageDisplayDimensions(info: ImageInfo): {width: number; height:
   return transposed ? {width:height,height:width} : {width,height};
 }
 
+type BoxSpan = {start: number; end: number};
+
 // Finds the primary item's 'irot' through 'pitm' and 'ipma' (ISO/IEC 23008-12).
-// Missing or malformed associations mean no rotation; the decoder then reports
-// the real size, which the decoded-dimension check still bounds.
-function primaryQuarterTurns(bytes: Uint8Array, view: DataView, pitm: number | undefined,
-  ipma: {start: number; end: number} | undefined, properties: {tag: string; start: number; end: number}[]): number {
-  if (pitm===undefined || !ipma || pitm+6>bytes.length || ipma.start+8>ipma.end) return 0;
-  const primary=bytes[pitm]===0 ? view.getUint16(pitm+4) : view.getUint32(pitm+4);
-  const version=bytes[ipma.start], wideIndex=(bytes[ipma.start+3]&1)===1;
-  const count=view.getUint32(ipma.start+4);
-  for (let p=ipma.start+8, i=0; i<count; i++) {
-    const idSize=version<1 ? 2 : 4;
-    if (p+idSize+1>ipma.end) return 0;
-    const item=idSize===2 ? view.getUint16(p) : view.getUint32(p);
-    const associations=bytes[p+idSize];
-    p+=idSize+1;
-    if (p+associations*(wideIndex ? 2 : 1)>ipma.end) return 0;
-    for (let j=0; j<associations; j++) {
-      const index=wideIndex ? view.getUint16(p+2*j)&0x7fff : bytes[p+j]&0x7f;
-      const property=properties[index-1];
-      if (item===primary && property?.tag==='irot' && property.end>property.start) return bytes[property.start]&3;
+// Associations may be split over several 'ipma' boxes, each with its own
+// version and flags. Missing or malformed boxes mean no rotation; the decoder
+// then reports the real size, which the decoded-dimension check still bounds.
+function primaryQuarterTurns(bytes: Uint8Array, view: DataView, pitm: BoxSpan | undefined,
+  ipmas: BoxSpan[], properties: (BoxSpan & {tag: string})[]): number {
+  if (!pitm || pitm.start+4>pitm.end) return 0;
+  const pitmVersion=bytes[pitm.start];
+  const primaryEnd=pitm.start+(pitmVersion===0 ? 6 : 8);
+  if (pitmVersion>1 || primaryEnd>pitm.end) return 0;
+  const primary=pitmVersion===0 ? view.getUint16(pitm.start+4) : view.getUint32(pitm.start+4);
+  for (const ipma of ipmas) {
+    if (ipma.start+8>ipma.end) continue;
+    const version=bytes[ipma.start], wideIndex=(bytes[ipma.start+3]&1)===1;
+    const idSize=version<1 ? 2 : 4, indexSize=wideIndex ? 2 : 1;
+    const count=view.getUint32(ipma.start+4);
+    for (let p=ipma.start+8, i=0; i<count; i++) {
+      if (p+idSize+1>ipma.end) break;
+      const item=idSize===2 ? view.getUint16(p) : view.getUint32(p);
+      const associations=bytes[p+idSize];
+      p+=idSize+1;
+      if (p+associations*indexSize>ipma.end) break;
+      for (let j=0; item===primary && j<associations; j++) {
+        const index=wideIndex ? view.getUint16(p+2*j)&0x7fff : bytes[p+j]&0x7f;
+        const property=properties[index-1];
+        if (property?.tag==='irot' && property.end>property.start) return bytes[property.start]&3;
+      }
+      p+=associations*indexSize;
     }
-    p+=associations*(wideIndex ? 2 : 1);
   }
   return 0;
 }
@@ -256,7 +265,8 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     // Item properties, in 'ipco' order (1-based in 'ipma'), plus the boxes that
     // say which of them belong to the primary item.
     const properties: {tag: string; start: number; end: number}[]=[];
-    let pitm: number | undefined, ipma: {start: number; end: number} | undefined;
+    let pitm: BoxSpan | undefined;
+    const ipmas: BoxSpan[]=[];
     const walk = (start: number, end: number, depth: number, parent = '') => {
       if (depth>8) throw invalid();
       for (let p=start; p+8<=end;) {
@@ -268,8 +278,8 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
         const s=p+header;
         if (depth===0) topLevel.add(tag);
         if (parent==='ipco') properties.push({tag,start:s,end:p+n});
-        if (tag==='pitm') pitm=s;
-        if (tag==='ipma') ipma={start:s,end:p+n};
+        if (tag==='pitm') pitm={start:s,end:p+n};
+        if (tag==='ipma') ipmas.push({start:s,end:p+n});
         if (tag==='ftyp' && format==='avif') {
           const brands=[text(bytes,s,4)];
           for (let i=s+8;i+4<=p+n;i+=4) brands.push(text(bytes,i,4));
@@ -298,7 +308,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     };
     walk(0,bytes.length,0);
     if (format==='heic' && topLevel.has('moov') && !topLevel.has('meta')) throw animated();
-    if (format==='heic') quarterTurns=primaryQuarterTurns(bytes,view,pitm,ipma,properties);
+    if (format==='heic') quarterTurns=primaryQuarterTurns(bytes,view,pitm,ipmas,properties);
     // No decoder should allocate from a container with no bounded spatial header.
     if (width===undefined) throw invalid();
   } else if (format === 'svg') {
