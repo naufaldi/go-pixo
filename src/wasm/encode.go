@@ -226,9 +226,6 @@ func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality
 	opts.ColorType = jpegColorType
 	opts.Progressive = progressive
 	opts.TrellisQuant = trellis
-	if trellis {
-		optimizeHuffman = false
-	}
 	opts.OptimizeHuffman = optimizeHuffman
 
 	if subsampling == 1 {
@@ -294,9 +291,6 @@ func RecompressJpeg(inputJPEG []byte, preset int, quality uint8, progressive boo
 
 	opts.Progressive = progressive
 	opts.TrellisQuant = trellis
-	if trellis {
-		optimizeHuffman = false
-	}
 	opts.OptimizeHuffman = optimizeHuffman
 
 	return jpeg.RecompressJPEGBytes(inputJPEG, opts)

@@ -58,7 +58,7 @@ it('lossless JPEG keeps original bytes instead of running a lossy recompressor',
 describe('lossless JPEG entropy optimization', () => {
   // Display 2x1. A COM segment stands in for entropy-coded data so sizes can differ.
   const jpeg=(padding: number, width = 2, height = 1) =>
-    new Uint8Array([255,216,255,254,0,padding+2,...new Uint8Array(padding),...jpegWithExif(width,height,1).slice(2)]);
+    new Uint8Array([255,216,255,254,(padding+2)>>8,(padding+2)&255,...new Uint8Array(padding),...jpegWithExif(width,height,1).slice(2)]);
   const original=jpeg(40);
   const request={format:'jpeg' as const,outputFormat:'same' as const,lossy:false,width:2,height:1,originalFileBytes:original};
   const noEncode=async () => { throw new Error('Lossy encode must not run'); };
@@ -109,6 +109,14 @@ describe('lossless JPEG entropy optimization', () => {
     expect(result.compressedBytes).toBe(optimized);
     const smallerLossy=jpeg(2);
     expect((await compressWithCandidates({...request,lossy:true},async () => smallerLossy,undefined,async () => optimized)).compressedBytes).toBe(smallerLossy);
+  });
+
+  it('skips the optimizer and its pixel check when a lossy result is already far smaller', async () => {
+    const optimize=vi.fn(async () => jpeg(10));
+    const big=jpeg(400);
+    const result=await compressWithCandidates({...request,lossy:true,originalFileBytes:big},async () => jpeg(40),undefined,optimize);
+    expect(result.compressedBytes.length).toBe(jpeg(40).length);
+    expect(optimize).not.toHaveBeenCalled();
   });
 
   it('never optimizes non-JPEG originals', async () => {

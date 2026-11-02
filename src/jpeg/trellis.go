@@ -145,50 +145,62 @@ func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConf
 	var result [64]int16
 	result[0] = int16(math.Round(float64(dct[0] / quantTable[0])))
 
-	// At scan position i there are i+1 possible pending runs, including zero.
-	// Costs roll between two fixed buffers; predecessors survive for backtracking.
-	// No state/candidate slices or pointers escape per block or transition.
-	var costs [2][64]float64
+	// A pending run of r zeros at position i can only come from the nonzero
+	// state at position j = i-r, followed by zeros at j+1..i. With nonzero[j]
+	// that state's cost and zeroSum[i] the summed zero distortion of positions
+	// 1..i, the run state costs base[j] + zeroSum[i], where
+	// base[j] = nonzero[j] - zeroSum[j]. That removes the per-position shift of
+	// every run state and makes the cheapest predecessor an O(1) running min.
+	var base [64]float64 // base[0] is the DC position: cost 0, no zeros yet.
 	var predecessors [64]trellisPredecessor
-	zrlRate := estimateACRate(15, 0, isLuminance)
-	eobRate := estimateACRate(0, 0, isLuminance)
+	rates := &acRates[0]
+	if !isLuminance {
+		rates = &acRates[1]
+	}
+	zrlRate := rates.byRun[0][15]
+	eobRate := rates.byRun[0][0]
+	zeroSum, minBase := 0.0, 0.0
 	for i := 1; i < 64; i++ {
 		index := Zigzag[i]
-		previous, current := &costs[(i-1)%2], &costs[i%2]
-		current[0] = math.Inf(1)
+		previousZeroSum := zeroSum
+		zeroSum += config.Lambda * calculateDistortion(dct[index], 0, index, config.UsePerceptual)
+		minPrevious := minBase + previousZeroSum
 
-		zeroCost := config.Lambda * calculateDistortion(dct[index], 0, index, config.UsePerceptual)
-		for runLength := 0; runLength < i; runLength++ {
-			// Defer zero-run rate until a nonzero value or EOB is emitted.
-			current[runLength+1] = previous[runLength] + zeroCost
-		}
-
+		best := math.Inf(1)
+		var bestState trellisPredecessor
 		candidates, count := generateCandidates(dct[index], quantTable[index], -1023, 1023)
 		for _, value := range candidates[:count] {
 			if value == 0 {
 				continue
 			}
 			distortion := config.Lambda * calculateDistortion(dct[index], float32(value)*quantTable[index], index, config.UsePerceptual)
-			category := uint8(getACCategory(value))
+			category := getACCategory(value)
+			byRun := &rates.byRun[category]
+			// Rates are non-negative and float addition is monotonic, so when
+			// even the cheapest run cannot beat the current best, none can.
+			if minPrevious+float64(rates.minimum[category])+distortion >= best {
+				continue
+			}
 			for runLength := 0; runLength < i; runLength++ {
-				rate := (runLength/16)*zrlRate + estimateACRate(uint8(runLength%16), category, isLuminance)
-				cost := previous[runLength] + float64(rate) + distortion
-				if cost < current[0] {
-					current[0] = cost
-					predecessors[i] = trellisPredecessor{
-						quantizedVal: value,
-						prevIndex:    uint8(runLength),
-					}
+				rate := (runLength/16)*zrlRate + byRun[runLength%16]
+				cost := base[i-1-runLength] + previousZeroSum + float64(rate) + distortion
+				if cost < best {
+					best = cost
+					bestState = trellisPredecessor{quantizedVal: value, prevIndex: uint8(runLength)}
 				}
 			}
 		}
+		predecessors[i] = bestState
+		base[i] = best - zeroSum
+		minBase = math.Min(minBase, base[i])
 	}
 
+	// State 0 at the last position needs no EOB; any trailing run needs one,
+	// even when it is longer than 16.
 	bestIndex := 0
-	bestCost := costs[1][0]
+	bestCost := base[63] + zeroSum
 	for runLength := 1; runLength < 64; runLength++ {
-		// Trailing zeros use one EOB, even for runs longer than 16.
-		cost := costs[1][runLength] + float64(eobRate)
+		cost := base[63-runLength] + zeroSum + float64(eobRate)
 		if cost < bestCost {
 			bestCost, bestIndex = cost, runLength
 		}
@@ -207,11 +219,13 @@ func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConf
 
 // generateCandidates includes ordinary rounding, its nearby alternatives and
 // zero. Baseline 8-bit JPEG permits AC magnitudes up to 1023, not just 255.
+// Values come nearest-first, so the trellis finds a good cost early and its
+// lower bound skips the far candidates without scanning every run length.
 func generateCandidates(coeff, step float32, minVal, maxVal int) ([8]int16, int) {
 	centerVal := int(math.Round(float64(coeff / step)))
 	var candidates [8]int16
 	count := 0
-	for delta := -3; delta <= 3; delta++ {
+	for _, delta := range [...]int{0, -1, 1, -2, 2, -3, 3} {
 		candidate := centerVal + delta
 		if candidate != 0 && candidate >= minVal && candidate <= maxVal {
 			candidates[count] = int16(candidate)
@@ -249,6 +263,29 @@ func estimateDCRate(quantVal int16, isLuminance bool) int {
 	}
 	return bits
 }
+
+// acRateTable caches estimateACRate for the fixed standard tables:
+// byRun[category][run], and the smallest rate per category over all runs.
+type acRateTable struct {
+	byRun   [16][16]int
+	minimum [16]int
+}
+
+// acRates holds luminance ([0]) and chrominance ([1]) rates. The trellis inner
+// loop runs O(64²) times per block, so table lookups replace Huffman calls.
+var acRates = func() (tables [2]acRateTable) {
+	for t, isLuminance := range []bool{true, false} {
+		for category := 0; category < 16; category++ {
+			tables[t].minimum[category] = math.MaxInt
+			for run := 0; run < 16; run++ {
+				rate := estimateACRate(uint8(run), uint8(category), isLuminance)
+				tables[t].byRun[category][run] = rate
+				tables[t].minimum[category] = min(tables[t].minimum[category], rate)
+			}
+		}
+	}
+	return tables
+}()
 
 func estimateACRate(runLength, category uint8, isLuminance bool) int {
 	_, length := huffmanTables.EncodeAC(runLength, category, isLuminance)

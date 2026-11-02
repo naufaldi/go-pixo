@@ -76,7 +76,23 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 	if len(pixels) != e.Options.Width*e.Options.Height*bpp {
 		return nil, ErrInvalidDataLength
 	}
+	if !e.Options.Progressive && !e.Options.OptimizeHuffman {
+		return e.encodeSequential(pixels)
+	}
+	// The pixel-domain progressive and optimized-table writers emitted
+	// entropy-coded data that decoders reconstruct wrongly (PSNR ~10-20 dB).
+	// Encode with standard tables, then re-code the same quantized
+	// coefficients with optimized tables and progressive scans; OptimizeLossless
+	// keeps whichever of its layouts is smallest and never changes pixels.
+	baseline, err := e.encodeSequential(pixels)
+	if err != nil {
+		return nil, err
+	}
+	return OptimizeLossless(baseline)
+}
 
+// encodeSequential writes a baseline JPEG with standard Huffman tables.
+func (e *Encoder) encodeSequential(pixels []byte) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Write SOI
@@ -104,27 +120,11 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 		}
 	}
 
-	// Write SOF
-	if e.Options.Progressive {
-		if err := WriteSOF2(buf, uint16(e.Options.Width), uint16(e.Options.Height), e.Options.ColorType, e.Options.Subsampling); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := WriteSOF0(buf, uint16(e.Options.Width), uint16(e.Options.Height), e.Options.ColorType, e.Options.Subsampling); err != nil {
-			return nil, err
-		}
+	if err := WriteSOF0(buf, uint16(e.Options.Width), uint16(e.Options.Height), e.Options.ColorType, e.Options.Subsampling); err != nil {
+		return nil, err
 	}
 
-	// Create Huffman tables
-	// Note: When trellis quantization is enabled, we use standard Huffman tables
-	// because the optimized tables are built based on standard quantization,
-	// but trellis produces different coefficients that would mismatch.
-	var ht *HuffmanTables
-	if e.Options.OptimizeHuffman && !e.Options.TrellisQuant {
-		ht = BuildOptimizedTables(pixels, e.Options.Width, e.Options.Height, e.Options.ColorType, e.Options.Subsampling, qt)
-	} else {
-		ht = GetStandardHuffmanTables(e.Options.Quality, e.Options.Subsampling)
-	}
+	ht := GetStandardHuffmanTables(e.Options.Quality, e.Options.Subsampling)
 
 	// Update cache stats
 	if e.cacheStats != nil {
@@ -138,9 +138,6 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	if e.Options.Progressive {
-		return e.encodeProgressive(buf, pixels, ht, qt)
-	}
 	return e.encodeBaseline(buf, pixels, ht, qt)
 }
 
@@ -245,172 +242,6 @@ func (e *Encoder) encodeBaseline(buf *bytes.Buffer, pixels []byte, ht *HuffmanTa
 	}
 
 	// Write EOI
-	if err := WriteEOI(buf); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func (e *Encoder) encodeProgressive(buf *bytes.Buffer, pixels []byte, ht *HuffmanTables, qt *QuantizationTables) ([]byte, error) {
-	// 1. Collect all quantized DCT coefficients
-	var yCoeffs [][64]int16
-	var cbCoeffs [][64]int16
-	var crCoeffs [][64]int16
-
-	if e.Options.Subsampling == Subsampling420 && e.Options.ColorType == ColorRGB {
-		for y := 0; y < e.Options.Height; y += 16 {
-			for x := 0; x < e.Options.Width; x += 16 {
-				yBlocks, cbBlock, crBlock := ExtractMCU420(pixels, e.Options.Width, e.Options.Height, x, y)
-				for i := 0; i < 4; i++ {
-					yCoeffs = append(yCoeffs, e.quantizeBlock(yBlocks[i], true, qt))
-				}
-				cbCoeffs = append(cbCoeffs, e.quantizeBlock(cbBlock, false, qt))
-				crCoeffs = append(crCoeffs, e.quantizeBlock(crBlock, false, qt))
-			}
-		}
-	} else {
-		for y := 0; y < e.Options.Height; y += 8 {
-			for x := 0; x < e.Options.Width; x += 8 {
-				yBlock, cbBlock, crBlock := ExtractBlock(pixels, e.Options.Width, e.Options.Height, x, y, e.Options.ColorType)
-				yCoeffs = append(yCoeffs, e.quantizeBlock(yBlock, true, qt))
-				if e.Options.ColorType == ColorRGB {
-					cbCoeffs = append(cbCoeffs, e.quantizeBlock(cbBlock, false, qt))
-					crCoeffs = append(crCoeffs, e.quantizeBlock(crBlock, false, qt))
-				}
-			}
-		}
-	}
-
-	// 2. Perform multiple scans
-	script := GetProgressiveScript(e.Options.Quality)
-	prevDC := make([]int16, 4) // Indices 1, 2, 3 for components
-
-	for _, scan := range script {
-		// Filter scan components to only include those present in the image
-		activeComponents := []uint8{}
-		for _, compID := range scan.Components {
-			if e.Options.ColorType == ColorGrayscale && compID > 1 {
-				continue
-			}
-			activeComponents = append(activeComponents, compID)
-		}
-
-		if len(activeComponents) == 0 {
-			continue
-		}
-
-		// Update scan with active components for this image
-		actualScan := scan
-		actualScan.Components = activeComponents
-
-		if err := WriteSOSProgressive(buf, &actualScan, e.Options.ColorType); err != nil {
-			return nil, err
-		}
-		bw := NewBitWriter(buf)
-
-		if actualScan.SS == 0 {
-			// DC scan
-			// Note: This logic needs to match the interleaving of components in the scan
-
-			// We need to iterate by MCUs
-			numMCUs := 0
-			if e.Options.Subsampling == Subsampling420 && e.Options.ColorType == ColorRGB {
-				numMCUs = len(cbCoeffs) // 1 MCU = 4Y + 1Cb + 1Cr
-				for i := 0; i < numMCUs; i++ {
-					for _, compID := range actualScan.Components {
-						switch compID {
-						case 1:
-							// Y1, Y2, Y3, Y4
-							for j := 0; j < 4; j++ {
-								if err := EncodeDCScan(bw, &actualScan, [][64]int16{yCoeffs[i*4+j]}, 0, ht, &prevDC[1], true); err != nil {
-									return nil, err
-								}
-							}
-						case 2:
-							// Cb
-							if err := EncodeDCScan(bw, &actualScan, [][64]int16{cbCoeffs[i]}, 0, ht, &prevDC[2], false); err != nil {
-								return nil, err
-							}
-						case 3:
-							// Cr
-							if err := EncodeDCScan(bw, &actualScan, [][64]int16{crCoeffs[i]}, 0, ht, &prevDC[3], false); err != nil {
-								return nil, err
-							}
-						}
-					}
-				}
-			} else {
-				numMCUs = len(yCoeffs)
-				for i := 0; i < numMCUs; i++ {
-					for _, compID := range actualScan.Components {
-						switch compID {
-						case 1:
-							if err := EncodeDCScan(bw, &actualScan, [][64]int16{yCoeffs[i]}, 0, ht, &prevDC[1], true); err != nil {
-								return nil, err
-							}
-						case 2:
-							if err := EncodeDCScan(bw, &actualScan, [][64]int16{cbCoeffs[i]}, 0, ht, &prevDC[2], false); err != nil {
-								return nil, err
-							}
-						case 3:
-							if err := EncodeDCScan(bw, &actualScan, [][64]int16{crCoeffs[i]}, 0, ht, &prevDC[3], false); err != nil {
-								return nil, err
-							}
-						}
-					}
-				}
-			}
-		} else {
-			// AC scan (must be only ONE component per scan)
-			compID := actualScan.Components[0]
-			if e.Options.Subsampling == Subsampling420 && e.Options.ColorType == ColorRGB {
-				numMCUs := len(cbCoeffs)
-				for i := 0; i < numMCUs; i++ {
-					switch compID {
-					case 1:
-						for j := 0; j < 4; j++ {
-							if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{yCoeffs[i*4+j]}, ht, true); err != nil {
-								return nil, err
-							}
-						}
-					case 2:
-						if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{cbCoeffs[i]}, ht, false); err != nil {
-							return nil, err
-						}
-					case 3:
-						if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{crCoeffs[i]}, ht, false); err != nil {
-							return nil, err
-						}
-					}
-				}
-			} else {
-				numMCUs := len(yCoeffs)
-				for i := 0; i < numMCUs; i++ {
-					switch compID {
-					case 1:
-						if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{yCoeffs[i]}, ht, true); err != nil {
-							return nil, err
-						}
-					case 2:
-						if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{cbCoeffs[i]}, ht, false); err != nil {
-							return nil, err
-						}
-					case 3:
-						if err := EncodeACFirstScan(bw, &actualScan, [][64]int16{crCoeffs[i]}, ht, false); err != nil {
-							return nil, err
-						}
-					}
-				}
-			}
-		}
-
-		if err := bw.Flush(); err != nil {
-			return nil, err
-		}
-	}
-
-	// 3. Write EOI
 	if err := WriteEOI(buf); err != nil {
 		return nil, err
 	}

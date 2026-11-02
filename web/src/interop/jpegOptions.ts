@@ -18,15 +18,15 @@ export type JpegEncodeOptions = {
   optimizeHuffman: boolean
 }
 
+// Progressive scans and optimized Huffman tables are a lossless entropy pass
+// over the encoder's baseline output, so they are safe for every decoder and
+// every source format. Trellis stays limited to JPEG-to-JPEG work.
 export function resolveJpegEncodeOptions(input: JpegEncodeOptionInput): JpegEncodeOptions {
   const crossFormat = input.inputFormat !== 'jpeg' || input.outputFormat !== 'jpeg'
-  const preset = input.preset === 4 ? 2 : input.preset
-  const trellis = crossFormat ? false : input.trellis
-
   return {
-    preset,
-    progressive: crossFormat ? false : input.progressive,
-    trellis,
-    optimizeHuffman: false,
+    preset: input.preset === 4 ? 2 : input.preset,
+    progressive: input.progressive,
+    trellis: crossFormat ? false : input.trellis,
+    optimizeHuffman: input.optimizeHuffman,
   }
 }

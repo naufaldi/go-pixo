@@ -3,6 +3,10 @@ import { assertSafeDimensions, imageDisplayDimensions, inspectImage } from './im
 import { assertDecodedDimensions, assertSameDecodedPixels, decodeNative } from './codecsNative';
 import {decodeAvif} from './codecs';
 
+// Lossy candidates above this share of the original JPEG size may lose to
+// lossless entropy recoding of the original, so that is tried too.
+const LOSSLESS_JPEG_WORTH_TRYING = 0.8;
+
 export type CandidateRequest = {
   format: InputFormat; outputFormat?: OutputFormatChoice; lossy: boolean;
   width: number; height: number; resized?: boolean; originalFileBytes?: Uint8Array;
@@ -42,25 +46,25 @@ export async function compressWithCandidates(
   if (original) await validate(original.compressedBytes);
 
   // Lossless JPEG optimization rewrites only the entropy coding, so decoded
-  // pixels stay identical. It is a valid candidate in every mode, and the only
-  // real saving for a JPEG in Perfect Quality mode.
-  let optimized: CompressionResult | undefined;
-  if (original && input==='jpeg' && optimizeJpegLossless) {
+  // pixels stay identical. It is the only real saving for a JPEG in Perfect
+  // Quality mode, and a candidate in lossy mode when re-encoding saves little.
+  const optimizeOriginal=async (): Promise<CompressionResult | undefined> => {
+    if (!original || input!=='jpeg' || !optimizeJpegLossless) return undefined;
     try {
       const bytes=await optimizeJpegLossless(original.compressedBytes);
-      if (bytes.length<original.compressedBytes.length) {
-        const info=inspectImage(bytes), display=imageDisplayDimensions(info);
-        if (info.format!=='jpeg' || display.width!==request.width || display.height!==request.height) throw new Error('Optimized JPEG changed format or dimensions');
-        // Decodable is not enough: decoders can disagree on unusual progressions.
-        await assertSameDecodedPixels(original.compressedBytes,bytes);
-        optimized={compressedBytes:bytes,outputFormat:'jpeg'};
-      }
+      if (bytes.length>=original.compressedBytes.length) return undefined;
+      const info=inspectImage(bytes), display=imageDisplayDimensions(info);
+      if (info.format!=='jpeg' || display.width!==request.width || display.height!==request.height) throw new Error('Optimized JPEG changed format or dimensions');
+      // Decodable is not enough: decoders can disagree on unusual progressions.
+      await assertSameDecodedPixels(original.compressedBytes,bytes);
+      return {compressedBytes:bytes,outputFormat:'jpeg'};
     } catch (error) {
       // The validated original remains a correct result. Unsupported inputs
       // (CMYK, arithmetic coding) are expected to land here.
       console.debug('[compress] lossless JPEG optimization skipped:', error instanceof Error ? error.message : error);
+      return undefined;
     }
-  }
+  };
 
   if (!request.lossy && (source?.bitDepth ?? 8)>8) {
     if (original) return original;
@@ -69,7 +73,7 @@ export async function compressWithCandidates(
 
   // Pixel re-encoding is lossy for JPEG and native WebP, and AVIF bytes are kept
   // as-is. Same-format lossless output is the original or its optimized entropy coding.
-  if (!request.lossy && original && choice!=='auto' && (input==='jpeg' || input==='webp' || input==='avif')) return optimized ?? original;
+  if (!request.lossy && original && choice!=='auto' && (input==='jpeg' || input==='webp' || input==='avif')) return await optimizeOriginal() ?? original;
 
   const formats=compressionCandidates(input,choice,!request.lossy);
   const candidates: CompressionResult[]=[];
@@ -90,7 +94,13 @@ export async function compressWithCandidates(
       lastError=error;
     }
   }
-  if (optimized) candidates.push(optimized);
+  // Entropy recoding rarely saves more than ~15%, so once a candidate is
+  // already well below that, the optimizer and its pixel check cannot win.
+  const smallest=Math.min(...candidates.map(candidate => candidate.compressedBytes.length));
+  if (original && smallest>original.compressedBytes.length*LOSSLESS_JPEG_WORTH_TRYING) {
+    const optimized=await optimizeOriginal();
+    if (optimized) candidates.push(optimized);
+  }
   if (!candidates.length && !original) throw lastError ?? new Error('No supported image encoder');
   return selectCompressionResult(candidates,original,request.resized);
 }
