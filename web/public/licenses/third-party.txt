@@ -15,13 +15,15 @@ Copyright Ivan Kutskir; MIT License.
 License: /licenses/utif-MIT.txt
 Source: https://github.com/photopea/UTIF.js
 
-libheif-js 1.23.5
-This application uses libheif-js under the GNU Lesser General Public License version 3.
-License: /licenses/libheif-js-LGPL-3.0.txt
+libheif 1.23.7 and libde265 1.0.16, distributed by heic-to 1.6.7
+This application uses libheif and libde265 under the GNU Lesser General Public License version 3.
+License: /licenses/LGPL-3.0.txt
+heic-to notice: /licenses/heic-to-LGPL-3.0.txt
 GNU GPL version 3: /licenses/GPL-3.0.txt
-Unmodified library wrapper source: https://github.com/catdad-experiments/libheif-js/tree/d8ec4bc3bc5bf8055975577bccbbc7e1d7313c2d
-Corresponding native library source and build instructions: https://github.com/catdad-experiments/libheif-emscripten/tree/v1.23.5
-Native source commit: https://github.com/strukturag/libheif/tree/413e2a87e6a70b3eccc3a3adc5801179dd2d9e00
-The JavaScript/WASM decoder is loaded separately from Go Pixo application code. Library source and build scripts are available at the links above. To rebuild with a modified library, obtain the Go Pixo source, replace libheif-js with a local modified package in web/package.json, install dependencies, build the Go WASM, and run bun run build in web/. This regenerates bundled assets and offline integrity hashes; serve the resulting web/dist directory locally.
+Unmodified library build used: heic-to 1.6.7, file src/lib/libheif-without-unsafe-eval.js (Emscripten build of libheif 1.23.7 with libde265 1.0.16, without unsafe eval)
+heic-to source and build scripts: https://github.com/hoppergee/heic-to/tree/78345a3fcdb4a1d70d513fce2646aeff0127f7ba
+libheif source: https://github.com/strukturag/libheif/tree/v1.23.7
+libde265 source: https://github.com/strukturag/libde265/tree/v1.0.16
+The JavaScript decoder is emitted as its own unmodified file, loaded separately from Go Pixo application code, and only when the browser has no native HEIC decoder. To rebuild with a modified library, obtain the Go Pixo source, replace web/node_modules/heic-to/src/lib/libheif-without-unsafe-eval.js (imported by web/src/interop/codecs.ts) with your modified build, build the Go WASM, and run bun run build in web/. This regenerates bundled assets and offline integrity hashes; serve the resulting web/dist directory locally.
 
 Supporting JavaScript libraries: fflate (MIT) and pako (MIT AND Zlib); license texts are included alongside this file.

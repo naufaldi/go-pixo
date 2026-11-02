@@ -18,21 +18,30 @@ test('retains valid PNG bytes when worker bitmap decoding is unavailable', async
   await expect(page.getByTestId('download-primary')).toBeEnabled()
 })
 
-test('rejects corrupt passthrough and contained HEIC inputs, then accepts a valid retry', async ({page}) => {
+test('rejects a corrupt passthrough input, then decodes HEIC and accepts a valid retry', async ({page}) => {
   await page.goto('/')
   await page.getByRole('checkbox', {name:'Perfect Quality'}).check()
   const input = page.locator('input[type=file]')
   await input.setInputFiles({name:'corrupt.jpg', mimeType:'image/jpeg', buffer:Buffer.from([255,216,255,192,0,7,8,0,1,0,1])})
   await expect(page.getByTestId('batch-summary')).toContainText('0 completed, 1 failed')
-  await page.getByLabel('Add images').setInputFiles(heic)
-  await expect(page.getByTestId('batch-summary')).toContainText('0 completed, 2 failed')
-  await page.getByText('rainbow-451x461.heic', {exact:true}).click()
-  await expect(page.getByRole('alert')).toContainText('temporarily unavailable')
-  await page.getByLabel('Add images').setInputFiles(png)
-  await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 2 failed, 0 remaining')
   await expect(page.getByTestId('download-primary')).toBeDisabled()
+  await page.getByLabel('Add images').setInputFiles(heic)
+  await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 1 failed, 0 remaining', {timeout:30_000})
+  await page.getByText('rainbow-451x461.heic', {exact:true}).click()
+  await expect(page.getByTestId('download-primary')).toBeEnabled()
+  await expect(page.getByTestId('bottom-bar')).toContainText('Output: PNG')
+  await page.getByLabel('Add images').setInputFiles(png)
+  await expect(page.getByTestId('batch-summary')).toContainText('2 completed, 1 failed, 0 remaining')
   await page.getByText('sample-32x32.png', {exact:true}).click()
   await expect(page.getByTestId('download-primary')).toBeEnabled()
+})
+
+test('converts HEIC to JPEG by default when lossy compression is allowed', async ({page}) => {
+  await page.goto('/')
+  await page.locator('input[type=file]').setInputFiles(heic)
+  await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed, 0 remaining', {timeout:30_000})
+  await expect(page.getByTestId('bottom-bar')).toContainText('Output: JPEG')
+  await expect(page.getByRole('img', {name:'Compressed'})).toHaveJSProperty('naturalWidth', 451)
 })
 
 test('decodes a 24 MP PNG in a worker without main-thread pixel readback', async ({page}) => {

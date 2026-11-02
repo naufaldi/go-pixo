@@ -270,6 +270,12 @@ function recompressPngLossless(
   return unwrapWasmResult(result);
 }
 
+function optimizeJpegLossless(jpegBytes: Uint8Array): Uint8Array {
+  const optimize = (self as unknown as {optimizeJpegLossless?: (bytes: Uint8Array) => Uint8Array | string}).optimizeJpegLossless;
+  if (!optimize) throw new Error("optimizeJpegLossless not available");
+  return unwrapWasmResult(optimize(jpegBytes));
+}
+
 function compositeRgbaToRgbWhite(
   pixels: Uint8Array,
   width: number,
@@ -376,6 +382,13 @@ self.onmessage = async (event: MessageEvent) => {
       phaseTarget: mapPngPhaseToGlobal(phase,100),
       });
     };
+    // The Faster preset (2) favors speed, so lossy mode skips the extra lossless
+    // pass and its pixel check. Perfect Quality always tries it.
+    const optimizeOriginalJpeg=req.lossy && req.preset===2 ? undefined : async (bytes: Uint8Array) => {
+      await initWasm();
+      postProgress('optimizing-jpeg',STAGE.ENCODING.start);
+      return optimizeJpegLossless(bytes);
+    };
     const result=await compressWithCandidates({
       ...req,width:work.width,height:work.height,resized:size.resized,
     },async (format,fast)=>{
@@ -405,7 +418,7 @@ self.onmessage = async (event: MessageEvent) => {
       const validator = (self as unknown as {validateImageBytes(bytes: Uint8Array): boolean | string}).validateImageBytes;
       const result = validator(bytes);
       if (result !== true) throw new Error(typeof result === 'string' ? result.replace(/^error:\s*/, '') : 'Invalid image data');
-    });
+    }, optimizeOriginalJpeg);
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end);
     const originalBytes=req.originalFileBytes?.length || req.pixels?.length || 0;
     // Codec/Go boundaries have already copied borrowed memory. The selected

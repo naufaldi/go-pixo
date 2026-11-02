@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {jpegWithExif} from '../test/jpeg';
-import { assertSafeDimensions, inspectImage, sniffInputFormat } from './imageFormats';
+import { assertSafeDimensions, imageDisplayDimensions, inspectImage, sniffInputFormat } from './imageFormats';
+import { imageOperation } from './imageOperation';
 
 const ascii = (value: string) => Uint8Array.from(value, c => c.charCodeAt(0));
 const png = (w = 2, h = 1, animated = false) => {
@@ -33,6 +34,61 @@ describe('image byte preflight', () => {
     const webp = new Uint8Array([...ascii('RIFF'),14,0,0,0,...ascii('WEBPVP8X'),2,0,0,0,2,0]);
     expect(() => inspectImage(webp)).toThrow(/animat/i);
     expect(() => inspectImage(bmff('avis'))).toThrow(/animat/i);
+  });
+  it('uses the primary item irot for HEIC display dimensions and resize planning', () => {
+    const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];
+    const u32 = (v: number) => [v>>>24&255, v>>>16&255, v>>>8&255, v&255];
+    // ipco: 1 = ispe 4032x3024, 2 = irot 90 degrees anticlockwise.
+    const ipco = box('ipco',[...box('ispe',[0,0,0,0,...u32(4032),...u32(3024)]),...box('irot',[1])]);
+    const heic = (rotatedItem: number) => new Uint8Array([
+      ...box('ftyp',[...ascii('heic'),0,0,0,0,...ascii('mif1heic')]),
+      ...box('meta',[0,0,0,0,
+        ...box('pitm',[0,0,0,0,0,1]),
+        ...box('iprp',[...ipco,
+          // ipma v0: item 1 -> ispe; item `rotatedItem` -> irot.
+          ...box('ipma',[0,0,0,0,...u32(2), 0,1,1,1, 0,rotatedItem,1,2])])]),
+    ]);
+    const portrait = inspectImage(heic(1));
+    expect(imageDisplayDimensions(portrait)).toEqual({width:3024,height:4032});
+    expect(imageOperation(portrait,{lossy:true,targetHeight:5000})).toMatchObject({width:3750,height:5000});
+    expect(imageDisplayDimensions(inspectImage(heic(2)))).toEqual({width:4032,height:3024});
+
+    // Associations split over several ipma boxes (narrow and wide indexes):
+    // the primary item's irot sits in the first box, another item in the second.
+    const split = (wide: number) => new Uint8Array([
+      ...box('ftyp',[...ascii('heic'),0,0,0,0,...ascii('mif1heic')]),
+      ...box('meta',[0,0,0,0,
+        ...box('pitm',[0,0,0,0,0,1]),
+        ...box('iprp',[...ipco,
+          ...box('ipma',[0,0,0,wide,...u32(1), 0,1,2,...(wide ? [0,1,0,2] : [1,2])]),
+          ...box('ipma',[0,0,0,0,...u32(1), 0,2,1,1])])]),
+    ]);
+    expect(imageDisplayDimensions(inspectImage(split(0)))).toEqual({width:3024,height:4032});
+    expect(imageDisplayDimensions(inspectImage(split(1)))).toEqual({width:3024,height:4032});
+  });
+  it.each([
+    ['truncated version 1', [1,0,0,0,0,1]],
+    ['unsupported version 2', [2,0,0,0,0,0,0,1]],
+  ])('ignores a %s pitm instead of reading past it', (_case, pitm) => {
+    const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];
+    const u32 = (v: number) => [v>>>24&255, v>>>16&255, v>>>8&255, v&255];
+    const ipco = box('ipco',[...box('ispe',[0,0,0,0,...u32(40),...u32(30)]),...box('irot',[1])]);
+    const bytes = new Uint8Array([
+      ...box('ftyp',[...ascii('heic'),0,0,0,0,...ascii('mif1heic')]),
+      ...box('meta',[0,0,0,0,...box('iprp',[...ipco,...box('ipma',[0,0,0,0,...u32(1), 0,1,2,1,2])]),...box('pitm',pitm)]),
+    ]);
+    expect(imageDisplayDimensions(inspectImage(bytes))).toEqual({width:40,height:30});
+  });
+  it('treats HEIC as a sequence only when it has a moov track and no still image', () => {
+    const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];
+    const ispe = box('ispe',[0,0,0,0, 0,0,0,4, 0,0,0,3]);
+    const heic = (brands: string, ...boxes: number[][]) =>
+      new Uint8Array([...box('ftyp',[...ascii(brands.slice(0,4)),0,0,0,0,...ascii(brands)]),...boxes.flat()]);
+    // libheif's examples/example.heic: major 'mif1', compatible 'mif1heichevc'.
+    const meta = box('meta',[0,0,0,0,...box('iprp',box('ipco',ispe))]);
+    expect(inspectImage(heic('mif1heichevc', meta))).toMatchObject({format:'heic', width:4, height:3});
+    expect(inspectImage(heic('msf1hevc', meta, box('moov')))).toMatchObject({format:'heic', width:4, height:3});
+    expect(() => inspectImage(heic('msf1hevc', box('moov', box('trak',ispe))))).toThrow(/animat/i);
   });
   it('rejects oversized dimensions, corrupt data and external or animated SVG', () => {
     expect(() => inspectImage(png(100000,100000))).toThrow(/dimension|pixel/i);

@@ -12,7 +12,7 @@ type derivedSettings = {
 }
 
 @module("./interop/compressionSettings.ts")
-external resolveOutputFormat: (string, string) => string = "resolveOutputFormat"
+external resolveOutputFormat: (string, string, bool) => string = "resolveOutputFormat"
 
 @module("./interop/compressionSettings.ts")
 external mimeForFormat: string => string = "mimeForFormat"
@@ -26,8 +26,8 @@ external buildCompressedFilename: (string, string) => string = "buildCompressedF
 @module("./interop/compressionSettings.ts")
 external derivePresetSettings: (string, bool) => derivedSettings = "derivePresetSettings"
 
-let resolveForItem = (kind: Types.fileKind, outputFormat: Types.outputFormat): string => {
-  resolveOutputFormat(Types.kindToInputFormat(kind), Types.outputFormatToChoice(outputFormat))
+let resolveForItem = (kind: Types.fileKind, outputFormat: Types.outputFormat, ~lossless: bool): string => {
+  resolveOutputFormat(Types.kindToInputFormat(kind), Types.outputFormatToChoice(outputFormat), lossless)
 }
 
 let settingsForState = (state: Types.appState): derivedSettings => {

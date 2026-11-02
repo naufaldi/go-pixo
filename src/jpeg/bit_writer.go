@@ -7,14 +7,20 @@ import (
 // BitWriter writes bits to an underlying io.Writer in MSB-first order (JPEG format).
 // It also handles byte stuffing (0xFF -> 0xFF 0x00).
 type BitWriter struct {
-	w     io.Writer
-	buf   uint32 // Bit buffer
-	nbits int    // Number of bits in the buffer
+	w       io.Writer
+	bytesW  io.ByteWriter // Set when w supports WriteByte, avoiding a slice per byte.
+	buf     uint32        // Bit buffer
+	nbits   int           // Number of bits in the buffer
+	scratch [2]byte
 }
 
 // NewBitWriter creates a new BitWriter that writes to w.
 func NewBitWriter(w io.Writer) *BitWriter {
-	return &BitWriter{w: w}
+	bw := &BitWriter{w: w}
+	if byteWriter, ok := w.(io.ByteWriter); ok {
+		bw.bytesW = byteWriter
+	}
+	return bw
 }
 
 // Write writes the n bits from bits to the writer.
@@ -44,15 +50,23 @@ func (bw *BitWriter) Write(bits uint32, n uint8) error {
 
 // writeByte writes a single byte and performs stuffing if needed.
 func (bw *BitWriter) writeByte(b byte) error {
-	if _, err := bw.w.Write([]byte{b}); err != nil {
-		return err
-	}
-	if b == 0xFF {
-		if _, err := bw.w.Write([]byte{0x00}); err != nil {
+	if bw.bytesW != nil {
+		if err := bw.bytesW.WriteByte(b); err != nil {
 			return err
 		}
+		if b == 0xFF {
+			return bw.bytesW.WriteByte(0x00)
+		}
+		return nil
 	}
-	return nil
+	bw.scratch[0] = b
+	n := 1
+	if b == 0xFF {
+		bw.scratch[1] = 0x00
+		n = 2
+	}
+	_, err := bw.w.Write(bw.scratch[:n])
+	return err
 }
 
 // Flush writes any remaining bits in the buffer, padding with 1s to the next byte boundary.

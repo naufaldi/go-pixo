@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildCompressedFilename,
+  compressionCandidates,
   derivePresetSettings,
   mimeForFormat,
   replaceExtension,
@@ -17,6 +18,16 @@ describe('compressionSettings', () => {
     expect(resolveOutputFormat('gif', 'same')).toBe('png');
     expect(resolveOutputFormat('tiff', 'same')).toBe('png');
     expect(resolveOutputFormat('png', 'auto')).toBe('png');
+  });
+
+  it('keeps HEIC photos as JPEG when lossy and PNG when Perfect Quality is on', () => {
+    expect(resolveOutputFormat('heic', 'same')).toBe('jpeg');
+    expect(resolveOutputFormat('heic', 'same', true)).toBe('png');
+    expect(resolveOutputFormat('heic', 'webp')).toBe('webp');
+    expect(compressionCandidates('heic', 'same', false)).toEqual(['jpeg']);
+    expect(compressionCandidates('heic', 'same', true)).toEqual(['png']);
+    expect(compressionCandidates('heic', 'auto', false)).toEqual(['webp', 'jpeg']);
+    expect(compressionCandidates('heic', 'auto', true)).toEqual(['avif', 'png']);
   });
 
   it('builds compressed filenames with output extension', () => {

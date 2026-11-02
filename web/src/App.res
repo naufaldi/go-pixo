@@ -275,7 +275,7 @@ let make = () => {
   let outputFormatText = switch selectedItem {
     | Some(item) => switch item.compressedExtension {
       | Some(".jpg") => "JPEG" | Some(".webp") => "WebP" | Some(".avif") => "AVIF" | Some(".png") => "PNG"
-      | _ => if state.outputFormat == Types.AutoSmallest { "Auto" } else { CompressionSettings.resolveForItem(item.kind, state.outputFormat)->String.toUpperCase }
+      | _ => if state.outputFormat == Types.AutoSmallest { "Auto" } else { CompressionSettings.resolveForItem(item.kind, state.outputFormat, ~lossless=state.lossless)->String.toUpperCase }
       }
     | None => if state.outputFormat == Types.AutoSmallest { "Auto" } else { "Same as input" }
   }
@@ -287,7 +287,7 @@ let make = () => {
     }
   })
   let handleDownloadFormat = fmt => selectedItem->Option.forEach(item => {
-    let extension = CompressionSettings.extensionForFormat(CompressionSettings.resolveForItem(item.kind, fmt))
+    let extension = CompressionSettings.extensionForFormat(CompressionSettings.resolveForItem(item.kind, fmt, ~lossless=state.lossless))
     if item.status == Types.Done && item.compressedExtension == Some(extension) { handleDownload() }
     else {
       applySettingChange(() => dispatch(SetOutputFormat(fmt)))
@@ -523,7 +523,7 @@ let make = () => {
     >
       <p>
         {React.string(
-          "Still images · Up to 24 MP and 64 MiB · HEIC/HEIF temporarily unavailable",
+          "Still images · Up to 24 MP and 64 MiB · HEIC supported",
         )}
       </p>
       <a

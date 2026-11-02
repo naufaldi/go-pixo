@@ -15,24 +15,29 @@ export type InputFormat = 'png' | 'jpeg' | 'webp' | 'avif' | 'gif' | 'bmp' | 'sv
 export function resolveOutputFormat(
   inputFormat: InputFormat,
   outputFormat: OutputFormatChoice,
+  lossless = false,
 ): ResolvedFormat {
   if (outputFormat === 'same' || outputFormat === 'auto') {
     if (inputFormat === 'jpeg') return 'jpeg';
     if (inputFormat === 'webp') return 'webp';
     if (inputFormat === 'avif') return 'avif';
+    // No HEIC encoder exists here. HEIC is a camera-photo format, so lossy mode
+    // uses JPEG, the format phones export for compatibility. A PNG of a photo
+    // would be several times larger than the HEIC it came from.
+    if (inputFormat === 'heic' && !lossless) return 'jpeg';
     return 'png';
   }
   return outputFormat;
 }
 
 export function compressionCandidates(input: InputFormat, output: OutputFormatChoice, lossless: boolean): ResolvedFormat[] {
-  const same=resolveOutputFormat(input,'same');
+  const same=resolveOutputFormat(input,'same',lossless);
   if (output==='auto') {
     const modern=lossless ? 'avif' : 'webp';
     const current=lossless && (same==='jpeg' || same==='webp') ? 'png' : same;
     return modern===current ? [modern] : [modern,current];
   }
-  const resolved=resolveOutputFormat(input,output);
+  const resolved=resolveOutputFormat(input,output,lossless);
   if (lossless && (resolved==='jpeg' || resolved==='webp')) {
     throw new Error(`${resolved.toUpperCase()} encoding is lossy. Choose PNG or AVIF, or enable lossy compression.`);
   }

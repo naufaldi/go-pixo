@@ -1,5 +1,5 @@
 import type { InputFormat } from './compressionSettings';
-import { HEIC_UNAVAILABLE_MESSAGE, inspectImage, inputMime, MAX_IMAGE_BYTES } from './imageFormats';
+import { inspectImage, inputMime, MAX_IMAGE_BYTES } from './imageFormats';
 import { ownedImageDataPixels } from './pixels';
 import { imageOperation, type OperationSettings } from './imageOperation';
 import { assertDecodedDimensions } from './codecsNative';
@@ -89,7 +89,6 @@ export async function decodeFile(file: File, signal?: AbortSignal, options?: Dec
   assertActive(signal);
   const originalFileBytes=new Uint8Array(buffer);
   const info=inspectImage(originalFileBytes,file.type);
-  if (info.format === 'heic') throw new Error(HEIC_UNAVAILABLE_MESSAGE);
   const operation = imageOperation(info, options);
   await options?.admit?.(operation.workspaceBytes);
   assertActive(signal);
@@ -105,7 +104,7 @@ export async function decodeFile(file: File, signal?: AbortSignal, options?: Dec
     return {pixels:validateOnly ? undefined : image.pixels,width:image.width,height:image.height,colorType:6,previewUrl,originalFileBytes,inputFormat:info.format};
   }
 
-  if (info.format === 'tiff' || info.format === 'avif') throw new Error('This image requires worker decoding support');
+  if (info.format === 'tiff' || info.format === 'avif' || info.format === 'heic') throw new Error('This image requires worker decoding support');
   // A capability-only fallback keeps older browsers useful for small images.
   // Decoder failures never retry on the main thread, and large raster copies
   // require worker support rather than doing up to 96 MB of synchronous work.
