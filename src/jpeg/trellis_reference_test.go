@@ -114,6 +114,9 @@ func TestTrellisNearWideSearch(t *testing.T) {
 			config := configs[n%len(configs)]
 			f := trellisCost(block, quant, config, lum, trellisOptimize(block, quant, config, lum))
 			w := trellisCost(block, quant, config, lum, trellisWideSearch(block, quant, config, lum))
+			if math.IsNaN(f) || math.IsInf(f, 0) || math.IsNaN(w) || math.IsInf(w, 0) {
+				t.Fatalf("block %d: non-finite cost (fast %v, wide %v)", n, f, w)
+			}
 			if f > w*1.05+2 {
 				t.Fatalf("block %d: fast cost %.2f far above wide search %.2f", n, f, w)
 			}
@@ -156,5 +159,22 @@ func TestTrellisHugeLambdaStaysFinite(t *testing.T) {
 		if got[Zigzag[1]] != 1000 || got[Zigzag[2]] != 1000 {
 			t.Fatalf("lambda %g: got %d, %d; want 1000, 1000", lambda, got[Zigzag[1]], got[Zigzag[2]])
 		}
+	}
+}
+
+// TestTrellisOddInputs: a NaN coefficient once drove the category loop past
+// the rate table and panicked; magnitudes above 1023 must clamp to the
+// largest baseline AC value.
+func TestTrellisOddInputs(t *testing.T) {
+	var unit, block [64]float32
+	for i := range unit {
+		unit[i] = 1
+	}
+	block[Zigzag[1]] = float32(math.NaN())
+	_ = TrellisOptimizeFull(block, unit, 1) // must not panic
+
+	block[Zigzag[1]] = 5000
+	if got := trellisOptimize(block, unit, TrellisConfig{Lambda: 100}, true)[Zigzag[1]]; got != 1023 {
+		t.Fatalf("magnitude 5000 quantized to %d, want 1023", got)
 	}
 }

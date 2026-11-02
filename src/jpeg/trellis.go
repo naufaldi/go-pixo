@@ -176,7 +176,8 @@ func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConf
 		step := quantTable[index]
 		zeroSums[i] = zeroSums[i-1] + config.Lambda*calculateDistortion(dct[index], 0, index, config.UsePerceptual)
 		magnitude := math.Round(math.Abs(float64(dct[index] / step)))
-		if magnitude == 0 {
+		// NaN fails this test too, so it can never reach the int conversion below.
+		if !(magnitude >= 1) {
 			continue
 		}
 		qv := int(min(magnitude, 1023))
