@@ -241,7 +241,7 @@ test.describe('go-pixo', () => {
 
     await expect(page.getByTestId('bottom-bar')).toContainText('Output: JPEG')
     await expect(page.getByTestId('bottom-bar')).not.toContainText('Format: PNG')
-    await expect(page.getByText('Input: PNG')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Files', exact: true }).getByRole('button', { name: /PNG → JPEG/ })).toBeVisible()
     await expectDownloadedJpeg(download)
   })
 

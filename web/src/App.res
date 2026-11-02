@@ -348,60 +348,189 @@ let make = () => {
   }
 
   <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100">
-    <header className="pt-8 pb-6 px-4 sm:px-6 text-center">
-      <h1 className="text-4xl font-black tracking-tight text-neutral-100 mb-2">{React.string("Go-Pixo")}</h1>
-      <p className="text-neutral-400">{React.string("Private batch image compression. PNG and JPEG powered by Go & WASM.")}</p>
-      <div className="mt-3"><OfflineStatus /><a href="/licenses/third-party.txt" className="mt-1 inline-block text-xs text-neutral-500 underline hover:text-neutral-300">{React.string("Open-source licenses")}</a></div>
-      <div className="flex flex-wrap items-center justify-center gap-3 mt-4 text-xs text-emerald-400">
-        <span>{React.string("Runs locally on your device")}</span>
-        <span>{React.string("No data sent to servers")}</span>
+    <header className="border-b border-neutral-800">
+      <div
+        className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6"
+      >
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-semibold tracking-tight"> {React.string("Go-Pixo")} </h1>
+          <p className="hidden text-sm text-neutral-400 sm:block">
+            {React.string("Private image compression")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-400">
+          <span> {React.string("Runs locally, nothing uploaded")} </span>
+          <OfflineStatus />
+        </div>
       </div>
-      <p className="mt-3 text-xs text-neutral-500">{React.string("PNG, JPEG, WebP, AVIF, TIFF, GIF, BMP and SVG inputs. Still images only; up to 24 MP and 64 MiB. HEIC/HEIF is temporarily unavailable.")}</p>
     </header>
-    <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pb-6">
-      {switch selectedItem {
-      | Some(item) =>
-        let itemProgress = state.activeCompressions->Array.find(((id, _)) => id == item.id)->Option.map(((_, p)) => p)
-        switch item.status {
-        | Types.Error(message) =>
-          <div role="alert" className="my-8 [overflow-wrap:anywhere] rounded-lg border border-red-800 bg-red-950/20 p-6 text-red-300">
-            <p>{React.string(Types.Web.File.name(item.file) ++ ": " ++ message)}</p>
-            <button onClick={_ => handleRemove(item.id)} className="min-h-11 min-w-11 mt-3 text-sm underline">{React.string("Remove image")}</button>
-          </div>
-        | Types.Pending | Types.Decoding | Types.Compressing | Types.Done => <CompareView originalUrl={item.originalUrl} compressedUrl={item.compressedUrl}
-            originalBytes={item.originalBytes} compressedBytes={item.compressedBytes}
-            width={item.width} height={item.height} compressionTime={item.compressionTime}
-            compressionProgress={itemProgress} onRemove={() => handleRemove(item.id)} />
-        }
-      | None => <Dropzone dragActive={state.dragActive} onDragEnter=handleDragEnter onDragOver=handleDragOver
-          onDragLeave=handleDragLeave onDrop=handleDrop onFileSelect=handleFileSelect />
-      }}
-      {state.items->Array.length > 0 ? <div className="mt-6 space-y-3">
-        <label className="min-h-11 items-center inline-flex cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-neutral-300 rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900">
-          {React.string("Add images")}
-          <input type_="file" multiple=true accept=Types.acceptedImageTypes className="sr-only" onChange={e => {
-            handleFileSelect(selectedFiles(e))
-            clearFileInput(e)
-          }} />
-        </label>
-        <p dataTestId="batch-summary" role="status" className="text-sm text-neutral-400">
-          {React.string(Int.toString(completedCount) ++ " completed, " ++ Int.toString(errorCount) ++ " failed, " ++ Int.toString(state.items->Array.length - completedCount - errorCount) ++ " remaining. " ++
-            if savedBytes >= 0 { "Saved " ++ Display.formatSize(savedBytes) } else { "Output increased by " ++ Display.formatSize(-savedBytes) })}
-        </p>
-      </div> : React.null}
-      {switch state.downloadError {
-      | Some(message) => <p role="alert" className="mt-3 text-sm text-red-400">{React.string("Download failed: " ++ message)}</p>
-      | None => React.null
-      }}
-      <FileQueue items={state.items} selectedId={state.selectedId} compressionProgress=None activeCompressions={state.activeCompressions}
-        onSelect={id => dispatch(SelectItem(Some(id)))} onRemove=handleRemove onClearAll=handleClear />
+    <main
+      className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 content-start items-start gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem]"
+    >
+      <section ariaLabel="Image preview" className="min-w-0 lg:col-start-1 lg:row-start-1">
+        {switch selectedItem {
+        | Some(item) =>
+          let itemProgress =
+            state.activeCompressions
+            ->Array.find(((id, _)) => id == item.id)
+            ->Option.map(((_, p)) => p)
+          switch item.status {
+          | Types.Error(message) =>
+            <div
+              role="alert"
+              className="[overflow-wrap:anywhere] rounded-lg border border-red-800 bg-red-950/20 p-6 text-red-300"
+            >
+              <p> {React.string(Types.Web.File.name(item.file) ++ ": " ++ message)} </p>
+              <button
+                onClick={_ => handleRemove(item.id)}
+                className="min-h-12 min-w-12 mt-4 text-base underline"
+              >
+                {React.string("Remove image")}
+              </button>
+            </div>
+          | Types.Pending | Types.Decoding | Types.Compressing | Types.Done =>
+            <CompareView
+              originalUrl={item.originalUrl}
+              compressedUrl={item.compressedUrl}
+              originalBytes={item.originalBytes}
+              compressedBytes={item.compressedBytes}
+              width={item.width}
+              height={item.height}
+              compressionTime={item.compressionTime}
+              compressionProgress={itemProgress}
+              onRemove={() => handleRemove(item.id)}
+            />
+          }
+        | None =>
+          <Dropzone
+            dragActive={state.dragActive}
+            onDragEnter=handleDragEnter
+            onDragOver=handleDragOver
+            onDragLeave=handleDragLeave
+            onDrop=handleDrop
+            onFileSelect=handleFileSelect
+          />
+        }}
+      </section>
+      <aside
+        ariaLabel="Compression settings"
+        className="min-w-0 space-y-6 lg:sticky lg:top-4 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto"
+      >
+        {state.items->Array.length > 0
+          ? <div>
+              <p
+                dataTestId="batch-summary"
+                role="status"
+                className="text-sm tabular-nums text-neutral-400"
+              >
+                {React.string(
+                  Int.toString(completedCount) ++
+                  " completed, " ++
+                  Int.toString(errorCount) ++
+                  " failed, " ++
+                  Int.toString(state.items->Array.length - completedCount - errorCount) ++
+                  " remaining. " ++ if savedBytes >= 0 {
+                    "Saved " ++ Display.formatSize(savedBytes)
+                  } else {
+                    "Output increased by " ++ Display.formatSize(-savedBytes)
+                  },
+                )}
+              </p>
+            </div>
+          : React.null}
+        {switch state.downloadError {
+        | Some(message) =>
+          <p role="alert" className="text-sm text-red-400">
+            {React.string("Download failed: " ++ message)}
+          </p>
+        | None => React.null
+        }}
+        <BottomBar
+          hasItems={state.items->Array.length > 0}
+          format=outputFormatText
+          outputFormat={state.outputFormat}
+          onOutputFormatChange={fmt => applySettingChange(() => dispatch(SetOutputFormat(fmt)))}
+          preset={state.preset}
+          lossless={state.lossless}
+          onPresetChange={preset => applySettingChange(() => dispatch(SetPreset(preset)))}
+          onLosslessChange={lossless =>
+            applySettingChange(() => {
+              dispatch(SetLossless(lossless))
+              dispatch(
+                SetQuantization(
+                  if lossless {
+                    Types.Lossless
+                  } else {
+                    Types.Colors256
+                  },
+                ),
+              )
+            })}
+          canDownload={selectedItem
+          ->Option.map(item =>
+            item.status == Types.Done &&
+            item.compressedUrl->Option.isSome &&
+            item.compressedExtension->Option.isSome
+          )
+          ->Option.getOr(false)}
+          onDownload=handleDownload
+          onDownloadFormat=handleDownloadFormat
+          onDownloadAll=handleDownloadAll
+          onDownloadZip=handleDownloadZip
+          exportingZip={state.exportingZip}
+          hasCompletedItems={completedCount > 0}
+          completedCount
+          failedCount=errorCount
+          appliedOptimizations
+          processingAll=hasActive
+          onCompressAll=handleCompressAll
+          targetWidth=displayWidth
+          targetHeight=displayHeight
+          onTargetWidthChange=handleTargetWidthChange
+          onTargetHeightChange=handleTargetHeightChange
+        />
+      </aside>
+      <section ariaLabel="Files" className="min-w-0 lg:col-start-1 lg:row-start-2">
+        <FileQueue
+          items={state.items}
+          selectedId={state.selectedId}
+          compressionProgress=None
+          activeCompressions={state.activeCompressions}
+          headerAction={<label
+            className="min-h-12 items-center inline-flex cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-neutral-300 rounded border border-neutral-700 px-4 py-2 text-base hover:bg-neutral-900"
+          >
+            {React.string("Add images")}
+            <input
+              type_="file"
+              multiple=true
+              accept=Types.acceptedImageTypes
+              className="sr-only"
+              onChange={e => {
+                handleFileSelect(selectedFiles(e))
+                clearFileInput(e)
+              }}
+            />
+          </label>}
+          onSelect={id => dispatch(SelectItem(Some(id)))}
+          onRemove=handleRemove
+          onClearAll=handleClear
+        />
+      </section>
     </main>
-    <BottomBar format=outputFormatText outputFormat={state.outputFormat} onOutputFormatChange={fmt => applySettingChange(() => dispatch(SetOutputFormat(fmt)))}
-      preset={state.preset} lossless={state.lossless} onPresetChange={preset => applySettingChange(() => dispatch(SetPreset(preset)))}
-      onLosslessChange={lossless => applySettingChange(() => { dispatch(SetLossless(lossless)); dispatch(SetQuantization(if lossless { Types.Lossless } else { Types.Colors256 })) })}
-      canDownload={selectedItem->Option.map(item => item.status == Types.Done && item.compressedUrl->Option.isSome && item.compressedExtension->Option.isSome)->Option.getOr(false)}
-      onDownload=handleDownload onDownloadFormat=handleDownloadFormat onDownloadAll=handleDownloadAll onDownloadZip=handleDownloadZip exportingZip={state.exportingZip}
-      hasCompletedItems={completedCount > 0} completedCount failedCount=errorCount appliedOptimizations processingAll=hasActive onCompressAll=handleCompressAll
-      targetWidth=displayWidth targetHeight=displayHeight onTargetWidthChange=handleTargetWidthChange onTargetHeightChange=handleTargetHeightChange />
+    <footer
+      className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-4 pb-6 text-xs text-neutral-400 sm:px-6"
+    >
+      <p>
+        {React.string(
+          "Still images · Up to 24 MP and 64 MiB · HEIC/HEIF temporarily unavailable",
+        )}
+      </p>
+      <a
+        href="/licenses/third-party.txt"
+        className="inline-flex min-h-12 items-center underline hover:text-neutral-200"
+      >
+        {React.string("Open-source licenses")}
+      </a>
+    </footer>
   </div>
 }
