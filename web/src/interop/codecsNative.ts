@@ -1,17 +1,21 @@
-import { assertSafeDimensions, HEIC_UNAVAILABLE_MESSAGE, imageDisplayDimensions, inspectImage, inputMime, type ImageInfo } from './imageFormats';
+import { assertSafeDimensions, imageDisplayDimensions, inspectImage, inputMime, type ImageInfo } from './imageFormats';
 import { ownedImageDataPixels } from './pixels';
 
 export function assertDecodedDimensions(info: ImageInfo, width: number, height: number): void {
   assertSafeDimensions(width, height);
   const display = imageDisplayDimensions(info);
-  if (width !== display.width || height !== display.height) {
-    throw new Error('Native image dimensions disagree with display/EXIF preflight');
-  }
+  const fits = (maxWidth: number, maxHeight: number) => width <= maxWidth && height <= maxHeight;
+  // HEIC 'ispe' stores the coded size. Decoders then apply 'clap' crops and
+  // 'irot' quarter turns (portrait phone photos), so the output may be smaller
+  // or transposed, but never exceeds the pixel budget admitted from 'ispe'.
+  const matches = info.format === 'heic'
+    ? fits(display.width, display.height) || fits(display.height, display.width)
+    : width === display.width && height === display.height;
+  if (!matches) throw new Error('Native image dimensions disagree with display/EXIF preflight');
 }
 
 export async function decodeNative(bytes: Uint8Array, validateOnly: boolean) {
   const info = inspectImage(bytes);
-  if (info.format === 'heic') throw new Error(HEIC_UNAVAILABLE_MESSAGE);
   if (typeof createImageBitmap !== 'function') throw new Error('This browser cannot validate image bytes in a worker. Use a browser with worker image decoding support.');
   const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], {type: inputMime(info.format)}), {imageOrientation: 'from-image'});
   let canvas: OffscreenCanvas | undefined;

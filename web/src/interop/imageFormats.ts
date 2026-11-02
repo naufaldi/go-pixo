@@ -4,7 +4,6 @@ import type { InputFormat } from './compressionSettings';
 export const MAX_IMAGE_PIXELS = 24_000_000;
 export const MAX_IMAGE_DIMENSION = 16_384;
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
-export const HEIC_UNAVAILABLE_MESSAGE = 'HEIC/HEIF decoding is temporarily unavailable for security reasons. Export this image as PNG or JPEG and retry.';
 // Count every reference, including aliases: UTIF creates one JS array per tag.
 const MAX_TIFF_METADATA_VALUES = 65_536;
 export const TIFF_TAG_VALUE_LIMITS: Readonly<Record<number, number>> = {
@@ -220,6 +219,10 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     if (u32(end,le)!==0) throw new Error('Multiple-page TIFF images are not supported. Export a single page first.');
   } else if (format === 'avif' || format === 'heic') {
     // Parse ISO BMFF boxes rather than searching compressed payload for magic text.
+    // HEIC encoders (including libheif's own example) list sequence brands such as
+    // 'hevc' merely as compatible. Only a file whose sole content is a 'moov'
+    // track, with no 'meta' still image, is an image sequence.
+    const topLevel=new Set<string>();
     const walk = (start: number, end: number, depth: number) => {
       if (depth>8) throw invalid();
       for (let p=start; p+8<=end;) {
@@ -229,10 +232,11 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
         if (n===0) n=end-p;
         if (!Number.isSafeInteger(n) || n<header || n>end-p) throw invalid();
         const s=p+header;
-        if (tag==='ftyp') {
+        if (depth===0) topLevel.add(tag);
+        if (tag==='ftyp' && format==='avif') {
           const brands=[text(bytes,s,4)];
           for (let i=s+8;i+4<=p+n;i+=4) brands.push(text(bytes,i,4));
-          if (brands.some(b=>['avis','msf1','hevc','hevx','hevs','hevm'].includes(b))) throw animated();
+          if (brands.includes('avis')) throw animated();
         }
         if (tag==='ispe') {
           if (n<header+12) throw invalid();
@@ -256,6 +260,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
       }
     };
     walk(0,bytes.length,0);
+    if (format==='heic' && topLevel.has('moov') && !topLevel.has('meta')) throw animated();
     // No decoder should allocate from a container with no bounded spatial header.
     if (width===undefined) throw invalid();
   } else if (format === 'svg') {

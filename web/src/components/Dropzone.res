@@ -81,11 +81,8 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
       <p className="text-sm text-neutral-400"> {React.string("Ctrl+V or ⌘V to paste")} </p>
       <p className="max-w-md text-sm text-neutral-400">
         {React.string(
-          "PNG, JPEG, WebP, AVIF, TIFF, GIF, BMP and SVG. Still images only; up to 24 MP and 64 MiB.",
+          "PNG, JPEG, HEIC, WebP, AVIF, TIFF, GIF, BMP and SVG. Still images only; up to 24 MP and 64 MiB.",
         )}
-      </p>
-      <p className="text-sm text-neutral-400">
-        {React.string("HEIC/HEIF is temporarily unavailable.")}
       </p>
     </div>
   </div>

@@ -48,17 +48,37 @@ it.each([['jpeg', jpeg], ['png', new Uint8Array([...png.slice(0,24),16,...png.sl
   expect(scope.recompressPngLossless).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
 });
-it.each([['jpeg', jpeg], ['webp', webp]] as const)('returns exact original %s bytes without pixels, canvas, or Go', async (format, bytes) => {
+it('returns exact original webp bytes without pixels, canvas, or Go', async () => {
   const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });
   vi.stubGlobal('OffscreenCanvas', canvas);
   const {scope, fetch, messages, send} = await worker();
-  await send(format, bytes);
+  await send('webp', webp);
   const output = messages.find(message => message.type === 'compressed');
-  expect(output?.outputFormat).toBe(format);
-  expect(Array.from(output.compressedBytes)).toEqual(Array.from(bytes));
+  expect(output?.outputFormat).toBe('webp');
+  expect(Array.from(output.compressedBytes)).toEqual(Array.from(webp));
   expect(canvas).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
   expect(scope.Go).not.toHaveBeenCalled();
+});
+it('optimizes JPEG original bytes losslessly in Go without pixels or canvas', async () => {
+  const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });
+  vi.stubGlobal('OffscreenCanvas', canvas);
+  const withComment = new Uint8Array([255,216,255,254,0,10,...new Uint8Array(8),...jpeg.slice(2)]);
+  const {scope, messages, send} = await worker();
+  scope.optimizeJpegLossless = vi.fn(() => new Uint8Array(jpeg));
+  await send('jpeg', withComment);
+  const output = messages.find(message => message.type === 'compressed');
+  expect(output?.outputFormat).toBe('jpeg');
+  expect(Array.from(output.compressedBytes)).toEqual(Array.from(jpeg));
+  expect(Array.from(scope.optimizeJpegLossless.mock.calls[0][0])).toEqual(Array.from(withComment));
+  expect(messages.some(message => message.type === 'progress' && message.phase === 'optimizing-jpeg')).toBe(true);
+  expect(canvas).not.toHaveBeenCalled();
+});
+it('keeps exact original JPEG bytes when the Go optimizer is unavailable', async () => {
+  const {messages, send} = await worker();
+  await send('jpeg', jpeg);
+  const output = messages.find(message => message.type === 'compressed');
+  expect(Array.from(output.compressedBytes)).toEqual(Array.from(jpeg));
 });
 it('recompresses PNG original bytes without frontend RGBA and reuses one lazy Go initialization', async () => {
   const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });
@@ -139,13 +159,15 @@ it('keeps the 30 second Go initialization deadline after transport readiness', a
   } finally { vi.useRealTimers() }
 });
 
-it('validates JPEG byte-only requests against display dimensions without canvas or Go', async () => {
+it('validates JPEG byte-only requests against display dimensions without canvas', async () => {
   const bytes=jpegWithExif(3000,4000,6);
-  const {scope,fetch,messages,send}=await worker();
+  const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });
+  vi.stubGlobal('OffscreenCanvas', canvas);
+  const {messages,send}=await worker();
   await send('jpeg',bytes,{width:4000,height:3000,targetWidth:4000});
   const output=messages.find(message => message.type==='compressed');
   expect(Array.from(output.compressedBytes)).toEqual(Array.from(bytes));
-  expect(scope.Go).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  expect(canvas).not.toHaveBeenCalled();
 });
 it('rejects storage dimensions masquerading as display dimensions on a JPEG byte request', async () => {
   const {messages,send}=await worker();

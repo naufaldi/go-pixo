@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { compressWithCandidates } from './codecsCompression';
 import {jpegWithExif} from '../test/jpeg';
 import { imageDisplayDimensions, inspectImage } from './imageFormats';
@@ -43,6 +43,56 @@ it('lossless JPEG keeps original bytes instead of running a lossy recompressor',
   expect(result.compressedBytes).toBe(jpeg);
   expect(result.outputFormat).toBe('jpeg');
 });
+describe('lossless JPEG entropy optimization', () => {
+  // Display 2x1. A COM segment stands in for entropy-coded data so sizes can differ.
+  const jpeg=(padding: number, width = 2, height = 1) =>
+    new Uint8Array([255,216,255,254,0,padding+2,...new Uint8Array(padding),...jpegWithExif(width,height,1).slice(2)]);
+  const original=jpeg(40);
+  const request={format:'jpeg' as const,outputFormat:'same' as const,lossy:false,width:2,height:1,originalFileBytes:original};
+  const noEncode=async () => { throw new Error('Lossy encode must not run'); };
+
+  it('returns the smaller optimized JPEG in Perfect Quality mode', async () => {
+    const optimized=jpeg(10);
+    const result=await compressWithCandidates(request,noEncode,undefined,async () => optimized);
+    expect(result).toEqual({compressedBytes:optimized,outputFormat:'jpeg'});
+  });
+
+  it.each([
+    ['fails', async () => { throw new Error('CMYK JPEG is not supported'); }],
+    ['is not smaller', async () => jpeg(40)],
+    ['changes dimensions', async () => jpeg(1,1,2)],
+    ['is not a JPEG', async () => png(2,1,20)],
+  ])('keeps the validated original when the optimizer %s', async (_case, optimize) => {
+    const result=await compressWithCandidates(request,noEncode,undefined,optimize);
+    expect(result.compressedBytes).toBe(original);
+  });
+
+  it('keeps the original when the optimized bytes do not decode', async () => {
+    const optimized=jpeg(5);
+    vi.stubGlobal('createImageBitmap',vi.fn(async (blob: Blob) => {
+      const bytes=new Uint8Array(await blob.arrayBuffer());
+      if (bytes.length===optimized.length) throw new DOMException('Invalid image data','InvalidStateError');
+      return {...imageDisplayDimensions(inspectImage(bytes)),close:vi.fn()};
+    }));
+    const result=await compressWithCandidates(request,noEncode,undefined,async () => optimized);
+    expect(result.compressedBytes).toBe(original);
+  });
+
+  it('competes with lossy re-encoding, so a lossy pass never beats a smaller lossless one', async () => {
+    const optimized=jpeg(10);
+    const result=await compressWithCandidates({...request,lossy:true},async () => jpeg(30),undefined,async () => optimized);
+    expect(result.compressedBytes).toBe(optimized);
+    const smallerLossy=jpeg(2);
+    expect((await compressWithCandidates({...request,lossy:true},async () => smallerLossy,undefined,async () => optimized)).compressedBytes).toBe(smallerLossy);
+  });
+
+  it('never optimizes non-JPEG originals', async () => {
+    const optimize=vi.fn();
+    await compressWithCandidates({...base,lossy:false,outputFormat:'png'},async () => png(2,1,90),undefined,optimize);
+    expect(optimize).not.toHaveBeenCalled();
+  });
+});
+
 it('auto retains a valid original when the optional modern codec fails', async () => {
   const result=await compressWithCandidates(base, async () => { throw new Error('Codec unavailable'); });
   expect(result.compressedBytes).toBe(base.originalFileBytes);

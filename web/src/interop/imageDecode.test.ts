@@ -201,17 +201,30 @@ describe('local image decode boundary', () => {
     expect(PendingDecoder.instances.every(worker => worker.terminated)).toBe(true);
   });
 
-  it('reports HEIC as temporarily unavailable before admission or worker creation, including retry', async () => {
+  it.each([
+    ['clap-cropped', 451, 461],
+    ['clap-cropped and irot-rotated', 461, 451],
+  ])('admits HEIC and decodes it in the worker (%s)', async (_case, width, height) => {
     const bytes = new Uint8Array(await readFile(resolve('src/interop/codecs-fixtures/rainbow-451x461.heic')));
-    const admit = vi.fn();
-    for (let attempt=0;attempt<2;attempt++) {
-      const pending = decodeFile(new File(['image'],'input.heic'),undefined,{lossy:true,admit}).catch(error => error.message);
-      PendingReader.instances.at(-1)!.complete(bytes);
-      expect(await pending).toMatch(/temporarily unavailable.*security.*retry/i);
-    }
-    expect(admit).not.toHaveBeenCalled();
-    expect(PendingDecoder.instances).toHaveLength(0);
-    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    const admit = vi.fn(async () => {});
+    const pending = decodeFile(new File(['image'],'input.heic'),undefined,{lossy:true,admit});
+    PendingReader.instances[0].complete(bytes); await flush();
+    expect(admit).toHaveBeenCalledOnce();
+    const worker = PendingDecoder.instances[0];
+    expect(worker.postMessage.mock.calls[0][0].validateOnly).toBe(false);
+    const pixels = new Uint8Array(width*height*4), previewBytes = new Uint8Array([1]);
+    worker.onmessage?.({data:{pixels,width,height,previewBytes}});
+    const image = await pending;
+    expect([image.width,image.height,image.inputFormat]).toEqual([width,height,'heic']);
+    expect(image.pixels).toBe(pixels);
+  });
+
+  it('rejects HEIC pixels larger than the admitted preflight size in either orientation', async () => {
+    const bytes = new Uint8Array(await readFile(resolve('src/interop/codecs-fixtures/rainbow-451x461.heic')));
+    const pending = decodeFile(new File(['image'],'input.heic'),undefined,{lossy:true}).catch(error => error.message);
+    PendingReader.instances[0].complete(bytes); await flush();
+    PendingDecoder.instances[0].onmessage?.({data:{pixels:new Uint8Array(453*462*4),width:453,height:462,previewBytes:new Uint8Array([1])}});
+    expect(await pending).toMatch(/dimensions disagree/i);
   });
 
   it('rejects large main-thread raster fallback before loading an Image', async () => {

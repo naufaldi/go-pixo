@@ -51,12 +51,8 @@ test('native JPEG orientations 1..8 match preflight and unchanged byte dimension
   }
 });
 
-test('rotated 3000x4000 JPEG keeps exact bytes at displayed width 4000 and resizes to 5000x3750', async ({page}) => {
-  const goRequests: string[]=[];
-  page.on('request',request => { if (/\/(main\.wasm|wasm_exec\.js)(?:$|\?)/.test(request.url())) goRequests.push(request.url()); });
+test('rotated 3000x4000 JPEG keeps identical pixels at displayed width 4000 and resizes to 5000x3750', async ({page}) => {
   await page.goto('/');
-  // index.html loads the runtime script on page load; measure subsequent worker startup.
-  goRequests.length=0;
   await page.getByRole('checkbox',{name:'Perfect Quality'}).check();
   await page.getByRole('spinbutton',{name:'Target width'}).fill('4000');
   await page.evaluate(async segment => {
@@ -73,19 +69,24 @@ test('rotated 3000x4000 JPEG keeps exact bytes at displayed width 4000 and resiz
     input.files=transfer.files; input.dispatchEvent(new Event('change',{bubbles:true}));
   },Array.from(jpegExifSegment(6)));
   await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed');
+  // Perfect Quality may rewrite JPEG entropy coding, never pixels or orientation.
   const unchanged=await page.evaluate(async () => {
     const original=document.querySelector<HTMLImageElement>('img[alt="Original"]')!;
     const output=document.querySelector<HTMLImageElement>('img[alt="Compressed"]')!;
     await Promise.all([original.decode(),output.decode()]);
-    const beforeResponse=await fetch(original.src);
-    const afterResponse=await fetch(output.src);
-    const before=new Uint8Array(await beforeResponse.arrayBuffer());
-    const after=new Uint8Array(await afterResponse.arrayBuffer());
-    return {same:before.length===after.length && before.every((b,i) => b===after[i]),
+    const pixels=async (src: string) => {
+      const blob=await fetch(src).then(r => r.blob());
+      const bitmap=await createImageBitmap(blob);
+      const canvas=new OffscreenCanvas(bitmap.width,bitmap.height);
+      const context=canvas.getContext('2d')!; context.drawImage(bitmap,0,0); bitmap.close();
+      return {bytes:blob.size,mime:blob.type,data:context.getImageData(0,0,canvas.width,canvas.height).data};
+    };
+    const before=await pixels(original.src), after=await pixels(output.src);
+    return {samePixels:before.data.length===after.data.length && before.data.every((v,i) => v===after.data[i]),
+      notLarger:after.bytes<=before.bytes, mime:after.mime,
       original:[original.naturalWidth,original.naturalHeight],output:[output.naturalWidth,output.naturalHeight]};
   });
-  expect(unchanged).toEqual({same:true,original:[4000,3000],output:[4000,3000]});
-  expect(goRequests).toEqual([]);
+  expect(unchanged).toEqual({samePixels:true,notLarger:true,mime:'image/jpeg',original:[4000,3000],output:[4000,3000]});
 
   // The reviewer's lossless same-format width 3000 must require pixels, then report
   // the existing honest JPEG-encoding limitation instead of silently returning width 4000.

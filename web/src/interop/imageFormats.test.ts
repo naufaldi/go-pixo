@@ -34,6 +34,17 @@ describe('image byte preflight', () => {
     expect(() => inspectImage(webp)).toThrow(/animat/i);
     expect(() => inspectImage(bmff('avis'))).toThrow(/animat/i);
   });
+  it('treats HEIC as a sequence only when it has a moov track and no still image', () => {
+    const box = (tag: string, body: number[] = []) => [0,0,0,8+body.length,...ascii(tag),...body];
+    const ispe = box('ispe',[0,0,0,0, 0,0,0,4, 0,0,0,3]);
+    const heic = (brands: string, ...boxes: number[][]) =>
+      new Uint8Array([...box('ftyp',[...ascii(brands.slice(0,4)),0,0,0,0,...ascii(brands)]),...boxes.flat()]);
+    // libheif's examples/example.heic: major 'mif1', compatible 'mif1heichevc'.
+    const meta = box('meta',[0,0,0,0,...box('iprp',box('ipco',ispe))]);
+    expect(inspectImage(heic('mif1heichevc', meta))).toMatchObject({format:'heic', width:4, height:3});
+    expect(inspectImage(heic('msf1hevc', meta, box('moov')))).toMatchObject({format:'heic', width:4, height:3});
+    expect(() => inspectImage(heic('msf1hevc', box('moov', box('trak',ispe))))).toThrow(/animat/i);
+  });
   it('rejects oversized dimensions, corrupt data and external or animated SVG', () => {
     expect(() => inspectImage(png(100000,100000))).toThrow(/dimension|pixel/i);
     expect(() => inspectImage(new Uint8Array())).toThrow(/empty/i);

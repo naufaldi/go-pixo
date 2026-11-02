@@ -270,6 +270,12 @@ function recompressPngLossless(
   return unwrapWasmResult(result);
 }
 
+function optimizeJpegLossless(jpegBytes: Uint8Array): Uint8Array {
+  const optimize = (self as unknown as {optimizeJpegLossless?: (bytes: Uint8Array) => Uint8Array | string}).optimizeJpegLossless;
+  if (!optimize) throw new Error("optimizeJpegLossless not available");
+  return unwrapWasmResult(optimize(jpegBytes));
+}
+
 function compositeRgbaToRgbWhite(
   pixels: Uint8Array,
   width: number,
@@ -405,6 +411,10 @@ self.onmessage = async (event: MessageEvent) => {
       const validator = (self as unknown as {validateImageBytes(bytes: Uint8Array): boolean | string}).validateImageBytes;
       const result = validator(bytes);
       if (result !== true) throw new Error(typeof result === 'string' ? result.replace(/^error:\s*/, '') : 'Invalid image data');
+    }, async bytes => {
+      await initWasm();
+      postProgress('optimizing-jpeg',STAGE.ENCODING.start);
+      return optimizeJpegLossless(bytes);
     });
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end);
     const originalBytes=req.originalFileBytes?.length || req.pixels?.length || 0;

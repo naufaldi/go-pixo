@@ -44,6 +44,7 @@ const PHASE_LABELS: Record<string, string> = {
   resizing: 'Resizing',
   encoding: 'Encoding',
   'encoding-jpeg': 'Encoding JPEG...',
+  'optimizing-jpeg': 'Optimizing JPEG losslessly',
   finalizing: 'Finalizing',
   preprocess: 'Preprocessing',
   filtering: 'Filtering',

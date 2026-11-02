@@ -2,7 +2,13 @@ import avifEncodeWasm from '@jsquash/avif/codec/enc/avif_enc.wasm?url';
 import avifDecodeWasm from '@jsquash/avif/codec/dec/avif_dec.wasm?url';
 import type { AVIFModule as AvifEncoder } from '@jsquash/avif/codec/enc/avif_enc.js';
 import type { AVIFModule as AvifDecoder } from '@jsquash/avif/codec/dec/avif_dec.js';
-import { assertSafeDimensions, HEIC_UNAVAILABLE_MESSAGE, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
+// heic-to's package exports hide its standalone libheif build, so import the
+// file by path. It ships as its own unmodified LGPL asset (replaceable by users)
+// rather than heic-to's wrapper, which spawns a blob: worker and decodes without
+// our dimension preflight. This variant contains no eval/new Function.
+import heifModuleUrl from '../../node_modules/heic-to/src/lib/libheif-without-unsafe-eval.js?url';
+import { assertSafeDimensions, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
+import { assertDecodedDimensions, decodeNative } from './codecsNative';
 import { assertRgbaPixelBuffer } from './pixels';
 import { decodeTiffStrips } from './tiffStrips';
 
@@ -33,9 +39,86 @@ export async function encodeAvif(pixels: Uint8Array, width: number, height: numb
 
 export type DecodedPixels = {pixels: Uint8Array; width: number; height: number};
 
-export async function decodeHeic(_bytes: Uint8Array): Promise<DecodedPixels> {
-  // Keep the vulnerable libheif bundle unreachable until a patched wrapper exists.
-  throw new Error(HEIC_UNAVAILABLE_MESSAGE);
+type HeifImage = {handle: number; is_primary(): boolean; get_width(): number; get_height(): number; free(): void};
+type HeifContext = {decoder: number | null; decode(bytes: Uint8Array): HeifImage[]};
+type HeifDecoded = {code?: number; image: number; channels: {id: number; width: number; height: number; stride: number; data: Uint8Array}[]};
+type HeifModule = {
+  HeifDecoder: new () => HeifContext;
+  heif_colorspace_RGB: number; heif_chroma_interleaved_RGBA: number; heif_channel_interleaved: number;
+  heif_get_version(): string;
+  heif_js_decode_image2(handle: number, colorspace: number, chroma: number): Promise<HeifDecoded>;
+  heif_image_release(image: number): void;
+  heif_context_free(context: number): void;
+};
+let heifModule: Promise<HeifModule> | undefined;
+
+// libheif < 1.23.7 has known heap overflow / use-after-free bugs reachable from
+// crafted files. Refuse to decode with anything older, even if a lockfile drifts.
+export const MIN_LIBHEIF_VERSION = [1, 23, 7] as const;
+export function isPatchedLibheif(version: string): boolean {
+  const parts=version.split('.').map(Number);
+  if (parts.length<3 || parts.some(part=>!Number.isInteger(part))) return false;
+  for (let i=0;i<3;i++) if (parts[i]!==MIN_LIBHEIF_VERSION[i]) return parts[i]>MIN_LIBHEIF_VERSION[i];
+  return true;
+}
+
+async function loadLibheif(): Promise<HeifModule> {
+  // The unmodified LGPL module is emitted as its own asset and imported from
+  // that URL: no CDN or network dependency, and users can replace the file.
+  heifModule??=import(/* @vite-ignore */ heifModuleUrl).then(async module=>{
+    const lib: HeifModule=await module.default();
+    if (!isPatchedLibheif(lib.heif_get_version())) throw new Error('HEIC decoder is outdated. Export this image as JPEG or PNG and retry.');
+    return lib;
+  });
+  // A failed load must not poison every later HEIC attempt in this worker.
+  return heifModule.catch(error=>{ heifModule=undefined; throw error; });
+}
+
+// Safari/WebKit ship a hardware-backed HEIC decoder. Using it skips loading
+// ~3 MB of decoder script and is several times faster on phones. Browsers
+// without one reject quickly, and libheif decodes instead.
+async function decodeHeicNative(bytes: Uint8Array): Promise<DecodedPixels | undefined> {
+  if (typeof createImageBitmap!=='function' || typeof OffscreenCanvas!=='function') return undefined;
+  try {
+    const {pixels,width,height}=await decodeNative(bytes,false);
+    return pixels ? {pixels,width,height} : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function decodeHeic(bytes: Uint8Array): Promise<DecodedPixels> {
+  const info=inspectImage(bytes);
+  const native=await decodeHeicNative(bytes);
+  if (native) return native;
+  if ((info.bitDepth ?? 8)>8) throw new Error('Only 8-bit HEIC/HEIF images are supported in this browser');
+  const lib=await loadLibheif();
+  const context=new lib.HeifDecoder();
+  let images: HeifImage[]=[];
+  let decoded: HeifDecoded | undefined;
+  try {
+    images=context.decode(bytes);
+    // Thumbnails and grid tiles are not top-level images. When a file holds
+    // several, viewers show the primary one, so decode that.
+    const image=images.find(candidate=>candidate.is_primary()) ?? images[0];
+    if (!image) throw new Error('Invalid or unsupported HEIC/HEIF image');
+    const width=image.get_width(), height=image.get_height();
+    assertDecodedDimensions(info,width,height); // metadata handles, before HEVC decoding / RGBA allocation
+    decoded=await lib.heif_js_decode_image2(image.handle,lib.heif_colorspace_RGB,lib.heif_chroma_interleaved_RGBA);
+    if (!decoded || decoded.code) throw new Error('HEIC/HEIF pixel decoding failed');
+    const channel=decoded.channels.find(channel=>channel.id===lib.heif_channel_interleaved);
+    if (!channel || channel.width!==width || channel.height!==height || channel.stride<width*4 ||
+        channel.data.length<channel.stride*(height-1)+width*4) throw new Error('Invalid HEIC/HEIF pixel layout');
+    const rowBytes=width*4;
+    if (channel.stride===rowBytes) return {pixels:channel.data.slice(0,rowBytes*height),width,height};
+    const pixels=new Uint8Array(rowBytes*height);
+    for (let row=0;row<height;row++) pixels.set(channel.data.subarray(row*channel.stride,row*channel.stride+rowBytes),row*rowBytes);
+    return {pixels,width,height};
+  } finally {
+    if (decoded?.image) lib.heif_image_release(decoded.image);
+    images.forEach(image=>image.free());
+    if (context.decoder) { lib.heif_context_free(context.decoder); context.decoder=null; }
+  }
 }
 
 export async function decodeAvif(bytes: Uint8Array): Promise<DecodedPixels> {
