@@ -80,6 +80,16 @@ it('optimizes JPEG original bytes losslessly in Go and checks decoded pixels', a
   expect(messages.some(message => message.type === 'progress' && message.phase === 'optimizing-jpeg')).toBe(true);
   expect(canvas).not.toHaveBeenCalled();
 });
+it.each([[2, false], [1, true]])('lossy preset %i tries lossless JPEG recoding: %s', async (preset, tried) => {
+  const comment = (n: number) => new Uint8Array([255,216,255,254,0,n+2,...new Uint8Array(n),...jpeg.slice(2)]);
+  const {scope, messages, send} = await worker();
+  // The lossy result is barely smaller than the original, so only the preset decides.
+  scope.encodeJpegAdvanced = vi.fn(() => comment(7));
+  scope.optimizeJpegLossless = vi.fn(() => new Uint8Array(jpeg));
+  await send('jpeg', comment(8), {lossy: true, preset, pixels: new Uint8Array([1,2,3,255])});
+  expect(messages.find(message => message.type === 'compressed')).toBeDefined();
+  expect(scope.optimizeJpegLossless).toHaveBeenCalledTimes(tried ? 1 : 0);
+});
 it('keeps exact original JPEG bytes when the Go optimizer is unavailable', async () => {
   const {messages, send} = await worker();
   await send('jpeg', jpeg);

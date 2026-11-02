@@ -382,6 +382,13 @@ self.onmessage = async (event: MessageEvent) => {
       phaseTarget: mapPngPhaseToGlobal(phase,100),
       });
     };
+    // The Faster preset (2) favors speed, so lossy mode skips the extra lossless
+    // pass and its pixel check. Perfect Quality always tries it.
+    const optimizeOriginalJpeg=req.lossy && req.preset===2 ? undefined : async (bytes: Uint8Array) => {
+      await initWasm();
+      postProgress('optimizing-jpeg',STAGE.ENCODING.start);
+      return optimizeJpegLossless(bytes);
+    };
     const result=await compressWithCandidates({
       ...req,width:work.width,height:work.height,resized:size.resized,
     },async (format,fast)=>{
@@ -411,11 +418,7 @@ self.onmessage = async (event: MessageEvent) => {
       const validator = (self as unknown as {validateImageBytes(bytes: Uint8Array): boolean | string}).validateImageBytes;
       const result = validator(bytes);
       if (result !== true) throw new Error(typeof result === 'string' ? result.replace(/^error:\s*/, '') : 'Invalid image data');
-    }, async bytes => {
-      await initWasm();
-      postProgress('optimizing-jpeg',STAGE.ENCODING.start);
-      return optimizeJpegLossless(bytes);
-    });
+    }, optimizeOriginalJpeg);
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end);
     const originalBytes=req.originalFileBytes?.length || req.pixels?.length || 0;
     // Codec/Go boundaries have already copied borrowed memory. The selected
