@@ -19,8 +19,23 @@ it.each(['Enter', ' '])('leaves Remove %j activation uncancelled without selecti
   fireEvent.click(remove)
   expect(onRemove).toHaveBeenCalledWith('one')
   expect(onSelect).not.toHaveBeenCalled()
-  fireEvent.keyDown(remove.closest('[role="button"]')!, { key })
+  const select = screen.getByRole('button', { name: /one.png/ })
+  expect(select.tagName).toBe('BUTTON')
+  expect(select).toHaveAttribute('type', 'button')
+  expect(select.contains(remove)).toBe(false)
+  expect(fireEvent.keyDown(select, { key })).toBe(true)
+  fireEvent.click(select)
   expect(onSelect).toHaveBeenCalledWith('one')
+})
+
+it('exposes the selected file independently from its remove action', () => {
+  const { container } = render(createElement(FileQueue, {
+    items: [{ id: 'one', file: { name: 'one.png' }, status: 'Pending', kind: 'Png', originalBytes: 100 }],
+    selectedId: 'one', activeCompressions: [], onSelect() {}, onRemove() {}, onClearAll() {},
+  }))
+  expect(screen.getByRole('button', { name: /one.png/ })).toHaveAttribute('aria-current', 'true')
+  expect(container.querySelector('button button, [role="button"] button')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Files (1)' })).toHaveProperty('tagName', 'H2')
 })
 
 it('shows increased output bytes as a positive increase instead of negative savings', () => {

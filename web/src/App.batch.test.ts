@@ -49,12 +49,15 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 describe('bounded batch UI', () => {
   it('enables selected downloads only for a completed result and disables them during retry and failure', async () => {
     const { container } = render(createElement(App))
-    const primary = screen.getByTestId('download-primary')
-    const format = screen.getByRole('button', { name: 'Choose download format' })
-    expect(primary).toBeDisabled()
-    expect(format).toBeDisabled()
+    expect(screen.queryByTestId('download-primary')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Compress All' })).not.toBeInTheDocument()
+    expect(container.querySelectorAll('input[type=file]')).toHaveLength(1)
+    expect(container.querySelector('button button, [role="button"] button')).toBeNull()
     addFiles(container, ['one.png'])
     await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1))
+    const primary = screen.getByTestId('download-primary')
+    const format = screen.getByRole('button', { name: 'Choose download format' })
+    expect(container.querySelectorAll('input[type=file]')).toHaveLength(1)
     expect(primary).toBeDisabled()
     expect(format).toBeDisabled()
     await act(async () => AppWorker.instances[0].complete('png'))
@@ -263,7 +266,7 @@ describe('bounded batch UI', () => {
     addFiles(container, ['misleading.png'])
     await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1))
     expect(AppWorker.instances.flatMap(worker => worker.messages).find(m => m.type === 'compress').format).toBe('jpeg')
-    expect(screen.getByText('Input: JPEG')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Files' })).toHaveTextContent('JPEG')
   })
 
   it('passes Auto through to the engine and keeps same-as-input as the default', async () => {
