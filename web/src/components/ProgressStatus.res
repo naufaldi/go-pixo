@@ -18,7 +18,7 @@ let make = (~progress: Types.compressionProgress, ~compact=false) => {
       ariaValuenow=?{percent->Option.map(Int.toFloat)}
       className="w-full bg-neutral-800 rounded-full h-2 overflow-hidden">
       <div className={switch percent {
-        | Some(_) => "bg-blue-500 h-2 rounded-full transition-all duration-150"
+        | Some(_) => "bg-blue-500 h-2 rounded-full transition-[width] motion-reduce:transition-none duration-150"
         | None => "bg-blue-500 h-2 rounded-full w-1/3 animate-pulse motion-reduce:animate-none"
       }} style={ReactDOM.Style._dictToStyle(Dict.fromArray(switch percent {
         | Some(value) => [("width", Int.toString(value) ++ "%")]

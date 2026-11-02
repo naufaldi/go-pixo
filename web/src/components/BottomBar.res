@@ -19,6 +19,7 @@ let make = (
   ~onPresetChange,
   ~onLosslessChange,
   ~onDownload,
+  ~canDownload: bool,
   ~onDownloadFormat: outputFormat => unit,
   ~onDownloadAll,
   ~onDownloadZip: unit => unit,
@@ -67,7 +68,7 @@ let make = (
 
   <div
     dataTestId="bottom-bar"
-    className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-4 py-3 z-50">
+    className="relative mt-8 bg-neutral-900 border-t border-neutral-800 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] z-50">
     <div className="max-w-6xl mx-auto flex flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-w-0 flex-1">
@@ -79,7 +80,7 @@ let make = (
                 | "auto" => AutoSmallest | "png" => ForcePng | "jpeg" => ForceJpeg
                 | "webp" => ForceWebp | "avif" => ForceAvif | _ => SameAsInput
               })
-            }} className="max-w-44 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-neutral-200">
+            }} className="min-h-11 max-w-44 rounded border border-neutral-600 bg-neutral-800 px-2 py-1 text-neutral-200">
               <option value="same">{React.string("Same as input")}</option>
               <option value="auto">{React.string("Auto (smallest tested)")}</option>
               <option value="png">{React.string("PNG")}</option>
@@ -109,7 +110,7 @@ let make = (
                 | _ => onTargetWidthChange(None)
                 }
               }}
-              className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+              className="min-h-11 w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
             />
             <span className="text-xs text-neutral-600">{React.string("×")}</span>
             <input
@@ -130,7 +131,7 @@ let make = (
                 | _ => onTargetHeightChange(None)
                 }
               }}
-              className="w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
+              className="min-h-11 w-16 text-xs bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-2 py-0.5"
             />
             <span className="text-xs text-neutral-600">{React.string("px")}</span>
           </div>
@@ -144,7 +145,7 @@ let make = (
           }}
         </div>
         <div className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-1">
-          <label className="flex items-center gap-2 cursor-pointer" title="Lossless encoding; resize changes image dimensions">
+          <label className="min-h-11 flex items-center gap-2 cursor-pointer" title="Lossless encoding; resize changes image dimensions">
             <input
               type_="checkbox"
               checked=lossless
@@ -160,20 +161,22 @@ let make = (
             <button
               type_="button"
               dataTestId="download-primary"
+              disabled={!canDownload}
               onClick={_ => onDownload()}
-              className="text-sm bg-white text-neutral-900 px-3 py-1 rounded-l font-medium hover:bg-neutral-100 transition-colors border-r border-neutral-200">
+              className="min-h-11 min-w-11 disabled:opacity-50 disabled:cursor-not-allowed text-sm bg-white text-neutral-900 px-3 py-1 rounded-l font-medium hover:bg-neutral-100 transition-colors motion-reduce:transition-none border-r border-neutral-200">
               {React.string("Download")}
             </button>
             <button
               type_="button"
               dataTestId="download-format-toggle"
+              disabled={!canDownload}
               ariaExpanded={downloadMenuOpen}
               ariaLabel="Choose download format"
               onClick={_ => setDownloadMenuOpen(prev => !prev)}
-              className="text-sm bg-white text-neutral-900 px-2 py-1 rounded-r font-medium hover:bg-neutral-100 transition-colors">
+              className="min-h-11 min-w-11 disabled:opacity-50 disabled:cursor-not-allowed text-sm bg-white text-neutral-900 px-2 py-1 rounded-r font-medium hover:bg-neutral-100 transition-colors motion-reduce:transition-none">
               {React.string("▾")}
             </button>
-            {downloadMenuOpen
+            {downloadMenuOpen && canDownload
               ? <div
                   className="absolute bottom-full right-0 mb-1 min-w-36 rounded border border-neutral-700 bg-neutral-800 py-1 shadow-lg">
                   {downloadFormats->Array.map(((label, fmt)) =>
@@ -185,7 +188,7 @@ let make = (
                         setDownloadMenuOpen(_ => false)
                         onDownloadFormat(fmt)
                       }}
-                      className="block w-full text-left text-xs px-3 py-1.5 text-neutral-200 hover:bg-neutral-700 transition-colors">
+                      className="min-h-11 block w-full text-left text-xs px-3 py-1.5 text-neutral-200 hover:bg-neutral-700 transition-colors motion-reduce:transition-none">
                       {React.string("Download as " ++ label)}
                     </button>
                   )->React.array}
@@ -197,7 +200,7 @@ let make = (
             disabled=processingAll
             onClick={_ => onCompressAll()}
             className={
-              "text-sm px-3 py-1 rounded font-medium transition-colors " ++
+              "min-h-11 text-sm px-3 py-1 rounded font-medium transition-colors motion-reduce:transition-none " ++
               if processingAll {
                 "bg-neutral-700 text-neutral-500 cursor-not-allowed"
               } else {
@@ -211,7 +214,7 @@ let make = (
                 type_="button"
                 disabled=processingAll
                 onClick={_ => onDownloadAll()}
-                className="text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors disabled:cursor-wait disabled:opacity-50">
+                className="min-h-11 text-sm bg-neutral-800 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-700 transition-colors motion-reduce:transition-none disabled:cursor-wait disabled:opacity-50">
                 {React.string(if failedCount > 0 { "Download successful files (" ++ Int.toString(completedCount) ++ ")" } else { "Download All" })}
               </button>
             : React.null}
@@ -221,7 +224,7 @@ let make = (
                 disabled={processingAll || exportingZip}
                 ariaBusy=exportingZip
                 onClick={_ => onDownloadZip()}
-                className="text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors disabled:cursor-wait disabled:opacity-50">
+                className="min-h-11 text-sm bg-neutral-700 text-neutral-200 px-3 py-1 rounded font-medium hover:bg-neutral-600 transition-colors motion-reduce:transition-none disabled:cursor-wait disabled:opacity-50">
                 {React.string(if exportingZip { "Exporting ZIP..." } else if failedCount > 0 { "Download ZIP (" ++ Int.toString(completedCount) ++ " successful)" } else { "Download ZIP" })}
               </button>
             : React.null}
@@ -240,12 +243,14 @@ let make = (
         </div>
         <input
           type_="range"
+          ariaLabel="Compression preset"
+          ariaValuetext={presetLabel(preset)}
           min="0"
           max="3"
           step=1.0
           value={Int.toString(sliderValue)}
           onChange=handleSliderChange
-          className="w-full min-w-48 h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-white"
+          className="w-full min-w-0 min-h-11 rounded-lg cursor-pointer accent-white"
         />
         <div className="flex justify-between mt-0.5">
           <span className="text-xs text-neutral-500">{React.string("Smaller file")}</span>

@@ -43,12 +43,35 @@ let make = () => {
   }
   let pendingDownloadRef = React.useRef(None: option<string>)
   let zipExportRef = React.useRef(None: option<Download.abortController>)
+  let downloadExportRef = React.useRef(None: option<Download.abortController>)
+  let cancelDownloadExport = () => {
+    let previous = downloadExportRef.current
+    downloadExportRef.current = None
+    previous->Option.forEach(Download.abort)
+  }
   let cancelZipExport = () => {
     let previous = zipExportRef.current
     // Invalidate ownership before abort can settle any old callbacks.
     zipExportRef.current = None
     previous->Option.forEach(Download.abort)
     if previous->Option.isSome && mountedRef.current { dispatch(SetExportingZip(false)) }
+  }
+  let runDownload = operation => {
+    cancelZipExport()
+    cancelDownloadExport()
+    let controller = Download.createAbortController()
+    downloadExportRef.current = Some(controller)
+    dispatch(SetDownloadError(None))
+    let ownsExport = () => mountedRef.current && downloadExportRef.current->Option.map(current => current === controller)->Option.getOr(false)
+    operation(Download.signal(controller))
+    ->Promise.catch(error => {
+      if ownsExport() { dispatch(SetDownloadError(Some(errorMessage(error)))) }
+      Promise.resolve()
+    })
+    ->Promise.then(_ => {
+      if ownsExport() { downloadExportRef.current = None }
+      Promise.resolve()
+    })->ignore
   }
   // Async callbacks read the latest committed intent; work snapshots settings at start.
   stateRef.current = state
@@ -58,6 +81,7 @@ let make = () => {
     poolRef.current = Some(createPool())
     Some(() => {
       mountedRef.current = false
+      cancelDownloadExport()
       cancelZipExport()
       epochRef.current = epochRef.current + 1
       abortTasks(tasks)
@@ -130,7 +154,7 @@ let make = () => {
             }))
             if pendingDownloadRef.current == Some(item.id) {
               pendingDownloadRef.current = None
-              Download.downloadBlob(url, CompressionSettings.buildCompressedFilename(Types.Web.File.name(item.file), extension))
+              runDownload(signal => Download.downloadBlob(url, Download.buildCompressedFilename(Types.Web.File.name(item.file), extension), ~signal))
             }
           }
           Promise.resolve()
@@ -174,6 +198,7 @@ let make = () => {
 
   let handleFileSelect = files => {
     if files->Array.length > 0 {
+      cancelDownloadExport()
       cancelZipExport()
       dispatch(AddItems(files->Array.map(createQueueItem)))
     }
@@ -203,6 +228,7 @@ let make = () => {
     poolRef.current = Some(createPool())
   }
   let applySettingChange = update => {
+    cancelDownloadExport()
     cancelZipExport()
     pendingDownloadRef.current = None
     resetPool()
@@ -210,6 +236,7 @@ let make = () => {
     dispatch(RequeueProcessedItemsForSettings)
   }
   let handleRemove = id => {
+    cancelDownloadExport()
     cancelZipExport()
     removeTask(tasks, id)
     stateRef.current.items->Array.find(item => item.id == id)->Option.forEach(item =>
@@ -217,7 +244,7 @@ let make = () => {
     if pendingDownloadRef.current == Some(id) { pendingDownloadRef.current = None }
     dispatch(RemoveItem(id))
   }
-  let handleClear = () => { cancelZipExport(); resetPool(); pendingDownloadRef.current = None; dispatch(ClearAll) }
+  let handleClear = () => { cancelDownloadExport(); cancelZipExport(); resetPool(); pendingDownloadRef.current = None; dispatch(ClearAll) }
   let selectedItem = state.items->Array.find(item => Some(item.id) == state.selectedId)
   let hasActive = state.items->Array.some(item => switch item.status {
     | Types.Pending | Types.Decoding | Types.Compressing => true
@@ -255,7 +282,7 @@ let make = () => {
   let handleDownload = () => selectedItem->Option.forEach(item => {
     switch (item.status, item.compressedUrl, item.compressedExtension) {
     | (Types.Done, Some(url), Some(extension)) =>
-      Download.downloadBlob(url, CompressionSettings.buildCompressedFilename(Types.Web.File.name(item.file), extension))
+      runDownload(signal => Download.downloadBlob(url, Download.buildCompressedFilename(Types.Web.File.name(item.file), extension), ~signal))
     | (Types.Done, _, _) | (Types.Pending | Types.Decoding | Types.Compressing | Types.Error(_), _, _) => ()
     }
   })
@@ -268,10 +295,11 @@ let make = () => {
     }
   })
   let handleDownloadAll = () => {
-    if !hasActive && completedCount > 0 { Download.downloadAll(state.items) }
+    if !hasActive && completedCount > 0 { runDownload(signal => Download.downloadAll(state.items, ~signal)) }
   }
   let handleDownloadZip = () => {
     if !hasActive && completedCount > 0 && zipExportRef.current->Option.isNone {
+      cancelDownloadExport()
       let controller = Download.createAbortController()
       // Reserve synchronously; React may batch multiple clicks before rendering.
       zipExportRef.current = Some(controller)
@@ -319,7 +347,7 @@ let make = () => {
     if !hasActive { applySettingChange(() => ()) }
   }
 
-  <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100 pb-72 sm:pb-48 lg:pb-36">
+  <div className="min-h-screen flex flex-col bg-neutral-950 text-neutral-100">
     <header className="pt-8 pb-6 px-4 sm:px-6 text-center">
       <h1 className="text-4xl font-black tracking-tight text-neutral-100 mb-2">{React.string("Go-Pixo")}</h1>
       <p className="text-neutral-400">{React.string("Private batch image compression. PNG and JPEG powered by Go & WASM.")}</p>
@@ -328,7 +356,7 @@ let make = () => {
         <span>{React.string("Runs locally on your device")}</span>
         <span>{React.string("No data sent to servers")}</span>
       </div>
-      <p className="mt-3 text-xs text-neutral-500">{React.string("PNG, JPEG, WebP, AVIF, HEIC, TIFF, GIF, BMP and SVG inputs. Still images only; up to 24 MP and 64 MiB.")}</p>
+      <p className="mt-3 text-xs text-neutral-500">{React.string("PNG, JPEG, WebP, AVIF, TIFF, GIF, BMP and SVG inputs. Still images only; up to 24 MP and 64 MiB. HEIC/HEIF is temporarily unavailable.")}</p>
     </header>
     <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pb-6">
       {switch selectedItem {
@@ -336,9 +364,9 @@ let make = () => {
         let itemProgress = state.activeCompressions->Array.find(((id, _)) => id == item.id)->Option.map(((_, p)) => p)
         switch item.status {
         | Types.Error(message) =>
-          <div role="alert" className="my-8 rounded-lg border border-red-800 bg-red-950/20 p-6 text-red-300">
+          <div role="alert" className="my-8 [overflow-wrap:anywhere] rounded-lg border border-red-800 bg-red-950/20 p-6 text-red-300">
             <p>{React.string(Types.Web.File.name(item.file) ++ ": " ++ message)}</p>
-            <button onClick={_ => handleRemove(item.id)} className="mt-3 text-sm underline">{React.string("Remove image")}</button>
+            <button onClick={_ => handleRemove(item.id)} className="min-h-11 min-w-11 mt-3 text-sm underline">{React.string("Remove image")}</button>
           </div>
         | Types.Pending | Types.Decoding | Types.Compressing | Types.Done => <CompareView originalUrl={item.originalUrl} compressedUrl={item.compressedUrl}
             originalBytes={item.originalBytes} compressedBytes={item.compressedBytes}
@@ -349,7 +377,7 @@ let make = () => {
           onDragLeave=handleDragLeave onDrop=handleDrop onFileSelect=handleFileSelect />
       }}
       {state.items->Array.length > 0 ? <div className="mt-6 space-y-3">
-        <label className="inline-flex cursor-pointer rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900">
+        <label className="min-h-11 items-center inline-flex cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-neutral-300 rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900">
           {React.string("Add images")}
           <input type_="file" multiple=true accept=Types.acceptedImageTypes className="sr-only" onChange={e => {
             handleFileSelect(selectedFiles(e))
@@ -362,7 +390,7 @@ let make = () => {
         </p>
       </div> : React.null}
       {switch state.downloadError {
-      | Some(message) => <p role="alert" className="mt-3 text-sm text-red-400">{React.string("ZIP download failed: " ++ message)}</p>
+      | Some(message) => <p role="alert" className="mt-3 text-sm text-red-400">{React.string("Download failed: " ++ message)}</p>
       | None => React.null
       }}
       <FileQueue items={state.items} selectedId={state.selectedId} compressionProgress=None activeCompressions={state.activeCompressions}
@@ -371,6 +399,7 @@ let make = () => {
     <BottomBar format=outputFormatText outputFormat={state.outputFormat} onOutputFormatChange={fmt => applySettingChange(() => dispatch(SetOutputFormat(fmt)))}
       preset={state.preset} lossless={state.lossless} onPresetChange={preset => applySettingChange(() => dispatch(SetPreset(preset)))}
       onLosslessChange={lossless => applySettingChange(() => { dispatch(SetLossless(lossless)); dispatch(SetQuantization(if lossless { Types.Lossless } else { Types.Colors256 })) })}
+      canDownload={selectedItem->Option.map(item => item.status == Types.Done && item.compressedUrl->Option.isSome && item.compressedExtension->Option.isSome)->Option.getOr(false)}
       onDownload=handleDownload onDownloadFormat=handleDownloadFormat onDownloadAll=handleDownloadAll onDownloadZip=handleDownloadZip exportingZip={state.exportingZip}
       hasCompletedItems={completedCount > 0} completedCount failedCount=errorCount appliedOptimizations processingAll=hasActive onCompressAll=handleCompressAll
       targetWidth=displayWidth targetHeight=displayHeight onTargetWidthChange=handleTargetWidthChange onTargetHeightChange=handleTargetHeightChange />

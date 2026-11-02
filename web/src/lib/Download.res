@@ -7,10 +7,13 @@ type abortSignal
 @get external signal: abortController => abortSignal = "signal"
 
 @module("../interop/download")
-external downloadBlob: (string, string) => unit = "downloadBlob"
+external buildCompressedFilename: (string, string) => string = "buildCompressedFilename"
 
 @module("../interop/download")
-external downloadAll: array<queueItem> => unit = "downloadAll"
+external downloadBlob: (string, string, ~signal: abortSignal=?) => promise<unit> = "downloadBlob"
+
+@module("../interop/download")
+external downloadAll: (array<queueItem>, ~signal: abortSignal=?) => promise<unit> = "downloadAll"
 
 @module("../interop/download")
 external downloadAllAsZip: (array<queueItem>, ~signal: abortSignal=?) => promise<unit> = "downloadAllAsZip"

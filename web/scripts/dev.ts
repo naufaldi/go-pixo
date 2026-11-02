@@ -37,8 +37,8 @@ const kill = (proc: Child, label: string) => {
   }
 }
 
-const pipeStream = async (label: string, stream: ReadableStream | null, capture: string[]) => {
-  if (!stream) return
+const pipeStream = async (_label: string, stream: ReadableStream | number | null | undefined, capture: string[]) => {
+  if (!stream || typeof stream === "number") return
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   while (true) {

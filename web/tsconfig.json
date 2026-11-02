@@ -4,7 +4,7 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "node", "vitest/globals"],
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -13,6 +13,9 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
+    /* Infer imports from generated ReScript JavaScript without checking its output. */
+    "allowJs": true,
+    "checkJs": false,
 
     /* Linting */
     "strict": true,
@@ -22,5 +25,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "build/**/*.ts", "e2e/**/*.ts", "*.config.ts"]
 }

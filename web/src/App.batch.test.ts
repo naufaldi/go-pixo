@@ -3,9 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { createElement } from 'react'
 import { make as App } from './App.res.js'
 
-const { decodeFile, downloadAll, downloadAllAsZip } = vi.hoisted(() => ({ decodeFile: vi.fn(), downloadAll: vi.fn(), downloadAllAsZip: vi.fn() }))
+const { decodeFile, downloadAll, downloadAllAsZip, downloadBlob } = vi.hoisted(() => ({ decodeFile: vi.fn(), downloadAll: vi.fn(), downloadAllAsZip: vi.fn(), downloadBlob: vi.fn() }))
 vi.mock('./interop/imageDecode', () => ({ decodeFile }))
-vi.mock('./interop/download', () => ({ downloadAll, downloadAllAsZip, downloadBlob: vi.fn() }))
+vi.mock('./interop/download', async importOriginal => ({ ...await importOriginal<typeof import('./interop/download')>(), downloadAll, downloadAllAsZip, downloadBlob }))
 
 class AppWorker {
   static instances: AppWorker[] = []
@@ -40,12 +40,39 @@ beforeEach(() => {
   })
   vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(8)
   decodeFile.mockReset().mockImplementation(async () => decoded())
-  downloadAll.mockReset()
+  downloadAll.mockReset().mockResolvedValue(undefined)
+  downloadBlob.mockReset().mockResolvedValue(undefined)
   downloadAllAsZip.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('bounded batch UI', () => {
+  it('enables selected downloads only for a completed result and disables them during retry and failure', async () => {
+    const { container } = render(createElement(App))
+    const primary = screen.getByTestId('download-primary')
+    const format = screen.getByRole('button', { name: 'Choose download format' })
+    expect(primary).toBeDisabled()
+    expect(format).toBeDisabled()
+    addFiles(container, ['one.png'])
+    await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1))
+    expect(primary).toBeDisabled()
+    expect(format).toBeDisabled()
+    await act(async () => AppWorker.instances[0].complete('png'))
+    expect(primary).toBeEnabled()
+    expect(format).toBeEnabled()
+    decodeFile.mockRejectedValueOnce(new Error('Invalid image'))
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(primary).toBeDisabled()
+    expect(format).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Invalid image'))
+    expect(primary).toBeDisabled()
+    expect(format).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Compress All' }))
+    await waitFor(() => expect(AppWorker.instances.filter(worker => !worker.terminated).flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1))
+    await act(async () => AppWorker.instances.find(worker => !worker.terminated)!.complete('png'))
+    expect(primary).toBeEnabled()
+  })
+
   it('holds a large image workspace through compression, then lets the waiting image rasterize', async () => {
     const actual = await vi.importActual<typeof import('./interop/imageDecode')>('./interop/imageDecode');
     const bytes = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,15,160,0,0,11,184,8,6,0,0,0,0,0,0,0]); // 4000 x 3000
@@ -54,25 +81,19 @@ describe('bounded batch UI', () => {
       onload?: () => void;
       readAsArrayBuffer() { this.onload?.() }
     }
-    class Image {
-      static instances: Image[] = [];
-      naturalWidth = 4000; naturalHeight = 3000; src = '';
-      onload?: () => void; onerror?: () => void;
-      constructor() { Image.instances.push(this) }
-    }
-    vi.stubGlobal('FileReader', Reader); vi.stubGlobal('Image', Image);
+    vi.stubGlobal('FileReader', Reader);
     decodeFile.mockImplementation(actual.decodeFile);
     const {container} = render(createElement(App));
     addFiles(container, ['large-one.png','large-two.png']);
     await waitFor(() => expect(decodeFile).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(Image.instances).toHaveLength(1));
-    // Keep the synthetic raster tiny. The worker double isolates admission from codec allocation.
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({drawImage() {}, getImageData: () => ({data: new Uint8ClampedArray(4)})} as any);
-    await act(async () => Image.instances[0].onload?.());
+    await waitFor(() => expect(AppWorker.instances).toHaveLength(1));
+    const decoder = AppWorker.instances[0];
+    await act(async () => decoder.onmessage?.({data: {width:4000,height:3000,pixels:new Uint8Array(4000*3000*4)}}));
     await waitFor(() => expect(AppWorker.instances.flatMap(worker => worker.messages).filter(m => m.type === 'compress')).toHaveLength(1));
-    expect(Image.instances).toHaveLength(1); // Decode completion alone cannot release the budget.
-    await act(async () => AppWorker.instances[0].complete('png'));
-    await waitFor(() => expect(Image.instances).toHaveLength(2));
+    expect(AppWorker.instances.filter(worker => worker.messages.some(message => message.bytes))).toHaveLength(1);
+    // Decode completion alone cannot release the workspace held through compression.
+    await act(async () => AppWorker.instances.find(worker => worker.messages.some(message => message.type === 'compress'))!.complete('png'));
+    await waitFor(() => expect(AppWorker.instances.filter(worker => worker.messages.some(message => message.bytes))).toHaveLength(2));
   });
 
   it.each(['read', 'native', 'bundled'].flatMap(stage => ['remove', 'clear', 'unmount'].map(action => ({stage, action}))))('$action during actual $stage decoding releases resources and promptly refills admission', async ({stage, action}) => {
@@ -107,7 +128,7 @@ describe('bounded batch UI', () => {
     decodeFile.mockImplementation(actual.decodeFile)
     const {container, unmount} = render(createElement(App))
     addFiles(container)
-    await waitFor(() => expect(stage === 'read' ? Reader.instances : stage === 'native' ? Image.instances : AppWorker.instances).toHaveLength(2))
+    await waitFor(() => expect(stage === 'read' ? Reader.instances : AppWorker.instances).toHaveLength(2))
     if (action === 'remove') fireEvent.click(screen.getAllByRole('button', {name: 'Remove image'})[0])
     if (action === 'clear') {
       fireEvent.click(screen.getByRole('button', {name: 'Clear all'}))
@@ -116,11 +137,7 @@ describe('bounded batch UI', () => {
     if (action === 'unmount') unmount()
     const count = action === 'remove' ? 1 : 2
     if (stage === 'read') expect(Reader.instances.slice(0, count).every(reader => reader.aborted)).toBe(true)
-    if (stage === 'native') {
-      expect(Image.instances.slice(0, count).every(image => image.src === '' && image.onload === null)).toBe(true)
-      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(count)
-    }
-    if (stage === 'bundled') expect(AppWorker.instances.slice(0, count).every(worker => worker.terminated)).toBe(true)
+    if (stage !== 'read') expect(AppWorker.instances.slice(0, count).every(worker => worker.terminated)).toBe(true)
     if (action !== 'unmount') await waitFor(() => expect(Reader.instances).toHaveLength(3))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     unmount()
@@ -340,6 +357,45 @@ const readyForZip = async () => {
   return view
 }
 
+describe('individual download lifecycle', () => {
+  it.each(['clear', 'remove', 'settings', 'unmount', 'zip'] as const)('%s cancels the active batch before releasing its inputs and ignores stale failure', async action => {
+    let signal!: AbortSignal
+    let reject!: (error: Error) => void
+    downloadAll.mockImplementation((_items, exportSignal) => {
+      signal = exportSignal
+      return new Promise<void>((_resolve, fail) => { reject = fail })
+    })
+    const {unmount} = await readyForZip()
+    fireEvent.click(screen.getByRole('button', {name:'Download All'}))
+    const abortedAtRevoke: boolean[] = []
+    vi.mocked(URL.revokeObjectURL).mockImplementation(() => abortedAtRevoke.push(signal.aborted))
+    await act(async () => {
+      if (action === 'clear') fireEvent.click(screen.getByRole('button', {name:'Clear all'}))
+      if (action === 'remove') fireEvent.click(screen.getAllByRole('button', {name:'Remove image'})[0])
+      if (action === 'settings') fireEvent.click(screen.getByRole('checkbox'))
+      if (action === 'zip') fireEvent.click(screen.getByRole('button', {name:'Download ZIP'}))
+      if (action === 'unmount') unmount()
+    })
+    expect(signal.aborted).toBe(true)
+    if (action !== 'zip') {
+      expect(abortedAtRevoke.length).toBeGreaterThan(0)
+      expect(abortedAtRevoke.every(Boolean)).toBe(true)
+    }
+    await act(async () => reject(new Error('Stale download failed')))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('reports individual download failure and permits retry', async () => {
+    downloadBlob.mockRejectedValueOnce(new Error('Read failed'))
+    await readyForZip()
+    fireEvent.click(screen.getByTestId('download-primary'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Download failed: Read failed'))
+    fireEvent.click(screen.getByTestId('download-primary'))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(downloadBlob).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('ZIP export lifecycle', () => {
   it('shows busy state, suppresses duplicate clicks and allows another export after completion', async () => {
     let finish!: () => void
@@ -363,7 +419,7 @@ describe('ZIP export lifecycle', () => {
     downloadAllAsZip.mockRejectedValue(new Error('Read failed'))
     await readyForZip()
     fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('ZIP download failed: Read failed'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Download failed: Read failed'))
     expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeEnabled()
   })
 

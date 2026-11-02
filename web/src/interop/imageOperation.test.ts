@@ -27,11 +27,28 @@ it('does not silently keep displayed width 4000 when lossless JPEG requests widt
 });
 it('uses displayed dimensions for unchanged JPEG eligibility', () => {
   expect(imageOperation(inspectImage(jpegWithExif(3000,4000,6)), {lossy:false,targetWidth:4000})).toMatchObject({
-    kind:'original',width:4000,height:3000,resized:false,workspaceBytes:0,
+    kind:'original',width:4000,height:3000,resized:false,workspaceBytes:384_000_000,
   });
+});
+
+it('charges decode validation for byte-only operations and preserves high-bit-depth PNG without rasterizing', () => {
+  expect(imageOperation({format:'png',width:2,height:1,bitDepth:16},{lossy:false})).toMatchObject({
+    kind:'png-bytes',workspaceBytes:64,
+  });
+  expect(imageOperation({format:'png',width:2,height:1,bitDepth:16},{lossy:false,outputFormat:'auto'}).kind).toBe('png-bytes');
+  expect(() => imageOperation({format:'png',width:2,height:1,bitDepth:16},{lossy:false,targetWidth:1})).toThrow(/8-bit pixel pipeline/);
 });
 it('rejects an oversized display resize even when stored-axis planning would fit', () => {
   expect(() => imageOperation(inspectImage(jpegWithExif(4000,3000,6)), {lossy:true,targetWidth:5000})).toThrow(/dimension|pixel/i);
+});
+
+it.each([10,12])('keeps unchanged %i-bit AVIF in the original-byte path', bitDepth => {
+  const info = {format:'avif' as const,width:2,height:1,bitDepth};
+  for (const outputFormat of ['same','avif','auto'] as const) {
+    expect(imageOperation(info,{lossy:false,outputFormat}).kind).toBe('original');
+  }
+  expect(() => imageOperation(info,{lossy:false,targetWidth:1})).toThrow(/8-bit pixel pipeline/);
+  expect(() => imageOperation(info,{lossy:false,outputFormat:'png'})).toThrow(/8-bit pixel pipeline/);
 });
 
 it.each([

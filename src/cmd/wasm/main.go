@@ -20,6 +20,7 @@ func main() {
 	js.Global().Set("recompressPngLossless", js.FuncOf(wasm.HandleRecompressPngLossless))
 	js.Global().Set("recompressJpeg", js.FuncOf(wasm.HandleRecompressJpeg))
 	js.Global().Set("bytesPerPixel", js.FuncOf(wasm.HandleBytesPerPixel))
+	js.Global().Set("validateImageBytes", js.FuncOf(wasm.HandleValidateImageBytes))
 
 	// Signal that the WASM is ready
 	if initFunc := js.Global().Get("goWasmInit"); initFunc.Truthy() {

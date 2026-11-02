@@ -1,5 +1,7 @@
 import { compressionCandidates, resolveOutputFormat, selectCompressionResult, type CompressionResult, type InputFormat, type OutputFormatChoice, type ResolvedFormat } from './compressionSettings';
 import { assertSafeDimensions, imageDisplayDimensions, inspectImage } from './imageFormats';
+import { assertDecodedDimensions, decodeNative } from './codecsNative';
+import {decodeAvif} from './codecs';
 
 export type CandidateRequest = {
   format: InputFormat; outputFormat?: OutputFormatChoice; lossy: boolean;
@@ -9,6 +11,7 @@ export type CandidateRequest = {
 export async function compressWithCandidates(
   request: CandidateRequest,
   encode: (format: ResolvedFormat, fast: boolean) => Promise<Uint8Array>,
+  validateFallback?: (bytes: Uint8Array) => Promise<void>,
 ): Promise<CompressionResult> {
   assertSafeDimensions(request.width,request.height);
   const source=request.originalFileBytes?.length ? inspectImage(request.originalFileBytes) : undefined;
@@ -21,6 +24,21 @@ export async function compressWithCandidates(
     (choice==='auto' || resolveOutputFormat(input,choice)===input)
       ? {compressedBytes:request.originalFileBytes,outputFormat:input as ResolvedFormat} : undefined;
 
+  // This worker boundary also receives byte-only requests; headers alone do not
+  // establish that an original candidate contains a decodable image.
+  if (original) {
+    if (input === 'avif') {
+      const decoded = await decodeAvif(original.compressedBytes);
+      assertDecodedDimensions(source!, decoded.width, decoded.height);
+    } else if (typeof createImageBitmap === 'function') {
+      await decodeNative(original.compressedBytes, true);
+    } else if (validateFallback) {
+      await validateFallback(original.compressedBytes);
+    } else {
+      throw new Error('Image validation requires a supported decoder');
+    }
+  }
+
   if (!request.lossy && (source?.bitDepth ?? 8)>8) {
     if (original) return original;
     throw new Error('Lossless high-bit-depth conversion or resizing is unavailable in the 8-bit pixel pipeline. Keep the original format or enable lossy compression.');
@@ -28,7 +46,7 @@ export async function compressWithCandidates(
 
   // The Go JPEG byte path re-encodes pixels. Native WebP has no lossless switch.
   // Keeping the original is the only honest same-format lossless option for these codecs.
-  if (!request.lossy && original && choice!=='auto' && (input==='jpeg' || input==='webp')) return original;
+  if (!request.lossy && original && choice!=='auto' && (input==='jpeg' || input==='webp' || input==='avif')) return original;
 
   const formats=compressionCandidates(input,choice,!request.lossy);
   const candidates: CompressionResult[]=[];

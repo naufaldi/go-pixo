@@ -40,7 +40,7 @@ let make = (
         </h3>
         <button
           onClick={_ => onClearAll()}
-          className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors">
+          className="min-h-11 min-w-11 text-xs text-neutral-500 hover:text-neutral-300 transition-colors motion-reduce:transition-none">
           {React.string("Clear all")}
         </button>
       </div>
@@ -54,9 +54,9 @@ let make = (
            key=item.Types.id
            onClick={_ => onSelect(item.Types.id)}
            className={if isSelected {
-             "p-4 border border-neutral-600 rounded-lg cursor-pointer bg-neutral-900 transition-colors group relative"
+             "p-4 border border-neutral-600 rounded-lg cursor-pointer bg-neutral-900 transition-colors motion-reduce:transition-none group relative"
            } else {
-             "p-4 border border-neutral-800 rounded-lg cursor-pointer hover:border-neutral-700 hover:bg-neutral-900/50 transition-colors group relative"
+             "p-4 border border-neutral-800 rounded-lg cursor-pointer hover:border-neutral-700 hover:bg-neutral-900/50 transition-colors motion-reduce:transition-none group relative"
            }}
            role="button"
            tabIndex=0
@@ -99,7 +99,7 @@ let make = (
                    | Some(progress) =>
                      <ProgressStatus progress compact=true />
                    | None =>
-                     <span className="text-xs text-blue-400 animate-pulse">
+                     <span className="text-xs text-blue-400 animate-pulse motion-reduce:animate-none">
                        {React.string("Compressing...")}
                      </span>
                    }
@@ -125,7 +125,7 @@ let make = (
                   | None => React.null
                   }
                  | Error(msg) =>
-                   <span className="text-xs text-red-400">
+                   <span className="text-xs text-red-400 [overflow-wrap:anywhere]">
                      {React.string(msg)}
                    </span>
                  | Pending =>
@@ -144,7 +144,7 @@ let make = (
                    </svg>
                  </div>
                | Compressing =>
-                 <div className="w-6 h-6 rounded-full border-2 border-blue-400 border-t-transparent animate-spin"></div>
+                 <div className="w-6 h-6 rounded-full border-2 border-blue-400 border-t-transparent animate-spin motion-reduce:animate-none"></div>
                | Error(_) =>
                  <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
                    <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -155,11 +155,12 @@ let make = (
                | Decoding => React.null
                }}
                <button
+                 onKeyDown={e => ReactEvent.Keyboard.stopPropagation(e)}
                  onClick={e => {
                    ReactEvent.Mouse.stopPropagation(e)
                    onRemove(item.id)
                  }}
-                 className="p-2 text-neutral-400 hover:text-red-400 transition-all rounded-full hover:bg-red-500/10 border border-neutral-800 hover:border-red-500/20"
+                 className="min-h-11 min-w-11 p-2 text-neutral-400 hover:text-red-400 transition-colors motion-reduce:transition-none rounded-full hover:bg-red-500/10 border border-neutral-800 hover:border-red-500/20"
                  title="Remove image"
                  ariaLabel="Remove image">
                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

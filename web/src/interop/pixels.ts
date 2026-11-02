@@ -1,7 +1,7 @@
 export const RGBA_BYTES_PER_PIXEL = 4;
 
 export function copyTypedArrayView(view: ArrayBufferView): Uint8Array {
-  return new Uint8Array(view);
+  return new Uint8Array(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
 }
 
 export function copyImageDataPixels(data: Uint8ClampedArray): Uint8Array {

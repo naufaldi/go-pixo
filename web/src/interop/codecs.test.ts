@@ -4,7 +4,27 @@ import { deflateSync } from 'node:zlib';
 import { Inflate } from 'pako';
 import { afterEach, expect, it, vi } from 'vitest';
 import { decodeAvif, decodeTiff, encodeAvif } from './codecs';
+import {compressWithCandidates} from './codecsCompression';
+import {imageOperation} from './imageOperation';
 import { inspectImage, sniffInputFormat } from './imageFormats';
+
+it.each([10,12])('retains real %i-bit AVIF bytes without native AVIF decoding', async bitDepth => {
+  vi.stubGlobal('fetch', async (url: string) => new Response(await readFile(new URL(`../..${url}`,import.meta.url))));
+  vi.stubGlobal('createImageBitmap',undefined);
+  const {default:factory}=await import('@jsquash/avif/codec/enc/avif_enc.js');
+  const {defaultOptions}=await import('@jsquash/avif/meta.js');
+  const module=await factory({wasmBinary:await readFile(new URL('../../node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',import.meta.url))});
+  const bytes=new Uint8Array(module.encode(new Uint8Array([255,0,0,255,0,255,0,255]),2,1,{...defaultOptions,bitDepth,quality:100,speed:8})!);
+  const info=inspectImage(bytes);
+  expect(info.bitDepth).toBe(bitDepth);
+  for (const outputFormat of ['same','avif','auto'] as const) {
+    expect(imageOperation(info,{lossy:false,outputFormat}).kind).toBe('original');
+    const encode=vi.fn();
+    const result=await compressWithCandidates({format:'avif',width:2,height:1,lossy:false,outputFormat,originalFileBytes:bytes},encode);
+    expect(result.compressedBytes).toBe(bytes);
+    expect(encode).not.toHaveBeenCalled();
+  }
+},15000);
 
 const tiffBoundary=vi.hoisted(()=>({original:undefined as typeof import('utif')['decodeImage'] | undefined}));
 vi.mock('utif',async importOriginal=>{
