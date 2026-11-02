@@ -325,7 +325,7 @@ let make = (
               | _ => onTargetWidthChange(None)
               }
             }}
-            className="min-h-12 w-full min-w-0 text-base tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300 bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-4 py-2"
+            className="min-h-12 w-full min-w-0 text-base tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-outer-spin-button]:m-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300 bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-4 py-2"
           />
         </label>
         <label className="flex min-w-0 flex-col gap-2 text-base text-neutral-300">
@@ -351,7 +351,7 @@ let make = (
               | _ => onTargetHeightChange(None)
               }
             }}
-            className="min-h-12 w-full min-w-0 text-base tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300 bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-4 py-2"
+            className="min-h-12 w-full min-w-0 text-base tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-outer-spin-button]:m-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300 bg-neutral-800 text-neutral-300 border border-neutral-600 rounded px-4 py-2"
           />
         </label>
         <p className="col-span-2 text-sm text-neutral-400">

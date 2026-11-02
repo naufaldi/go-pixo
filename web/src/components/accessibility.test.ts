@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { make as CompareView } from './CompareView.res.js'
 import { make as BottomBar } from './BottomBar.res.js'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('uses a named native comparison range and updates the original image clip at both endpoints', () => {
   const { container } = render(createElement(CompareView, {
@@ -134,4 +134,127 @@ it('uses the same known aspect frame for loading and finished previews', () => {
   const finishedFrame = view.container.querySelector('[style*="aspect-ratio"]') as HTMLElement
   expect(finishedFrame.style.cssText).toBe(loadingStyle)
   expect(screen.queryByRole('button', { name: 'Remove image' })).not.toBeInTheDocument()
+})
+
+const comparisonProps = {
+  originalUrl: 'blob:original', compressedUrl: 'blob:compressed', originalBytes: 100,
+  compressedBytes: 50, width: 100, height: 200, onRemove() {},
+}
+
+function renderPointerComparison() {
+  // jsdom cannot perform browser pointer capture or native touch arbitration.
+  class TestPointerEvent extends MouseEvent {
+    pointerId: number
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 1
+      this.pointerType = init.pointerType ?? 'mouse'
+    }
+  }
+  vi.stubGlobal('PointerEvent', TestPointerEvent)
+  const view = render(createElement(CompareView, comparisonProps))
+  const frame = screen.getByTestId('comparison-frame')
+  vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({ left: 100, width: 200 } as DOMRect)
+  const captures = new Set<number>()
+  frame.setPointerCapture = vi.fn(id => { captures.add(id) })
+  frame.hasPointerCapture = vi.fn(id => captures.has(id))
+  frame.releasePointerCapture = vi.fn(id => { captures.delete(id) })
+  const slider = screen.getByRole('slider', { name: 'Compare original and compressed' })
+  const clip = screen.getByRole('img', { name: 'Original' }).parentElement!
+  const assertSplit = (value: number) => {
+    expect(slider).toHaveValue(String(Math.round(value)))
+    expect(slider).toHaveAttribute('aria-valuetext', `${Math.round(value)}% original, ${100 - Math.round(value)}% compressed`)
+    expect(clip.style.clipPath).toContain(`${value}% 0`)
+    expect(frame.querySelector('[style*="left:"]')).toHaveStyle({ left: `${value}%` })
+  }
+  return { ...view, frame, slider, assertSplit }
+}
+
+it('keeps one pointer owner from down through outside release and clamps to image bounds', () => {
+  const { frame, assertSplit } = renderPointerComparison()
+  fireEvent.pointerDown(frame, { pointerId: 1, clientX: 150, button: 2 })
+  expect(frame.setPointerCapture).not.toHaveBeenCalled()
+  assertSplit(50)
+  fireEvent.pointerDown(frame, { pointerId: 1, clientX: 150, button: 0 })
+  assertSplit(25)
+  fireEvent.pointerDown(frame, { pointerId: 2, clientX: 290, button: 0 })
+  fireEvent.pointerMove(frame, { pointerId: 2, clientX: 290 })
+  fireEvent.pointerUp(frame, { pointerId: 2, clientX: 290 })
+  expect(frame.setPointerCapture).toHaveBeenCalledExactlyOnceWith(1)
+  assertSplit(25)
+  fireEvent.pointerMove(frame, { pointerId: 1, clientX: 400 })
+  assertSplit(100)
+  fireEvent.pointerUp(frame, { pointerId: 1, clientX: 0 })
+  assertSplit(0)
+  expect(frame.releasePointerCapture).toHaveBeenCalledExactlyOnceWith(1)
+  fireEvent.pointerMove(frame, { pointerId: 1, clientX: 200 })
+  assertSplit(0)
+})
+
+it('restores the starting touch split on cancel and permits a later touch tap', () => {
+  const { frame, slider, assertSplit } = renderPointerComparison()
+  fireEvent.change(slider, { target: { value: '40' } })
+  fireEvent.pointerDown(frame, { pointerId: 1, pointerType: 'touch', clientX: 250 })
+  assertSplit(40)
+  fireEvent.pointerMove(frame, { pointerId: 1, pointerType: 'touch', clientX: 250 })
+  assertSplit(75)
+  fireEvent.pointerDown(frame, { pointerId: 2, pointerType: 'touch', clientX: 120 })
+  fireEvent.pointerCancel(frame, { pointerId: 2, pointerType: 'touch' })
+  assertSplit(75)
+  fireEvent.pointerCancel(frame, { pointerId: 1, pointerType: 'touch' })
+  assertSplit(40)
+  expect(frame.releasePointerCapture).toHaveBeenCalledWith(1)
+  fireEvent.pointerMove(frame, { pointerId: 1, clientX: 200 })
+  assertSplit(40)
+  fireEvent.pointerDown(frame, { pointerId: 3, pointerType: 'touch', clientX: 250 })
+  fireEvent.pointerUp(frame, { pointerId: 3, pointerType: 'touch', clientX: 250 })
+  assertSplit(75)
+})
+
+it('ends ownership on capture loss, retains fractional clip precision, and resets on a new image key', () => {
+  const { frame, slider, assertSplit, rerender, unmount } = renderPointerComparison()
+  fireEvent.pointerDown(frame, { pointerId: 1, pointerType: 'pen', clientX: 151 })
+  assertSplit(25.5)
+  fireEvent.lostPointerCapture(frame, { pointerId: 2 })
+  fireEvent.pointerMove(frame, { pointerId: 1, clientX: 160 })
+  assertSplit(30)
+  fireEvent.lostPointerCapture(frame, { pointerId: 1 })
+  fireEvent.pointerMove(frame, { pointerId: 1, clientX: 290 })
+  assertSplit(30)
+  fireEvent.change(slider, { target: { value: '80' } })
+  assertSplit(80)
+  fireEvent.pointerDown(frame, { pointerId: 3, clientX: 150 })
+  rerender(createElement(CompareView, { ...comparisonProps, key: 'another-image' }))
+  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveValue('50')
+  fireEvent.pointerMove(screen.getByTestId('comparison-frame'), { pointerId: 3, clientX: 290 })
+  expect(screen.getByRole('slider', { name: 'Compare original and compressed' })).toHaveValue('50')
+  expect(() => unmount()).not.toThrow()
+})
+
+it('ignores zero-width geometry and disables native image dragging', () => {
+  const { frame, assertSplit } = renderPointerComparison()
+  vi.mocked(frame.getBoundingClientRect).mockReturnValue({ left: 100, width: 0 } as DOMRect)
+  fireEvent.pointerDown(frame, { pointerId: 1, clientX: 150 })
+  assertSplit(50)
+  for (const image of screen.getAllByRole('img')) expect(image).toHaveAttribute('draggable', 'false')
+})
+
+it.each(['width', 'height'])('keeps %s numeric bounds and forwards typing and clearing', axis => {
+  const onChange = vi.fn()
+  const view = render(createElement(BottomBar, { ...settingsProps,
+    onTargetWidthChange: onChange, onTargetHeightChange: onChange,
+  }))
+  const input = screen.getByRole('spinbutton', { name: `Target ${axis}` })
+  expect(input).toHaveAttribute('type', 'number')
+  expect(input).toHaveAttribute('min', '1')
+  expect(input).toHaveAttribute('max', '8000')
+  fireEvent.change(input, { target: { value: '256' } })
+  expect(onChange).toHaveBeenLastCalledWith(256)
+  view.rerender(createElement(BottomBar, { ...settingsProps,
+    targetWidth: 256, targetHeight: 256,
+    onTargetWidthChange: onChange, onTargetHeightChange: onChange,
+  }))
+  fireEvent.change(input, { target: { value: '' } })
+  expect(onChange).toHaveBeenLastCalledWith(undefined)
 })

@@ -3,6 +3,58 @@ import { fileURLToPath } from 'node:url'
 
 const png = fileURLToPath(new URL('./fixtures/sample-32x32.png', import.meta.url))
 
+for (const [width, height] of [[400, 200], [200, 400]]) {
+  test(`direct image drag uses ${width}x${height} image bounds and resets on selection`, async ({ page }) => {
+    await page.goto('/')
+    const bytes = await page.evaluate(([width, height]) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')!.fillRect(0, 0, width, height)
+      return Array.from(atob(canvas.toDataURL('image/png').split(',')[1]), c => c.charCodeAt(0))
+    }, [width, height])
+    await page.locator('input[type=file]').setInputFiles({ name: 'geometry.png', mimeType: 'image/png', buffer: Buffer.from(bytes) })
+    const frame = page.getByTestId('comparison-frame')
+    const slider = page.getByRole('slider', { name: 'Compare original and compressed' })
+    await expect(frame).toBeVisible()
+    const box = (await frame.boundingBox())!
+    await page.mouse.move(box.x + box.width / 4, box.y + box.height / 2)
+    await page.mouse.down()
+    await expect(slider).toHaveValue('25')
+    await page.mouse.move(box.x + box.width + 30, box.y + box.height / 2)
+    await expect(slider).toHaveValue('100')
+    await page.mouse.move(box.x - 20, box.y + box.height / 2)
+    await page.mouse.up()
+    await expect(slider).toHaveValue('0')
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(slider).toHaveValue('0')
+    await expect(page.getByRole('img', { name: 'Original', exact: true })).toHaveAttribute('draggable', 'false')
+    await page.getByLabel('Add images').setInputFiles(png)
+    await page.getByRole('button', { name: /sample-32x32.png/ }).click()
+    await expect(slider).toHaveValue('50')
+    await page.getByRole('button', { name: /geometry.png/ }).click()
+    await expect(slider).toHaveValue('50')
+  })
+}
+
+test('resize fields retain numeric keyboard stepping without native spinner chrome', async ({ page }) => {
+  await page.goto('/')
+  for (const axis of ['width', 'height']) {
+    const input = page.getByRole('spinbutton', { name: `Target ${axis}` })
+    await expect(input).toHaveCSS('appearance', 'textfield')
+    await input.fill('200')
+    const box = (await input.boundingBox())!
+    await input.click({ position: { x: box.width - 6, y: 10 } })
+    await expect(input).toHaveValue('200')
+    await input.click({ position: { x: box.width - 6, y: box.height - 10 } })
+    await expect(input).toHaveValue('200')
+    await input.press('ArrowUp')
+    await expect(input).toHaveValue('201')
+    await input.fill('')
+    await expect(input).toHaveValue('')
+  }
+})
+
 test('known image geometry stays in place when processing becomes a result', async ({page, context}) => {
   await context.route('**/sw.js', route => route.abort())
   let release!: () => void
@@ -106,6 +158,42 @@ test('comparison supports keyboard endpoints and queue Remove supports Enter and
 
 test.describe('mobile touch and reduced motion', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, reducedMotion: 'reduce' })
+
+  test('trusted Chromium emulated touch drags horizontally and yields vertical scrolling', async ({ page, context, browserName }) => {
+    test.skip(browserName !== 'chromium', 'CDP touch input is Chromium-specific')
+    await page.goto('/')
+    await page.locator('input[type=file]').setInputFiles(png)
+    const frame = page.getByTestId('comparison-frame')
+    const slider = page.getByRole('slider', { name: 'Compare original and compressed' })
+    await expect(frame).toBeVisible()
+    await frame.scrollIntoViewIfNeeded()
+    const session = await context.newCDPSession(page)
+    let touching = false
+    const swipe = async (x: number, y: number, dx: number, dy: number) => {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] })
+      touching = true
+      for (let step = 1; step <= 8; step++) {
+        await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * step / 8, y: y + dy * step / 8, id: 1 }] })
+        await page.waitForTimeout(16)
+      }
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      touching = false
+    }
+    try {
+      let box = (await frame.boundingBox())!
+      await swipe(box.x + box.width * 0.5, box.y + box.height / 2, box.width * 0.3, 0)
+      await expect.poll(async () => Number(await slider.inputValue())).toBeGreaterThan(70)
+      const split = await slider.inputValue()
+      box = (await frame.boundingBox())!
+      const before = await page.evaluate(() => scrollY)
+      await swipe(box.x + box.width / 2, box.y + box.height * 0.7, 0, -120)
+      await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(before)
+      await expect(slider).toHaveValue(split)
+    } finally {
+      if (touching) await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+      await session.detach()
+    }
+  })
 
   test('native comparison accepts touch, controls have 44px targets, and long filenames stay bounded', async ({ page }) => {
     const errors: string[] = []

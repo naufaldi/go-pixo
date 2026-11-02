@@ -1,3 +1,12 @@
+type frameRect = {left: float, width: float}
+type gesture = {pointerId: Dom.eventPointerId, startPos: float, touch: bool}
+
+@get external pointerFrame: ReactEvent.Pointer.t => Dom.element = "currentTarget"
+@send external getBoundingClientRect: Dom.element => frameRect = "getBoundingClientRect"
+@send external setPointerCapture: (Dom.element, Dom.eventPointerId) => unit = "setPointerCapture"
+@send external releasePointerCapture: (Dom.element, Dom.eventPointerId) => unit = "releasePointerCapture"
+@send external hasPointerCapture: (Dom.element, Dom.eventPointerId) => bool = "hasPointerCapture"
+
 @react.component
 let make = (
   ~originalUrl,
@@ -11,6 +20,23 @@ let make = (
   ~onRemove as _: unit => unit,
 ) => {
   let (sliderPos, setSliderPos) = React.useState(() => 50.0)
+  let dragRef: React.ref<option<gesture>> = React.useRef(None)
+  let updatePosition = e => {
+    let rect = getBoundingClientRect(pointerFrame(e))
+    if rect.width > 0.0 {
+      let position = Math.round((Int.toFloat(ReactEvent.Pointer.clientX(e)) -. rect.left) /. rect.width *. 1000.0) /. 10.0
+      let position = Math.max(0.0, Math.min(100.0, position))
+      setSliderPos(previous => previous == position ? previous : position)
+    }
+  }
+  let release = e => {
+    let frame = pointerFrame(e)
+    let pointerId = ReactEvent.Pointer.pointerId(e)
+    dragRef.current = None
+    if hasPointerCapture(frame, pointerId) {
+      releasePointerCapture(frame, pointerId)
+    }
+  }
 
   let knownDimensions = switch (width, height) {
   | (Some(w), Some(h)) => w > 0 && h > 0
@@ -124,7 +150,49 @@ let make = (
       </div>
       <div className="relative rounded-lg overflow-hidden select-none border border-neutral-800">
         <div
-          className={"relative w-full mx-auto bg-neutral-900 " ++ if knownDimensions {
+          dataTestId="comparison-frame"
+          onPointerDown={e => {
+            if dragRef.current == None && ReactEvent.Pointer.button(e) == 0 {
+              let touch = ReactEvent.Pointer.pointerType(e) == "touch"
+              let pointerId = ReactEvent.Pointer.pointerId(e)
+              dragRef.current = Some({pointerId, startPos: sliderPos, touch})
+              setPointerCapture(pointerFrame(e), pointerId)
+              if !touch {
+                ReactEvent.Pointer.preventDefault(e)
+                updatePosition(e)
+              }
+            }
+          }}
+          onPointerMove={e => {
+            switch dragRef.current {
+            | Some(drag) if drag.pointerId == ReactEvent.Pointer.pointerId(e) => updatePosition(e)
+            | _ => ()
+            }
+          }}
+          onPointerUp={e => {
+            switch dragRef.current {
+            | Some(drag) if drag.pointerId == ReactEvent.Pointer.pointerId(e) =>
+              updatePosition(e)
+              release(e)
+            | _ => ()
+            }
+          }}
+          onPointerCancel={e => {
+            switch dragRef.current {
+            | Some(drag) if drag.pointerId == ReactEvent.Pointer.pointerId(e) =>
+              // Native vertical scrolling cancels touch; undo its provisional split.
+              if drag.touch { setSliderPos(_ => drag.startPos) }
+              release(e)
+            | _ => ()
+            }
+          }}
+          onLostPointerCapture={e => {
+            switch dragRef.current {
+            | Some(drag) if drag.pointerId == ReactEvent.Pointer.pointerId(e) => dragRef.current = None
+            | _ => ()
+            }
+          }}
+          className={"relative w-full mx-auto bg-neutral-900 touch-pan-y cursor-ew-resize select-none [-webkit-touch-callout:none] " ++ if knownDimensions {
             ""
           } else {
             "h-72 sm:h-96"
@@ -133,6 +201,7 @@ let make = (
         >
           /* Background: Compressed Image (Right Side) */
           <img
+            draggable=false
             src=comp alt="Compressed" className="absolute inset-0 w-full h-full object-contain"
           />
 
@@ -147,16 +216,22 @@ let make = (
               className="absolute inset-0 overflow-hidden"
               style={ReactDOM.Style._dictToStyle(Dict.fromArray([("clipPath", clipPath)]))}
             >
-              <img src=orig alt="Original" className="w-full h-full object-contain" />
+              <img draggable=false src=orig alt="Original" className="w-full h-full object-contain" />
             </div>
           }
 
-          /* The range below controls this visual divider. */
+          /* The frame and native keyboard range share the same split. */
           <div
             className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white z-10 shadow-xl"
             style={ReactDOM.Style._dictToStyle(Dict.fromArray([("left", to1dp(sliderPos) ++ "%")]))}
             ariaHidden=true
-          />
+          >
+            <div className="absolute top-1/2 left-1/2 size-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-neutral-900 shadow-md flex items-center justify-center">
+              <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M8 8l-4 4 4 4m8-8l4 4-4 4M4 12h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+          </div>
 
           <div
             className="pointer-events-none absolute bottom-4 left-4 bg-black/50 text-white px-4 py-2 rounded text-xs font-medium"
@@ -177,10 +252,10 @@ let make = (
           min="0"
           max="100"
           step=1.0
-          value={to1dp(sliderPos)}
-          ariaValuetext={to1dp(sliderPos) ++
+          value={Float.toString(Math.round(sliderPos))}
+          ariaValuetext={Float.toString(Math.round(sliderPos)) ++
           "% original, " ++
-          to1dp(100.0 -. sliderPos) ++ "% compressed"}
+          Float.toString(100.0 -. Math.round(sliderPos)) ++ "% compressed"}
           onChange={e => {
             let value =
               ReactEvent.Form.target(e)["value"]
