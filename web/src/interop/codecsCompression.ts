@@ -10,12 +10,21 @@ const LOSSLESS_JPEG_WORTH_TRYING = 0.8;
 // Bytes in APPn and COM segments before the first scan. The optimizer drops
 // most of them, so they do not bound its output size.
 function jpegMetadataBytes(bytes: Uint8Array): number {
+  // Same traversal as inspectImage: fill bytes (repeated 0xff) may precede a
+  // marker, and standalone markers carry no length.
   let total=0;
-  for (let p=2; p+4<=bytes.length && bytes[p]===0xff;) {
-    const marker=bytes[p+1], length=(bytes[p+2]<<8)|bytes[p+3];
+  for (let p=2; p<bytes.length;) {
+    if (bytes[p++]!==0xff) break;
+    while (bytes[p]===0xff) p++;
+    if (p>=bytes.length) break;
+    const marker=bytes[p++];
     if (marker===0xda || marker===0xd9) break;
+    if (marker===0x01 || (marker>=0xd0 && marker<=0xd7)) continue;
+    if (p+2>bytes.length) break;
+    const length=(bytes[p]<<8)|bytes[p+1];
+    if (length<2 || length>bytes.length-p) break;
     if ((marker>=0xe0 && marker<=0xef) || marker===0xfe) total+=2+length;
-    p+=2+length;
+    p+=length;
   }
   return total;
 }

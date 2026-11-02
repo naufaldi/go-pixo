@@ -121,8 +121,12 @@ describe('lossless JPEG entropy optimization', () => {
     expect(optimize).not.toHaveBeenCalled();
   });
 
-  it('still tries lossless recoding for metadata-heavy JPEGs, where it can beat a far smaller lossy result', async () => {
-    const heavy=metadata(400), stripped=jpeg(10);
+  it.each([
+    ['plain markers', (bytes: Uint8Array) => bytes],
+    // Legal fill bytes: any number of 0xff may precede a marker.
+    ['fill bytes before the COM marker', (bytes: Uint8Array) => new Uint8Array([...bytes.slice(0,2),255,255,...bytes.slice(2)])],
+  ])('still tries lossless recoding for metadata-heavy JPEGs (%s)', async (_case, variant) => {
+    const heavy=variant(metadata(400)), stripped=jpeg(10);
     const optimize=vi.fn(async () => stripped);
     const result=await compressWithCandidates({...request,lossy:true,originalFileBytes:heavy},async () => jpeg(40),undefined,optimize);
     expect(optimize).toHaveBeenCalledOnce();
