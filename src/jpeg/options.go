@@ -75,11 +75,9 @@ func BalancedOptions(width, height int, quality uint8) Options {
 	}
 }
 
-// MaxOptions returns options for maximum compression.
-// Uses 4:2:0 subsampling, progressive encoding, and trellis quantization.
-// Note: Optimized Huffman is disabled when trellis is enabled because the
-// optimized tables are built based on standard quantization, but trellis
-// produces different coefficients that would mismatch.
+// MaxOptions returns options for maximum compression: 4:2:0 subsampling,
+// trellis quantization, and progressive output with optimized Huffman tables
+// (a lossless re-coding of the quantized coefficients; see Encoder.Encode).
 func MaxOptions(width, height int, quality uint8) Options {
 	return Options{
 		Width:             width,

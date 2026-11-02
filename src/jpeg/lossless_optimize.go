@@ -34,6 +34,21 @@ func OptimizeLossless(input []byte) ([]byte, error) {
 	if err := imagelimit.CheckEncodedSize(len(input)); err != nil {
 		return nil, err
 	}
+	return optimizeLossless(input, anyLayout)
+}
+
+// losslessLayout restricts which output layouts optimizeLossless may pick.
+type losslessLayout int
+
+const (
+	anyLayout losslessLayout = iota
+	sequentialLayouts
+	progressiveLayouts
+)
+
+// optimizeLossless is OptimizeLossless without the encoded-size limit, for
+// input this package produced itself; dimensions are still bounded.
+func optimizeLossless(input []byte, layout losslessLayout) ([]byte, error) {
 	d, err := readCoefficients(input)
 	if err != nil {
 		return nil, err
@@ -47,7 +62,12 @@ func OptimizeLossless(input []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	candidates := losslessCandidates(d)
+	var candidates []losslessCandidate
+	for _, candidate := range losslessCandidates(d) {
+		if layout == anyLayout || candidate.progressive == (layout == progressiveLayouts) {
+			candidates = append(candidates, candidate)
+		}
+	}
 	ranked, stats, err := rankCandidates(d, candidates)
 	if err != nil {
 		return nil, err

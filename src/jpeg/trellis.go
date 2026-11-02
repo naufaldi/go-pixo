@@ -137,9 +137,17 @@ func TrellisOptimizeWithConfig(dct [64]float32, quantTable [64]float32, config T
 	return trellisOptimize(dct, quantTable, config, true)
 }
 
+// maxTrellisLambda bounds the distortion weight (see trellisOptimize).
+const maxTrellisLambda = 1e6
+
 func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConfig, isLuminance bool) [64]int16 {
 	if config.Lambda == 0 {
 		config.Lambda = DefaultTrellisConfig.Lambda
+	}
+	// Costs are kept as prefix sums; a bounded weight keeps them finite for any
+	// 8-bit DCT input. Larger weights make rate negligible anyway.
+	if !(config.Lambda <= maxTrellisLambda) {
+		config.Lambda = maxTrellisLambda
 	}
 
 	var result [64]int16
@@ -176,15 +184,17 @@ func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConf
 			distortion := config.Lambda * calculateDistortion(dct[index], float32(value)*quantTable[index], index, config.UsePerceptual)
 			category := getACCategory(value)
 			byRun := &rates.byRun[category]
-			// Rates are non-negative and float addition is monotonic, so when
-			// even the cheapest run cannot beat the current best, none can.
-			if minPrevious+float64(rates.minimum[category])+distortion >= best {
+			// Rates are non-negative and float addition is monotonic, so this is a
+			// lower bound on every run. Equal costs go to the smaller value, then the
+			// shorter run, as when candidates were scanned in ascending order.
+			bound := minPrevious + float64(rates.minimum[category]) + distortion
+			if bound > best || (bound == best && value > bestState.quantizedVal) {
 				continue
 			}
 			for runLength := 0; runLength < i; runLength++ {
 				rate := (runLength/16)*zrlRate + byRun[runLength%16]
 				cost := base[i-1-runLength] + previousZeroSum + float64(rate) + distortion
-				if cost < best {
+				if cost < best || (cost == best && value < bestState.quantizedVal) {
 					best = cost
 					bestState = trellisPredecessor{quantizedVal: value, prevIndex: uint8(runLength)}
 				}

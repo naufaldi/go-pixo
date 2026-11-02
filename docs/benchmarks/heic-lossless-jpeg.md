@@ -115,13 +115,14 @@ The page loads as before. The extra bytes are the libheif decoder (3.4 MB raw, 8
 | Trellis encode, 1024×768 (`BenchmarkTrellisEncode`) | ~535 ms | ~220 ms (2.3×), identical output |
 | Lossless optimize, 12 MP standard-table JPEG (`BenchmarkOptimizeLossless`) | — | ~665 ms, 9.4% smaller, identical pixels |
 
-`TestTrellisMatchesReferenceOutput` pins trellis output to a hash computed from the old implementation over 120,000 block and configuration combinations.
+`TestTrellisMatchesReferenceOutput` and `TestTrellisKeepsTieBreaking` pin trellis output to hashes computed from the `master` implementation: 120,000 random block and configuration combinations, plus coefficients on exact half steps where candidates tie. The distortion weight is capped at 1e6 so the prefix sums stay finite.
 
 ## Settings and what they now do
 
 - **Perfect Quality, JPEG:** the original's quantized DCT coefficients are re-coded with optimized Huffman tables and progressive scans; four layouts are cost-estimated and the smallest of the best two is written. The result is used only if it is smaller and, in the browser, decodes to exactly the original's pixels. Metadata is reduced to ICC and Adobe segments, JFIF without thumbnail, and the EXIF orientation. The cost is one Go WASM start plus two decodes for the pixel check, which took 0.8 s and 1.8 s above.
-- **Balanced / Smaller, JPEG:** quantization and trellis are unchanged. Progressive and optimized-Huffman output is now correct and about 7% smaller. The lossless re-code of the original is also tried when the lossy result stays above 80% of the original's size.
+- **Balanced / Smaller, JPEG:** quantization and trellis are unchanged. Progressive and optimized-Huffman output is now correct and about 7% smaller. The lossless re-code of the original is also tried when the lossy result stays above 80% of the original's non-metadata bytes (APPn and COM segments are excluded, since the re-code drops most of them). This is a speed heuristic, not a guarantee.
 - **Faster:** unchanged, and it skips the lossless re-code in lossy mode.
+- **Go API and CLI:** `Progressive` now always yields a progressive file and `OptimizeHuffman` alone a sequential one, both with optimized tables.
 - **HEIC:** the browser's native decoder is tried first; otherwise libheif 1.23.7 is used. Builds older than 1.23.7 are refused at runtime. Rotation (`irot`) and crop (`clap`) are supported.
 
 ## Known limits

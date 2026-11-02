@@ -3,9 +3,22 @@ import { assertSafeDimensions, imageDisplayDimensions, inspectImage } from './im
 import { assertDecodedDimensions, assertSameDecodedPixels, decodeNative } from './codecsNative';
 import {decodeAvif} from './codecs';
 
-// Lossy candidates above this share of the original JPEG size may lose to
-// lossless entropy recoding of the original, so that is tried too.
+// Heuristic: entropy recoding rarely shrinks a JPEG's non-metadata bytes by
+// more than 20%, so lossy candidates below 80% of them skip the lossless pass.
 const LOSSLESS_JPEG_WORTH_TRYING = 0.8;
+
+// Bytes in APPn and COM segments before the first scan. The optimizer drops
+// most of them, so they do not bound its output size.
+function jpegMetadataBytes(bytes: Uint8Array): number {
+  let total=0;
+  for (let p=2; p+4<=bytes.length && bytes[p]===0xff;) {
+    const marker=bytes[p+1], length=(bytes[p+2]<<8)|bytes[p+3];
+    if (marker===0xda || marker===0xd9) break;
+    if ((marker>=0xe0 && marker<=0xef) || marker===0xfe) total+=2+length;
+    p+=2+length;
+  }
+  return total;
+}
 
 export type CandidateRequest = {
   format: InputFormat; outputFormat?: OutputFormatChoice; lossy: boolean;
@@ -94,10 +107,10 @@ export async function compressWithCandidates(
       lastError=error;
     }
   }
-  // Entropy recoding rarely saves more than ~15%, so once a candidate is
-  // already well below that, the optimizer and its pixel check cannot win.
+  // Skip the optimizer and its pixel check when a lossy candidate is already
+  // far below what recoding the original's non-metadata bytes could reach.
   const smallest=Math.min(...candidates.map(candidate => candidate.compressedBytes.length));
-  if (original && smallest>original.compressedBytes.length*LOSSLESS_JPEG_WORTH_TRYING) {
+  if (original && input==='jpeg' && smallest>(original.compressedBytes.length-jpegMetadataBytes(original.compressedBytes))*LOSSLESS_JPEG_WORTH_TRYING) {
     const optimized=await optimizeOriginal();
     if (optimized) candidates.push(optimized);
   }

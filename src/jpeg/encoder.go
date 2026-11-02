@@ -82,13 +82,18 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 	// The pixel-domain progressive and optimized-table writers emitted
 	// entropy-coded data that decoders reconstruct wrongly (PSNR ~10-20 dB).
 	// Encode with standard tables, then re-code the same quantized
-	// coefficients with optimized tables and progressive scans; OptimizeLossless
-	// keeps whichever of its layouts is smallest and never changes pixels.
+	// coefficients without changing pixels: Progressive yields a progressive
+	// file and OptimizeHuffman alone a sequential one, each with optimized
+	// tables and the smallest layout of that kind.
 	baseline, err := e.encodeSequential(pixels)
 	if err != nil {
 		return nil, err
 	}
-	return OptimizeLossless(baseline)
+	layout := sequentialLayouts
+	if e.Options.Progressive {
+		layout = progressiveLayouts
+	}
+	return optimizeLossless(baseline, layout)
 }
 
 // encodeSequential writes a baseline JPEG with standard Huffman tables.

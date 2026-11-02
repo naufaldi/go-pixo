@@ -1,5 +1,7 @@
 # Progressive JPEG
 
+> **Implementation note (November 2026):** the pixel-domain writer described below produced JPEGs that decoders reconstructed wrongly, and was removed. `Encoder.Encode` now writes a baseline JPEG with standard tables and re-codes its quantized coefficients through the lossless optimizer (`src/jpeg/lossless_optimize.go`, `src/jpeg/lossless_entropy.go`), which builds per-scan optimized Huffman tables and progressive scan scripts without changing pixels. See `docs/benchmarks/heic-lossless-jpeg.md`.
+
 Standard (baseline) JPEGs load from top to bottom. Progressive JPEGs contain multiple "scans" of the image, each adding more detail. This provides two main benefits:
 1. **User Experience**: A low-quality "preview" appears almost instantly, which then sharpens as more data arrives.
 2. **Compression**: Surprisingly, progressive encoding often results in **smaller file sizes** (3-5% saving) because it can group similar frequency components across the entire image.

@@ -488,10 +488,8 @@ func (d *coeffDecoder) processAppMarker(marker uint8, n int) error {
 }
 
 // readCoefficients parses a complete JPEG and returns its coefficients.
+// Dimensions are bounded before allocation; callers bound untrusted input size.
 func readCoefficients(input []byte) (*coeffDecoder, error) {
-	if err := imagelimit.CheckEncodedSize(len(input)); err != nil {
-		return nil, err
-	}
 	d := &coeffDecoder{r: bytes.NewReader(input)}
 	if err := d.decode(); err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {

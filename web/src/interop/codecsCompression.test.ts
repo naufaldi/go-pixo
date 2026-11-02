@@ -56,9 +56,11 @@ it('lossless JPEG keeps original bytes instead of running a lossy recompressor',
   expect(result.outputFormat).toBe('jpeg');
 });
 describe('lossless JPEG entropy optimization', () => {
-  // Display 2x1. A COM segment stands in for entropy-coded data so sizes can differ.
+  // Display 2x1. A DQT-marked segment stands in for entropy-coded data so sizes
+  // can differ; metadata(n) adds n bytes of droppable COM metadata instead.
   const jpeg=(padding: number, width = 2, height = 1) =>
-    new Uint8Array([255,216,255,254,(padding+2)>>8,(padding+2)&255,...new Uint8Array(padding),...jpegWithExif(width,height,1).slice(2)]);
+    new Uint8Array([255,216,255,219,(padding+2)>>8,(padding+2)&255,...new Uint8Array(padding),...jpegWithExif(width,height,1).slice(2)]);
+  const metadata=(n: number) => new Uint8Array([255,216,255,254,(n+2)>>8,(n+2)&255,...new Uint8Array(n),...jpeg(10).slice(2)]);
   const original=jpeg(40);
   const request={format:'jpeg' as const,outputFormat:'same' as const,lossy:false,width:2,height:1,originalFileBytes:original};
   const noEncode=async () => { throw new Error('Lossy encode must not run'); };
@@ -117,6 +119,14 @@ describe('lossless JPEG entropy optimization', () => {
     const result=await compressWithCandidates({...request,lossy:true,originalFileBytes:big},async () => jpeg(40),undefined,optimize);
     expect(result.compressedBytes.length).toBe(jpeg(40).length);
     expect(optimize).not.toHaveBeenCalled();
+  });
+
+  it('still tries lossless recoding for metadata-heavy JPEGs, where it can beat a far smaller lossy result', async () => {
+    const heavy=metadata(400), stripped=jpeg(10);
+    const optimize=vi.fn(async () => stripped);
+    const result=await compressWithCandidates({...request,lossy:true,originalFileBytes:heavy},async () => jpeg(40),undefined,optimize);
+    expect(optimize).toHaveBeenCalledOnce();
+    expect(result.compressedBytes).toBe(stripped);
   });
 
   it('never optimizes non-JPEG originals', async () => {

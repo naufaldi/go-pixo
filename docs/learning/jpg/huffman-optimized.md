@@ -1,5 +1,7 @@
 # Optimized Huffman Tables
 
+> **Implementation note (November 2026):** the pixel-domain writer described below produced JPEGs that decoders reconstructed wrongly, and was removed. `Encoder.Encode` now writes a baseline JPEG with standard tables and re-codes its quantized coefficients through the lossless optimizer (`src/jpeg/lossless_optimize.go`, `src/jpeg/lossless_entropy.go`), which builds per-scan optimized Huffman tables and progressive scan scripts without changing pixels. See `docs/benchmarks/heic-lossless-jpeg.md`.
+
 Standard JPEG encoders often use "standard" Huffman tables defined in the JPEG specification (Annex K). While these tables work well for many images, they are not optimal for any specific image. `go-pixo` provides an option to generate custom Huffman tables tailored to each individual image.
 
 ## How it Works

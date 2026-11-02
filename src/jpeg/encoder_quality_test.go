@@ -79,6 +79,10 @@ func TestEncoderOptionsKeepQuality(t *testing.T) {
 				opts := base
 				opts.Progressive, opts.OptimizeHuffman, opts.TrellisQuant = tt.progressive, tt.optimize, tt.trellis
 				out := encode(t, opts)
+				// Entropy-coded data stuffs 0xff with 0x00, so 0xffc2 is only ever SOF2.
+				if progressive := bytes.Contains(out, []byte{0xff, 0xc2}); progressive != tt.progressive {
+					t.Fatalf("progressive output = %v, want %v", progressive, tt.progressive)
+				}
 				got := psnr(t, out, img)
 				if tt.trellis {
 					// Trellis trades a little distortion for size.
