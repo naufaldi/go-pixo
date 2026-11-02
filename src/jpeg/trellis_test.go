@@ -1,7 +1,6 @@
 package jpeg
 
 import (
-	"math"
 	"testing"
 )
 
@@ -470,31 +469,6 @@ func TestEstimateACRate(t *testing.T) {
 		if bits < test.minBits || bits > test.maxBits {
 			t.Errorf("estimateACRate(%d, %d, %v) = %d, expected between %d and %d", test.runLength, test.category, test.isLuminance, bits, test.minBits, test.maxBits)
 		}
-	}
-}
-
-func TestGenerateCandidates(t *testing.T) {
-	coeff := float32(50.0)
-	step := float32(16.0)
-
-	values, count := generateCandidates(coeff, step, -255, 255)
-	candidates := values[:count]
-
-	if len(candidates) == 0 {
-		t.Error("Expected at least one candidate")
-	}
-
-	centerVal := int(math.Round(float64(coeff / step)))
-	hasCenter := false
-	for _, c := range candidates {
-		if c == int16(centerVal) {
-			hasCenter = true
-			break
-		}
-	}
-
-	if !hasCenter {
-		t.Error("Center value should be in candidates")
 	}
 }
 

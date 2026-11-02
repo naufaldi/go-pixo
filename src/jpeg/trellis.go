@@ -115,14 +115,6 @@ func getACCategory(val int16) int {
 	return category
 }
 
-// A state is indexed by its pending zero-run length. All nonzero candidates
-// reach state zero, so only its winning value and predecessor need storing.
-// A zero transition always comes from state (runLength - 1).
-type trellisPredecessor struct {
-	quantizedVal int16
-	prevIndex    uint8
-}
-
 // TrellisOptimizeFull runs luminance trellis quantization using DefaultTrellisConfig with the given lambda.
 func TrellisOptimizeFull(dct [64]float32, quantTable [64]float32, lambda float64) [64]int16 {
 	config := DefaultTrellisConfig
@@ -153,98 +145,86 @@ func trellisOptimize(dct [64]float32, quantTable [64]float32, config TrellisConf
 	var result [64]int16
 	result[0] = int16(math.Round(float64(dct[0] / quantTable[0])))
 
-	// A pending run of r zeros at position i can only come from the nonzero
-	// state at position j = i-r, followed by zeros at j+1..i. With nonzero[j]
-	// that state's cost and zeroSum[i] the summed zero distortion of positions
-	// 1..i, the run state costs base[j] + zeroSum[i], where
-	// base[j] = nonzero[j] - zeroSum[j]. That removes the per-position shift of
-	// every run state and makes the cheapest predecessor an O(1) running min.
-	var base [64]float64 // base[0] is the DC position: cost 0, no zeros yet.
-	var predecessors [64]trellisPredecessor
+	// Candidates follow mozjpeg's quantize_trellis (jcdctmgr.c): a coefficient
+	// that rounds to 0 stays 0, otherwise each size category up to the rounded
+	// magnitude qv offers only its largest magnitude (1, 3, 7, ..., then qv).
+	// Within a category the rate is the same, so the largest magnitude has the
+	// least distortion, and magnitudes above qv lose on rate and distortion.
+	//
+	// A nonzero coefficient at position i follows the previous nonzero one at
+	// position j (or the DC at j = 0) after a run of i-1-j zeros. With
+	// zeroSum[i] the summed zero distortion of positions 1..i, that state costs
+	// base[j] + zeroSum[i-1] + rate + distortion, where base[j] is the best cost
+	// ending nonzero at j minus zeroSum[j]. Only positions that can be nonzero
+	// are predecessors, so a block costs about K² · log(qv) for K such positions.
+	var (
+		base         [64]float64
+		zeroSums     [64]float64
+		previous     [64]uint8 // Predecessor position of the best nonzero state.
+		values       [64]int16
+		predecessors [64]uint8 // Positions that can be nonzero, starting with DC.
+	)
+	count := 1
 	rates := &acRates[0]
 	if !isLuminance {
 		rates = &acRates[1]
 	}
 	zrlRate := rates.byRun[0][15]
 	eobRate := rates.byRun[0][0]
-	zeroSum, minBase := 0.0, 0.0
 	for i := 1; i < 64; i++ {
 		index := Zigzag[i]
-		previousZeroSum := zeroSum
-		zeroSum += config.Lambda * calculateDistortion(dct[index], 0, index, config.UsePerceptual)
-		minPrevious := minBase + previousZeroSum
+		step := quantTable[index]
+		zeroSums[i] = zeroSums[i-1] + config.Lambda*calculateDistortion(dct[index], 0, index, config.UsePerceptual)
+		magnitude := math.Round(math.Abs(float64(dct[index] / step)))
+		if magnitude == 0 {
+			continue
+		}
+		qv := int(min(magnitude, 1023))
+		sign := 1
+		if dct[index] < 0 {
+			sign = -1
+		}
 
 		best := math.Inf(1)
-		var bestState trellisPredecessor
-		candidates, count := generateCandidates(dct[index], quantTable[index], -1023, 1023)
-		for _, value := range candidates[:count] {
-			if value == 0 {
-				continue
+		for category := 1; qv>>(category-1) != 0; category++ {
+			candidate := qv
+			if qv>>category != 0 {
+				candidate = 1<<category - 1
 			}
-			distortion := config.Lambda * calculateDistortion(dct[index], float32(value)*quantTable[index], index, config.UsePerceptual)
-			category := getACCategory(value)
+			value := int16(sign * candidate)
+			distortion := config.Lambda * calculateDistortion(dct[index], float32(value)*step, index, config.UsePerceptual)
 			byRun := &rates.byRun[category]
-			// Rates are non-negative and float addition is monotonic, so this is a
-			// lower bound on every run. Equal costs go to the smaller value, then the
-			// shorter run, as when candidates were scanned in ascending order.
-			bound := minPrevious + float64(rates.minimum[category]) + distortion
-			if bound > best || (bound == best && value > bestState.quantizedVal) {
-				continue
-			}
-			for runLength := 0; runLength < i; runLength++ {
-				rate := (runLength/16)*zrlRate + byRun[runLength%16]
-				cost := base[i-1-runLength] + previousZeroSum + float64(rate) + distortion
-				if cost < best || (cost == best && value < bestState.quantizedVal) {
-					best = cost
-					bestState = trellisPredecessor{quantizedVal: value, prevIndex: uint8(runLength)}
+			for p := 0; p < count; p++ {
+				j := int(predecessors[p])
+				run := i - 1 - j
+				cost := base[j] + zeroSums[i-1] + float64((run>>4)*zrlRate+byRun[run&15]) + distortion
+				if cost < best {
+					best, values[i], previous[i] = cost, value, uint8(j)
 				}
 			}
 		}
-		predecessors[i] = bestState
-		base[i] = best - zeroSum
-		minBase = math.Min(minBase, base[i])
+		base[i] = best - zeroSums[i]
+		predecessors[count] = uint8(i)
+		count++
 	}
 
-	// State 0 at the last position needs no EOB; any trailing run needs one,
-	// even when it is longer than 16.
-	bestIndex := 0
-	bestCost := base[63] + zeroSum
-	for runLength := 1; runLength < 64; runLength++ {
-		cost := base[63-runLength] + zeroSum + float64(eobRate)
+	// The block ends after its last nonzero coefficient; every earlier end
+	// needs an EOB, and ending at DC means all AC coefficients are zero.
+	last, bestCost := 0, zeroSums[63]+float64(eobRate)
+	for p := 1; p < count; p++ {
+		j := int(predecessors[p])
+		cost := base[j] + zeroSums[63]
+		if j < 63 {
+			cost += float64(eobRate)
+		}
 		if cost < bestCost {
-			bestCost, bestIndex = cost, runLength
+			last, bestCost = j, cost
 		}
 	}
-	for i := 63; i > 0; i-- {
-		if bestIndex > 0 {
-			bestIndex--
-			continue
-		}
-		state := predecessors[i]
-		result[Zigzag[i]] = state.quantizedVal
-		bestIndex = int(state.prevIndex)
+	for j := last; j > 0; j = int(previous[j]) {
+		result[Zigzag[j]] = values[j]
 	}
 	return result
-}
-
-// generateCandidates includes ordinary rounding, its nearby alternatives and
-// zero. Baseline 8-bit JPEG permits AC magnitudes up to 1023, not just 255.
-// Values come nearest-first, so the trellis finds a good cost early and its
-// lower bound skips the far candidates without scanning every run length.
-func generateCandidates(coeff, step float32, minVal, maxVal int) ([8]int16, int) {
-	centerVal := int(math.Round(float64(coeff / step)))
-	var candidates [8]int16
-	count := 0
-	for _, delta := range [...]int{0, -1, 1, -2, 2, -3, 3} {
-		candidate := centerVal + delta
-		if candidate != 0 && candidate >= minVal && candidate <= maxVal {
-			candidates[count] = int16(candidate)
-			count++
-		}
-	}
-	// Zero is represented by the pending-run transition in the optimizer.
-	candidates[count] = 0
-	return candidates, count + 1
 }
 
 func calculateDistortion(original, quantized float32, index int, usePerceptual bool) float64 {
@@ -275,10 +255,9 @@ func estimateDCRate(quantVal int16, isLuminance bool) int {
 }
 
 // acRateTable caches estimateACRate for the fixed standard tables:
-// byRun[category][run], and the smallest rate per category over all runs.
+// byRun[category][run].
 type acRateTable struct {
-	byRun   [16][16]int
-	minimum [16]int
+	byRun [16][16]int
 }
 
 // acRates holds luminance ([0]) and chrominance ([1]) rates. The trellis inner
@@ -286,11 +265,9 @@ type acRateTable struct {
 var acRates = func() (tables [2]acRateTable) {
 	for t, isLuminance := range []bool{true, false} {
 		for category := 0; category < 16; category++ {
-			tables[t].minimum[category] = math.MaxInt
 			for run := 0; run < 16; run++ {
 				rate := estimateACRate(uint8(run), uint8(category), isLuminance)
 				tables[t].byRun[category][run] = rate
-				tables[t].minimum[category] = min(tables[t].minimum[category], rate)
 			}
 		}
 	}
