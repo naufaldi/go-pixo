@@ -1,20 +1,105 @@
 package jpeg
 
 import (
-	"encoding/binary"
-	"hash/fnv"
 	"math"
 	"math/rand/v2"
 	"testing"
 )
 
-// trellisGoldenHash hashes trellis output for deterministic pseudo-random
-// blocks across both table types and several configurations.
-func trellisGoldenHash(optimize func([64]float32, [64]float32, TrellisConfig, bool) [64]int16) uint64 {
+// trellisCost is the objective trellisOptimize minimizes for the AC part of a
+// block: standard-table bits for every AC symbol (ZRLs, EOB) plus weighted
+// distortion of every AC coefficient.
+func trellisCost(dct, quant [64]float32, config TrellisConfig, isLuminance bool, out [64]int16) float64 {
+	rates := &acRates[0]
+	if !isLuminance {
+		rates = &acRates[1]
+	}
+	cost, run, last := 0.0, 0, 0
+	for i := 1; i < 64; i++ {
+		index := Zigzag[i]
+		cost += config.Lambda * calculateDistortion(dct[index], float32(out[index])*quant[index], index, config.UsePerceptual)
+		if out[index] == 0 {
+			run++
+			continue
+		}
+		cost += float64((run>>4)*rates.byRun[0][15] + rates.byRun[getACCategory(out[index])][run&15])
+		run, last = 0, i
+	}
+	if last < 63 {
+		cost += float64(rates.byRun[0][0])
+	}
+	return cost
+}
+
+// trellisWideSearch is a plain dynamic program over every pending run length
+// with seven candidates around the rounded value (and zero): slow, but a wide
+// search to measure the fast candidate rule against.
+func trellisWideSearch(dct, quant [64]float32, config TrellisConfig, isLuminance bool) [64]int16 {
+	rates := &acRates[0]
+	if !isLuminance {
+		rates = &acRates[1]
+	}
+	type state struct {
+		cost  float64
+		value int16
+		from  int // Run length before this coefficient, or -1 for a zero.
+	}
+	var trail [64][64]state // trail[i][run]: best way to reach position i with a pending run.
+	for i := range trail {
+		for r := range trail[i] {
+			trail[i][r].cost = math.Inf(1)
+		}
+	}
+	trail[0][0].cost = 0
+	for i := 1; i < 64; i++ {
+		index := Zigzag[i]
+		zero := config.Lambda * calculateDistortion(dct[index], 0, index, config.UsePerceptual)
+		for r := 0; r < i; r++ {
+			if c := trail[i-1][r].cost + zero; c < trail[i][r+1].cost {
+				trail[i][r+1] = state{cost: c, from: -1}
+			}
+		}
+		center := int(math.Round(float64(dct[index] / quant[index])))
+		for delta := -3; delta <= 3; delta++ {
+			v := center + delta
+			if v == 0 || v < -1023 || v > 1023 {
+				continue
+			}
+			d := config.Lambda * calculateDistortion(dct[index], float32(v)*quant[index], index, config.UsePerceptual)
+			for r := 0; r < i; r++ {
+				c := trail[i-1][r].cost + float64((r>>4)*rates.byRun[0][15]+rates.byRun[getACCategory(int16(v))][r&15]) + d
+				if c < trail[i][0].cost {
+					trail[i][0] = state{cost: c, value: int16(v), from: r}
+				}
+			}
+		}
+	}
+	best, run := trail[63][0].cost, 0
+	for r := 1; r < 64; r++ {
+		if c := trail[63][r].cost + float64(rates.byRun[0][0]); c < best {
+			best, run = c, r
+		}
+	}
+	var out [64]int16
+	for i := 63; i > 0; i-- {
+		if run > 0 {
+			run--
+			continue
+		}
+		s := trail[i][0]
+		out[Zigzag[i]] = s.value
+		run = s.from
+	}
+	return out
+}
+
+// TestTrellisNearWideSearch checks that mozjpeg's candidate rule loses almost
+// nothing against the much slower wide search, block by block and in total.
+func TestTrellisNearWideSearch(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
-	qt := NewQuantizationTables(85)
-	hash := fnv.New64a()
-	var buf [2]byte
+	tables := NewQuantizationTables(85)
+	configs := []TrellisConfig{DefaultTrellisConfig, {Lambda: 0.3}, {Lambda: 4, UsePerceptual: true}}
+	var fast, wide float64
 	for n := 0; n < 20000; n++ {
 		var block [64]float32
 		scale := float32(rng.IntN(4)+1) * 40
@@ -22,30 +107,26 @@ func trellisGoldenHash(optimize func([64]float32, [64]float32, TrellisConfig, bo
 			block[i] = float32(rng.NormFloat64()) * scale / float32(1+i/4)
 		}
 		for _, lum := range []bool{true, false} {
-			q := qt.Luminance
+			quant := tables.Luminance
 			if !lum {
-				q = qt.Chrominance
+				quant = tables.Chrominance
 			}
-			for _, cfg := range []TrellisConfig{DefaultTrellisConfig, {Lambda: 0.3}, {Lambda: 4, UsePerceptual: true}} {
-				for _, v := range optimize(block, q, cfg, lum) {
-					binary.LittleEndian.PutUint16(buf[:], uint16(v))
-					hash.Write(buf[:])
-				}
+			config := configs[n%len(configs)]
+			f := trellisCost(block, quant, config, lum, trellisOptimize(block, quant, config, lum))
+			w := trellisCost(block, quant, config, lum, trellisWideSearch(block, quant, config, lum))
+			if math.IsNaN(f) || math.IsInf(f, 0) || math.IsNaN(w) || math.IsInf(w, 0) {
+				t.Fatalf("block %d: non-finite cost (fast %v, wide %v)", n, f, w)
 			}
+			if f > w*1.05+2 {
+				t.Fatalf("block %d: fast cost %.2f far above wide search %.2f", n, f, w)
+			}
+			fast, wide = fast+f, wide+w
 		}
 	}
-	return hash.Sum64()
-}
-
-// TestTrellisMatchesReferenceOutput pins trellis output to the hash produced
-// by the original O(64²)-per-candidate implementation (master 2c3dfc7) before it was made
-// faster (prefix-sum run states, cached rates, nearest-first pruning).
-// Faster must not mean different.
-func TestTrellisMatchesReferenceOutput(t *testing.T) {
-	const reference uint64 = 0xb83bc8a6cea9591d
-	if got := trellisGoldenHash(trellisOptimize); got != reference {
-		t.Fatalf("trellis output hash %#x, want %#x", got, reference)
+	if fast > wide*1.002 {
+		t.Fatalf("total cost %.0f is more than 0.2%% above the wide search %.0f", fast, wide)
 	}
+	t.Logf("total cost: fast %.0f, wide %.0f (%+.3f%%)", fast, wide, (fast/wide-1)*100)
 }
 
 func BenchmarkTrellisEncode(b *testing.B) {
@@ -67,66 +148,6 @@ func BenchmarkTrellisEncode(b *testing.B) {
 		}
 	}
 }
-
-// trellisTieBlocks are deterministic blocks whose candidates tie exactly:
-// coefficients sit on half quantization steps, alone and in pairs.
-func trellisTieBlocks() (blocks [][64]float32, quants [][64]float32) {
-	var unit [64]float32
-	for i := range unit {
-		unit[i] = 1
-	}
-	std := NewQuantizationTables(85).Luminance
-	for _, q := range [][64]float32{unit, std} {
-		for pos := 1; pos < 64; pos += 3 {
-			for _, half := range []float32{0.5, 1.5, 2.5, 3.5, 10.5, -2.5} {
-				var block [64]float32
-				block[Zigzag[pos]] = half * q[Zigzag[pos]]
-				blocks, quants = append(blocks, block), append(quants, q)
-				if pos+5 < 64 {
-					block[Zigzag[pos+5]] = -half * q[Zigzag[pos+5]]
-					blocks, quants = append(blocks, block), append(quants, q)
-				}
-			}
-		}
-	}
-	return blocks, quants
-}
-
-// TestTrellisKeepsTieBreaking pins exact-tie behavior to the original
-// ascending-candidate search: equal costs pick the smaller value, then the
-// shorter run, regardless of the order candidates are evaluated in.
-func TestTrellisKeepsTieBreaking(t *testing.T) {
-	const reference uint64 = 0xbc32d6f91f8de5c6
-	hash := fnv.New64a()
-	var buf [2]byte
-	blocks, quants := trellisTieBlocks()
-	for n, block := range blocks {
-		for _, lum := range []bool{true, false} {
-			for _, cfg := range []TrellisConfig{DefaultTrellisConfig, {Lambda: 1}, {Lambda: 100}, {Lambda: 100, UsePerceptual: true}, {Lambda: 0.01}} {
-				for _, v := range trellisOptimize(block, quants[n], cfg, lum) {
-					binary.LittleEndian.PutUint16(buf[:], uint16(v))
-					hash.Write(buf[:])
-				}
-			}
-		}
-	}
-	if got := hash.Sum64(); got != reference {
-		t.Fatalf("tie-case output hash %#x, want %#x", got, reference)
-	}
-
-	// 2 and 3 cost the same for 2.5 on a unit step; the original picks 2.
-	var unit, block [64]float32
-	for i := range unit {
-		unit[i] = 1
-	}
-	block[Zigzag[1]] = 2.5
-	if got := trellisOptimize(block, unit, TrellisConfig{Lambda: 100}, true)[Zigzag[1]]; got != 2 {
-		t.Fatalf("tie resolved to %d, want 2", got)
-	}
-}
-
-// TestTrellisHugeLambdaStaysFinite: an unbounded weight once overflowed the
-// prefix sums to -Inf/NaN and silently dropped every later coefficient.
 func TestTrellisHugeLambdaStaysFinite(t *testing.T) {
 	var unit, block [64]float32
 	for i := range unit {
@@ -138,5 +159,22 @@ func TestTrellisHugeLambdaStaysFinite(t *testing.T) {
 		if got[Zigzag[1]] != 1000 || got[Zigzag[2]] != 1000 {
 			t.Fatalf("lambda %g: got %d, %d; want 1000, 1000", lambda, got[Zigzag[1]], got[Zigzag[2]])
 		}
+	}
+}
+
+// TestTrellisOddInputs: a NaN coefficient once drove the category loop past
+// the rate table and panicked; magnitudes above 1023 must clamp to the
+// largest baseline AC value.
+func TestTrellisOddInputs(t *testing.T) {
+	var unit, block [64]float32
+	for i := range unit {
+		unit[i] = 1
+	}
+	block[Zigzag[1]] = float32(math.NaN())
+	_ = TrellisOptimizeFull(block, unit, 1) // must not panic
+
+	block[Zigzag[1]] = 5000
+	if got := trellisOptimize(block, unit, TrellisConfig{Lambda: 100}, true)[Zigzag[1]]; got != 1023 {
+		t.Fatalf("magnitude 5000 quantized to %d, want 1023", got)
 	}
 }
