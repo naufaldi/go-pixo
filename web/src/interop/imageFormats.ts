@@ -61,13 +61,42 @@ export type ImageInfo = {
   // Encoded storage dimensions. Native JPEG pixels/preview apply orientation.
   width?: number; height?: number; bitDepth?: number;
   orientation?: JpegOrientation;
+  // HEIC 'irot' of the primary item, in anticlockwise quarter turns.
+  quarterTurns?: number;
 };
 
 export function imageDisplayDimensions(info: ImageInfo): {width: number; height: number} {
   const {width,height}=info;
   if (width===undefined || height===undefined) throw new Error('Image needs bounded dimensions before admission');
   assertSafeDimensions(width,height);
-  return info.format==='jpeg' && (info.orientation ?? 1)>=5 ? {width:height,height:width} : {width,height};
+  const transposed = info.format==='jpeg' ? (info.orientation ?? 1)>=5 : info.format==='heic' && (info.quarterTurns ?? 0)%2===1;
+  return transposed ? {width:height,height:width} : {width,height};
+}
+
+// Finds the primary item's 'irot' through 'pitm' and 'ipma' (ISO/IEC 23008-12).
+// Missing or malformed associations mean no rotation; the decoder then reports
+// the real size, which the decoded-dimension check still bounds.
+function primaryQuarterTurns(bytes: Uint8Array, view: DataView, pitm: number | undefined,
+  ipma: {start: number; end: number} | undefined, properties: {tag: string; start: number; end: number}[]): number {
+  if (pitm===undefined || !ipma || pitm+6>bytes.length || ipma.start+8>ipma.end) return 0;
+  const primary=bytes[pitm]===0 ? view.getUint16(pitm+4) : view.getUint32(pitm+4);
+  const version=bytes[ipma.start], wideIndex=(bytes[ipma.start+3]&1)===1;
+  const count=view.getUint32(ipma.start+4);
+  for (let p=ipma.start+8, i=0; i<count; i++) {
+    const idSize=version<1 ? 2 : 4;
+    if (p+idSize+1>ipma.end) return 0;
+    const item=idSize===2 ? view.getUint16(p) : view.getUint32(p);
+    const associations=bytes[p+idSize];
+    p+=idSize+1;
+    if (p+associations*(wideIndex ? 2 : 1)>ipma.end) return 0;
+    for (let j=0; j<associations; j++) {
+      const index=wideIndex ? view.getUint16(p+2*j)&0x7fff : bytes[p+j]&0x7f;
+      const property=properties[index-1];
+      if (item===primary && property?.tag==='irot' && property.end>property.start) return bytes[property.start]&3;
+    }
+    p+=associations*(wideIndex ? 2 : 1);
+  }
+  return 0;
 }
 
 // Read only IFD0's inline SHORT orientation. Never follow EXIF, thumbnail, maker
@@ -103,6 +132,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
   let width: number | undefined, height: number | undefined;
   let bitDepth: number | undefined;
   let orientation: JpegOrientation | undefined;
+  let quarterTurns: number | undefined;
   const u32 = (p: number, le = false) => view.getUint32(p, le);
   if (format === 'unknown') throw new Error('Unsupported or invalid image format');
   if (format === 'png') {
@@ -223,7 +253,11 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     // 'hevc' merely as compatible. Only a file whose sole content is a 'moov'
     // track, with no 'meta' still image, is an image sequence.
     const topLevel=new Set<string>();
-    const walk = (start: number, end: number, depth: number) => {
+    // Item properties, in 'ipco' order (1-based in 'ipma'), plus the boxes that
+    // say which of them belong to the primary item.
+    const properties: {tag: string; start: number; end: number}[]=[];
+    let pitm: number | undefined, ipma: {start: number; end: number} | undefined;
+    const walk = (start: number, end: number, depth: number, parent = '') => {
       if (depth>8) throw invalid();
       for (let p=start; p+8<=end;) {
         let n=u32(p); const tag=text(bytes,p+4,4);
@@ -233,6 +267,9 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
         if (!Number.isSafeInteger(n) || n<header || n>end-p) throw invalid();
         const s=p+header;
         if (depth===0) topLevel.add(tag);
+        if (parent==='ipco') properties.push({tag,start:s,end:p+n});
+        if (tag==='pitm') pitm=s;
+        if (tag==='ipma') ipma={start:s,end:p+n};
         if (tag==='ftyp' && format==='avif') {
           const brands=[text(bytes,s,4)];
           for (let i=s+8;i+4<=p+n;i+=4) brands.push(text(bytes,i,4));
@@ -255,12 +292,13 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
           if (n<header+23) throw invalid();
           bitDepth=Math.max(bitDepth ?? 0,8+(bytes[s+17]&7),8+(bytes[s+18]&7));
         }
-        if (['meta','iprp','ipco','moov','trak','mdia','minf','stbl'].includes(tag)) walk(s+(tag==='meta'?4:0),p+n,depth+1);
+        if (['meta','iprp','ipco','moov','trak','mdia','minf','stbl'].includes(tag)) walk(s+(tag==='meta'?4:0),p+n,depth+1,tag);
         p+=n;
       }
     };
     walk(0,bytes.length,0);
     if (format==='heic' && topLevel.has('moov') && !topLevel.has('meta')) throw animated();
+    if (format==='heic') quarterTurns=primaryQuarterTurns(bytes,view,pitm,ipma,properties);
     // No decoder should allocate from a container with no bounded spatial header.
     if (width===undefined) throw invalid();
   } else if (format === 'svg') {
@@ -314,7 +352,7 @@ export function inspectImage(bytes: Uint8Array, mime = ''): ImageInfo {
     if (!width || !height) throw new Error('SVG needs bounded width/height or a viewBox');
   }
   if (width!==undefined && height!==undefined) assertSafeDimensions(width,height);
-  return {format,width,height,bitDepth,orientation};
+  return {format,width,height,bitDepth,orientation,quarterTurns};
 }
 
 export function inputMime(format: InputFormat): string {

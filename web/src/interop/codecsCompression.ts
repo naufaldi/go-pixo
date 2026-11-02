@@ -1,6 +1,6 @@
 import { compressionCandidates, resolveOutputFormat, selectCompressionResult, type CompressionResult, type InputFormat, type OutputFormatChoice, type ResolvedFormat } from './compressionSettings';
 import { assertSafeDimensions, imageDisplayDimensions, inspectImage } from './imageFormats';
-import { assertDecodedDimensions, decodeNative } from './codecsNative';
+import { assertDecodedDimensions, assertSameDecodedPixels, decodeNative } from './codecsNative';
 import {decodeAvif} from './codecs';
 
 export type CandidateRequest = {
@@ -51,7 +51,8 @@ export async function compressWithCandidates(
       if (bytes.length<original.compressedBytes.length) {
         const info=inspectImage(bytes), display=imageDisplayDimensions(info);
         if (info.format!=='jpeg' || display.width!==request.width || display.height!==request.height) throw new Error('Optimized JPEG changed format or dimensions');
-        await validate(bytes);
+        // Decodable is not enough: decoders can disagree on unusual progressions.
+        await assertSameDecodedPixels(original.compressedBytes,bytes);
         optimized={compressedBytes:bytes,outputFormat:'jpeg'};
       }
     } catch (error) {

@@ -353,6 +353,70 @@ func segmentsOf(t *testing.T, data []byte) (markers []byte, payloads [][]byte) {
 	return markers, payloads
 }
 
+// scanSpans returns [start, end) of every SOS segment plus its entropy-coded
+// data, which runs to the next marker other than a stuffed 0xff00 or RSTn.
+func scanSpans(data []byte) (spans [][2]int) {
+	for i := 2; i+4 <= len(data); i++ {
+		if data[i] != 0xff || data[i+1] != mkSOS {
+			continue
+		}
+		end := i + 2 + int(binary.BigEndian.Uint16(data[i+2:]))
+		for end+1 < len(data) && (data[end] != 0xff || data[end+1] == 0 || (data[end+1] >= 0xd0 && data[end+1] <= 0xd7)) {
+			end++
+		}
+		spans = append(spans, [2]int{i, end})
+		i = end - 1
+	}
+	return spans
+}
+
+// TestOptimizeLosslessRejectsRepeatedScans covers files whose scans re-code
+// coefficients. libjpeg and Go's image/jpeg decode them differently, so no
+// re-encoding can be lossless for every decoder.
+func TestOptimizeLosslessRejectsRepeatedScans(t *testing.T) {
+	progressive := readTestdata(t, "video-001.progressive.jpeg")
+	baseline := stdEncode(t, photoLike(32, 16, 3), 90)
+	small := reencode(t, stdEncode(t, photoLike(8, 8, 7), 90), jpegtranLayout, 0)
+	scanParams := func(data []byte, span [2]int) (ss, ah byte) {
+		header := data[span[0]+4:]
+		n := int(header[0])
+		return header[1+2*n], header[3+2*n] >> 4
+	}
+	pick := func(data []byte, match func(ss, ah byte) bool) [2]int {
+		for _, span := range scanSpans(data) {
+			if match(scanParams(data, span)) {
+				return span
+			}
+		}
+		t.Fatal("fixture has no matching scan")
+		return [2]int{}
+	}
+	tests := []struct {
+		name  string
+		input []byte
+		match func(ss, ah byte) bool
+	}{
+		// Without the progression check this one decodes without error to different pixels.
+		{"repeated AC refinement", small, func(ss, ah byte) bool { return ss > 0 && ah == 1 }},
+		{"repeated AC refinement in a libjpeg file", progressive, func(ss, ah byte) bool { return ss > 0 && ah > 0 }},
+		{"repeated DC refinement", progressive, func(ss, ah byte) bool { return ss == 0 && ah > 0 }},
+		{"repeated first AC scan", progressive, func(ss, ah byte) bool { return ss > 0 && ah == 0 }},
+		{"repeated sequential scan", baseline, func(byte, byte) bool { return true }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			span := pick(tt.input, tt.match)
+			repeated := append(append(append([]byte{}, tt.input[:span[1]]...), tt.input[span[0]:span[1]]...), tt.input[span[1]:]...)
+			if out, err := OptimizeLossless(repeated); !errors.Is(err, ErrInvalidJPEG) {
+				t.Fatalf("want ErrInvalidJPEG, got %v (%d bytes)", err, len(out))
+			}
+		})
+	}
+	if _, err := OptimizeLossless(progressive); err != nil {
+		t.Fatalf("unmodified progressive fixture: %v", err)
+	}
+}
+
 func TestOptimizeLosslessMetadata(t *testing.T) {
 	base := stdEncode(t, photoLike(40, 30, 7), 85)
 	iccChunk1 := append([]byte("ICC_PROFILE\x00\x01\x02"), bytes.Repeat([]byte("profile-part-one"), 40)...)

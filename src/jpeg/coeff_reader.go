@@ -122,14 +122,17 @@ type coeffDecoder struct {
 
 	eobRun uint16 // End-of-Band run, specified in section G.1.2.2.
 
-	comp           [coeffMaxComponents]coeffComponent
-	hMax, vMax     int
-	mxx, myy       int // MCUs per row and column of interleaved scans.
-	totalBlocks    int
-	coeffs         []int16 // Zig-zag ordered coefficients, 64 per block.
-	huff           [coeffMaxTc + 1][coeffMaxTh + 1]coeffHuffman
-	quant          [coeffMaxTq + 1][coeffBlockSize]uint16 // Zig-zag order.
-	quantDefined   [coeffMaxTq + 1]bool
+	comp         [coeffMaxComponents]coeffComponent
+	hMax, vMax   int
+	mxx, myy     int // MCUs per row and column of interleaved scans.
+	totalBlocks  int
+	coeffs       []int16 // Zig-zag ordered coefficients, 64 per block.
+	huff         [coeffMaxTc + 1][coeffMaxTh + 1]coeffHuffman
+	quant        [coeffMaxTq + 1][coeffBlockSize]uint16 // Zig-zag order.
+	quantDefined [coeffMaxTq + 1]bool
+	// approx records, per component and zig-zag index, 1 + the Al of the
+	// last progressive scan that coded it (0 = not yet coded).
+	approx         [coeffMaxComponents][coeffBlockSize]uint8
 	scanSeen       bool
 	jfif           []byte   // APP0 JFIF payload, if any.
 	iccSegments    [][]byte // APP2 ICC_PROFILE payloads, in file order.
@@ -686,9 +689,13 @@ func (d *coeffDecoder) processSOS(n int) error {
 	}
 
 	for i := 0; i < nComp; i++ {
-		c := &d.comp[scan[i].compIndex]
+		ci := scan[i].compIndex
+		c := &d.comp[ci]
 		if !d.quantDefined[c.tq] {
 			return coeffFormatError("missing quantization table")
+		}
+		if err := d.checkProgression(ci, zigStart, zigEnd, ah, al); err != nil {
+			return err
 		}
 		c.scanned = true
 	}
@@ -752,6 +759,31 @@ func (d *coeffDecoder) processSOS(n int) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// checkProgression rejects scans that re-code coefficients out of order
+// (section G.1.1.1.1). Decoders disagree on such files: libjpeg skips an
+// already-refined bit while Go's image/jpeg applies it again, so accepting
+// them would make "lossless" output decode differently elsewhere.
+func (d *coeffDecoder) checkProgression(ci uint8, zigStart, zigEnd int32, ah, al uint32) error {
+	if !d.progressive {
+		if d.comp[ci].scanned {
+			return coeffFormatError("component coded by more than one sequential scan")
+		}
+		return nil
+	}
+	approx := &d.approx[ci]
+	if zigStart > 0 && approx[0] == 0 {
+		return coeffFormatError("progressive AC scan before the component's first DC scan")
+	}
+	for k := zigStart; k <= zigEnd; k++ {
+		first, previous := ah == 0, approx[k]
+		if (first && previous != 0) || (!first && uint32(previous) != ah+1) {
+			return coeffFormatError("inconsistent successive approximation progression")
+		}
+		approx[k] = uint8(al + 1)
 	}
 	return nil
 }

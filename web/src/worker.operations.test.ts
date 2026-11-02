@@ -3,9 +3,11 @@ import {jpegWithExif} from './test/jpeg';
 const codecs = vi.hoisted(() => ({encodeWebp: vi.fn(), encodeAvif: vi.fn()}));
 vi.mock('./interop/codecs', () => codecs);
 const validation = vi.hoisted(() => vi.fn());
-vi.mock('./interop/codecsNative', () => ({decodeNative: validation}));
+const samePixels = vi.hoisted(() => vi.fn());
+vi.mock('./interop/codecsNative', () => ({decodeNative: validation, assertSameDecodedPixels: samePixels}));
 beforeEach(() => {
   validation.mockReset().mockResolvedValue(undefined);
+  samePixels.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal('createImageBitmap',vi.fn());
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() });
@@ -60,17 +62,21 @@ it('returns exact original webp bytes without pixels, canvas, or Go', async () =
   expect(fetch).not.toHaveBeenCalled();
   expect(scope.Go).not.toHaveBeenCalled();
 });
-it('optimizes JPEG original bytes losslessly in Go without pixels or canvas', async () => {
+it('optimizes JPEG original bytes losslessly in Go and checks decoded pixels', async () => {
   const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });
   vi.stubGlobal('OffscreenCanvas', canvas);
   const withComment = new Uint8Array([255,216,255,254,0,10,...new Uint8Array(8),...jpeg.slice(2)]);
   const {scope, messages, send} = await worker();
   scope.optimizeJpegLossless = vi.fn(() => new Uint8Array(jpeg));
+  // The selected output is transferred (detached) afterwards, so record sizes at call time.
+  const compared: number[][] = [];
+  samePixels.mockImplementation(async (expected: Uint8Array, actual: Uint8Array) => { compared.push([expected.length, actual.length]); });
   await send('jpeg', withComment);
   const output = messages.find(message => message.type === 'compressed');
   expect(output?.outputFormat).toBe('jpeg');
   expect(Array.from(output.compressedBytes)).toEqual(Array.from(jpeg));
   expect(Array.from(scope.optimizeJpegLossless.mock.calls[0][0])).toEqual(Array.from(withComment));
+  expect(compared).toEqual([[withComment.length, jpeg.length]]);
   expect(messages.some(message => message.type === 'progress' && message.phase === 'optimizing-jpeg')).toBe(true);
   expect(canvas).not.toHaveBeenCalled();
 });

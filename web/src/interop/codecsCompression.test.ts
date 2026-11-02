@@ -4,11 +4,23 @@ import { compressWithCandidates } from './codecsCompression';
 import {jpegWithExif} from '../test/jpeg';
 import { imageDisplayDimensions, inspectImage } from './imageFormats';
 
+// Fake decoded pixel value per encoded byte length; equal values mean equal pixels.
+let pixelValueFor=(_length: number) => 1;
 beforeEach(() => {
+  pixelValueFor=() => 1;
   // These tests own candidate selection; the browser decoder is the boundary.
   vi.stubGlobal('createImageBitmap',vi.fn(async (blob: Blob) => ({
-    ...imageDisplayDimensions(inspectImage(new Uint8Array(await blob.arrayBuffer()))),close:vi.fn(),
+    ...imageDisplayDimensions(inspectImage(new Uint8Array(await blob.arrayBuffer()))),close:vi.fn(),value:pixelValueFor(blob.size),
   })));
+  vi.stubGlobal('OffscreenCanvas',class {
+    width: number; height: number;
+    constructor(width: number, height: number) { this.width=width; this.height=height; }
+    getContext() {
+      let value=0;
+      return {clearRect:vi.fn(),drawImage:(bitmap: {value: number}) => { value=bitmap.value; },
+        getImageData:(_x: number,_y: number,w: number,h: number) => ({data:new Uint8ClampedArray(w*h*4).fill(value)})};
+    }
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -64,6 +76,19 @@ describe('lossless JPEG entropy optimization', () => {
     ['is not a JPEG', async () => png(2,1,20)],
   ])('keeps the validated original when the optimizer %s', async (_case, optimize) => {
     const result=await compressWithCandidates(request,noEncode,undefined,optimize);
+    expect(result.compressedBytes).toBe(original);
+  });
+
+  it('keeps the original when the browser decodes the optimized JPEG to different pixels', async () => {
+    const optimized=jpeg(5);
+    pixelValueFor=length => length===optimized.length ? 2 : 1;
+    const result=await compressWithCandidates(request,noEncode,undefined,async () => optimized);
+    expect(result.compressedBytes).toBe(original);
+  });
+
+  it('keeps the original when pixels cannot be compared', async () => {
+    vi.stubGlobal('OffscreenCanvas',undefined);
+    const result=await compressWithCandidates(request,noEncode,undefined,async () => jpeg(5));
     expect(result.compressedBytes).toBe(original);
   });
 
