@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src/worker.ts",
+    "src/interop/codecsDecode.worker.ts",
+    "src/interop/codecsTiff.d.ts"
+  ]
+}

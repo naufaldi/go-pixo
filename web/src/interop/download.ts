@@ -15,38 +15,63 @@ export const buildCompressedFilename = (
   originalName: string,
   extension: string,
 ): string => {
-  const dot = originalName.lastIndexOf('.');
-  const base = dot > 0 ? originalName.slice(0, dot) : originalName;
+  const leaf = originalName.replace(/\\/g, '/').split('/').pop() ?? '';
+  const safe = leaf.replace(/[\x00-\x1f\x7f<>:"|?*]/g, '_').replace(/[. ]+$/, '');
+  const dot = safe.lastIndexOf('.');
+  const base = (dot > 0 ? safe.slice(0, dot) : safe) || 'image';
+  if (!/^\.[a-z0-9]+$/i.test(extension)) throw new Error('Invalid output extension');
   return `compressed_${base}${extension}`;
 };
 
-export const downloadBlob = async (blobUrl: string, filename: string): Promise<void> => {
-  const blob = await fetch(blobUrl).then((r) => r.blob());
+export const downloadBlob = async (
+  blobUrl: string,
+  filename: string,
+  signal?: AbortSignal,
+): Promise<void> => {
+  signal?.throwIfAborted();
+  if (!blobUrl.startsWith('blob:')) throw new Error('Downloads require a local blob URL');
+  const response = await withAbort(fetch(blobUrl, { signal }), signal);
+  signal?.throwIfAborted();
+  if (!response.ok) throw new Error('Could not read compressed image');
+  const blob = await withAbort(response.blob(), signal);
+  signal?.throwIfAborted();
   const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
   try {
-    const a = document.createElement("a");
+    signal?.throwIfAborted();
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
   } finally {
+    a.remove();
     URL.revokeObjectURL(url);
   }
 };
 
-export const downloadAll = (items: QueueItem[]): void => {
-  items.forEach((item, index) => {
-    if (item.status === "Done" && item.compressedUrl != null) {
-      const extension = item.compressedExtension ?? '.png';
-      setTimeout(() => {
-        void downloadBlob(
-          item.compressedUrl as string,
-          buildCompressedFilename(item.file.name, extension),
-        );
-      }, index * 100);
-    }
-  });
+const downloadDelay = (signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
+  const onAbort = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+    reject(signal?.reason);
+  };
+  const timer = setTimeout(() => {
+    signal?.removeEventListener('abort', onAbort);
+    resolve();
+  }, 100);
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+});
+
+export const downloadAll = async (items: QueueItem[], signal?: AbortSignal): Promise<void> => {
+  signal?.throwIfAborted();
+  let downloaded = false;
+  for (const item of items) {
+    if (item.status !== 'Done' || item.compressedUrl == null) continue;
+    if (downloaded) await downloadDelay(signal);
+    await downloadBlob(item.compressedUrl, buildCompressedFilename(item.file.name, item.compressedExtension ?? '.png'), signal);
+    downloaded = true;
+  }
 };
 
 // Bound both the input allocation and each synchronous CRC pass. Blob URL
@@ -116,8 +141,10 @@ export const downloadAllAsZip = async (
     const names = new Set<string>();
     for (const item of done) {
       signal?.throwIfAborted();
-      const response = await withAbort(fetch(item.compressedUrl as string, { signal }), signal);
+      if (!item.compressedUrl?.startsWith('blob:')) throw new Error('Downloads require a local blob URL');
+      const response = await withAbort(fetch(item.compressedUrl, { signal }), signal);
       signal?.throwIfAborted();
+      if (!response.ok) throw new Error('Could not read compressed image');
       const blob = await withAbort(response.blob(), signal);
       signal?.throwIfAborted();
       if (blob.size > ZIP_MAX_BYTES) throw new Error('File exceeds the ZIP size limit (4 GiB)');

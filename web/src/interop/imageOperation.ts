@@ -19,13 +19,17 @@ export function imageOperation(info: ImageInfo, settings?: OperationSettings) {
   const display = imageDisplayDimensions(info);
   const size = resolveResizeDimensions(display.width, display.height, settings?.targetWidth, settings?.targetHeight);
   const same = settings?.outputFormat !== 'auto' && resolveOutputFormat(info.format, settings?.outputFormat ?? 'same') === info.format;
-  const bytesOnly = settings?.lossy === false && !size.resized && same;
-  const kind = bytesOnly && (info.format === 'jpeg' || info.format === 'webp') ? 'original'
+  const preservePrecision = (info.bitDepth ?? 8) > 8 && settings?.outputFormat === 'auto';
+  const bytesOnly = settings?.lossy === false && !size.resized && (same || preservePrecision);
+  const kind = bytesOnly && (info.format === 'jpeg' || info.format === 'webp' || info.format === 'avif') ? 'original'
     : bytesOnly && info.format === 'png' ? 'png-bytes' : 'pixels';
+  if (settings?.lossy === false && (info.bitDepth ?? 8) > 8 && kind === 'pixels') {
+    throw new Error('Lossless high-bit-depth conversion or resizing is unavailable in the 8-bit pixel pipeline. Keep the original format or enable lossy compression.');
+  }
   const sourcePixels = info.width! * info.height!; // Storage remains charged when downsizing.
   const outputPixels = size.width * size.height;
   return {
     kind, ...size,
-    workspaceBytes: kind === 'original' ? 0 : WORKSPACE_BYTES_PER_PIXEL * Math.max(sourcePixels, outputPixels),
+    workspaceBytes: WORKSPACE_BYTES_PER_PIXEL * Math.max(sourcePixels, outputPixels),
   } as const;
 }

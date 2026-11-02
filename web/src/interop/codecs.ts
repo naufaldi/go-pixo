@@ -1,9 +1,8 @@
 import avifEncodeWasm from '@jsquash/avif/codec/enc/avif_enc.wasm?url';
 import avifDecodeWasm from '@jsquash/avif/codec/dec/avif_dec.wasm?url';
-import heifModuleUrl from 'libheif-js/libheif-wasm/libheif-bundle.mjs?url';
 import type { AVIFModule as AvifEncoder } from '@jsquash/avif/codec/enc/avif_enc.js';
 import type { AVIFModule as AvifDecoder } from '@jsquash/avif/codec/dec/avif_dec.js';
-import { assertSafeDimensions, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
+import { assertSafeDimensions, HEIC_UNAVAILABLE_MESSAGE, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
 import { assertRgbaPixelBuffer } from './pixels';
 import { decodeTiffStrips } from './tiffStrips';
 
@@ -34,48 +33,9 @@ export async function encodeAvif(pixels: Uint8Array, width: number, height: numb
 
 export type DecodedPixels = {pixels: Uint8Array; width: number; height: number};
 
-type HeifImage = {handle: number; get_width(): number; get_height(): number; free(): void};
-type HeifContext = {decoder: number | null; decode(bytes: Uint8Array): HeifImage[]};
-type HeifDecoded = {code?: number; image: number; channels: {id: number; width: number; height: number; stride: number; data: Uint8Array}[]};
-type HeifModule = {
-  HeifDecoder: new () => HeifContext;
-  heif_colorspace_RGB: number; heif_chroma_interleaved_RGBA: number; heif_channel_interleaved: number;
-  heif_js_decode_image2(handle: number, colorspace: number, chroma: number): Promise<HeifDecoded>;
-  heif_image_release(image: number): void;
-  heif_context_free(context: number): void;
-  heif_context_get_number_of_top_level_images(context: number): number;
-};
-let heifModule: Promise<HeifModule> | undefined;
-
-export async function decodeHeic(bytes: Uint8Array): Promise<DecodedPixels> {
-  const info=inspectImage(bytes);
-  if ((info.bitDepth ?? 8)>8) throw new Error('Only 8-bit HEIC/HEIF images are supported');
-  // An emitted, unmodified ESM asset embeds its WASM. No CDN or runtime network
-  // dependency; keeping the LGPL module separate also permits replacement.
-  heifModule??=import(/* @vite-ignore */ heifModuleUrl).then(module=>module.default());
-  const lib=await heifModule!;
-  const context=new lib.HeifDecoder();
-  let images: HeifImage[]=[];
-  let decoded: HeifDecoded | undefined;
-  try {
-    images=context.decode(bytes);
-    const count=context.decoder ? lib.heif_context_get_number_of_top_level_images(context.decoder) : 0;
-    if (count!==1 || images.length!==1) throw new Error(count>1 ? 'Multiple-image HEIC is not supported. Export a single still image first.' : 'Invalid or unsupported HEIC/HEIF image');
-    const image=images[0], width=image.get_width(), height=image.get_height();
-    assertSafeDimensions(width,height); // metadata handles, before HEVC decoding / RGBA allocation
-    decoded=await lib.heif_js_decode_image2(image.handle,lib.heif_colorspace_RGB,lib.heif_chroma_interleaved_RGBA);
-    if (!decoded || decoded.code) throw new Error('HEIC/HEIF pixel decoding failed');
-    const channel=decoded.channels.find(channel=>channel.id===lib.heif_channel_interleaved);
-    if (!channel || channel.width!==width || channel.height!==height || channel.stride<width*4 ||
-        channel.data.length<channel.stride*(height-1)+width*4) throw new Error('Invalid HEIC/HEIF pixel layout');
-    const pixels=new Uint8Array(width*height*4);
-    for (let row=0;row<height;row++) pixels.set(channel.data.subarray(row*channel.stride,row*channel.stride+width*4),row*width*4);
-    return {pixels,width,height};
-  } finally {
-    if (decoded?.image) lib.heif_image_release(decoded.image);
-    images.forEach(image=>image.free());
-    if (context.decoder) { lib.heif_context_free(context.decoder); context.decoder=null; }
-  }
+export async function decodeHeic(_bytes: Uint8Array): Promise<DecodedPixels> {
+  // Keep the vulnerable libheif bundle unreachable until a patched wrapper exists.
+  throw new Error(HEIC_UNAVAILABLE_MESSAGE);
 }
 
 export async function decodeAvif(bytes: Uint8Array): Promise<DecodedPixels> {

@@ -4,6 +4,7 @@ import type { InputFormat } from './compressionSettings';
 export const MAX_IMAGE_PIXELS = 24_000_000;
 export const MAX_IMAGE_DIMENSION = 16_384;
 export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+export const HEIC_UNAVAILABLE_MESSAGE = 'HEIC/HEIF decoding is temporarily unavailable for security reasons. Export this image as PNG or JPEG and retry.';
 // Count every reference, including aliases: UTIF creates one JS array per tag.
 const MAX_TIFF_METADATA_VALUES = 65_536;
 export const TIFF_TAG_VALUE_LIMITS: Readonly<Record<number, number>> = {

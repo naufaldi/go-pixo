@@ -400,6 +400,11 @@ self.onmessage = async (event: MessageEvent) => {
       if (fast) return encodePng(requirePixels(),work.width,work.height,6,2,false,0,false);
       return encodePngAdvanced(requirePixels(),work.width,work.height,6,req.preset,req.lossy,req.maxColors,req.dithering,
         req.ditherStrength ?? 0.5,quality,req.zopfliIterations ?? 0,0,false,0,false,false,pngProgress,req.pngAllowRGBAFallback === true);
+    }, async bytes => {
+      await initWasm();
+      const validator = (self as unknown as {validateImageBytes(bytes: Uint8Array): boolean | string}).validateImageBytes;
+      const result = validator(bytes);
+      if (result !== true) throw new Error(typeof result === 'string' ? result.replace(/^error:\s*/, '') : 'Invalid image data');
     });
     postProgress(STAGE.FINALIZING.label,STAGE.FINALIZING.end);
     const originalBytes=req.originalFileBytes?.length || req.pixels?.length || 0;
@@ -409,7 +414,7 @@ self.onmessage = async (event: MessageEvent) => {
     if (!(outputBuffer instanceof ArrayBuffer)) throw new Error('Compression output must own a transferable buffer');
     self.postMessage({type:'compressed',id:req.id,...result,originalBytes,compressedBytesCount:result.compressedBytes.length,
       ratio:originalBytes ? result.compressedBytes.length/originalBytes*100 : 0} as CompressionResponse,
-      [outputBuffer]);
+      {transfer: [outputBuffer]});
   } catch(error) {
     self.postMessage({type:'error',id:error instanceof GoInitializationError ? undefined : req.id,
       error:error instanceof Error ? error.message : 'Compression failed'});

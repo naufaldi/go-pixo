@@ -11,7 +11,7 @@ it.each(['encoded', 'original'])('transfers exclusively owned %s output, preserv
   const received: any[] = []
   const scope: any = {
     onmessage: null,
-    postMessage: (message: unknown, transfer: Transferable[] = []) => received.push(structuredClone(message, {transfer})),
+    postMessage: (message: unknown, options: StructuredSerializeOptions = {}) => received.push(structuredClone(message, options)),
     Go: class { importObject = {}; run() { scope.goWasmInit() } },
   }
   vi.stubGlobal('self', scope)

@@ -32,7 +32,7 @@ describe('AppState reducer', () => {
     URL.revokeObjectURL = vi.fn()
     const items = ['Decoding', 'Compressing', 'Done'].map((status, index) => queueItem({ id: `item-${index}`, status }))
     const next = reducer({ ...initialState, items, processingAll: true }, 'RequeueProcessedItemsForSettings')
-    expect(next.items.map(item => [item.status, item.generation, item.compressedUrl])).toEqual([
+    expect(next.items.map((item: ReturnType<typeof queueItem>) => [item.status, item.generation, item.compressedUrl])).toEqual([
       ['Pending', 1, undefined], ['Pending', 1, undefined], ['Pending', 1, undefined],
     ])
     expect(next.activeCompressions).toEqual([])

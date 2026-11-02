@@ -1,6 +1,16 @@
-import { expect, it } from 'vitest';
+// @vitest-environment node
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { compressWithCandidates } from './codecsCompression';
 import {jpegWithExif} from '../test/jpeg';
+import { imageDisplayDimensions, inspectImage } from './imageFormats';
+
+beforeEach(() => {
+  // These tests own candidate selection; the browser decoder is the boundary.
+  vi.stubGlobal('createImageBitmap',vi.fn(async (blob: Blob) => ({
+    ...imageDisplayDimensions(inspectImage(new Uint8Array(await blob.arrayBuffer()))),close:vi.fn(),
+  })));
+});
+afterEach(() => vi.unstubAllGlobals());
 
 function png(w: number, h: number, length = 45) {
   const b=new Uint8Array(length); b.set([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82]);
@@ -57,4 +67,28 @@ it('never selects a rotated original with different displayed dimensions even wi
   await expect(compressWithCandidates({format:'jpeg',outputFormat:'same',lossy:false,width:3,height:4,
     originalFileBytes:jpegWithExif(3,4,6)},async () => { throw new Error('Unexpected encode'); }))
     .rejects.toThrow(/lossy/i);
+});
+
+it.each(['jpeg','png'] as const)('rejects undecodable metadata-only %s before selecting original bytes or invoking an encoder', async format => {
+  const bytes = format === 'jpeg' ? new Uint8Array([255,216,255,192,0,7,8,0,1,0,1]) : png(1,1,33);
+  if (format === 'png') bytes[24]=16;
+  const decode = vi.fn().mockRejectedValue(new DOMException('Invalid image data','InvalidStateError'));
+  vi.stubGlobal('createImageBitmap',decode);
+  const encode = vi.fn();
+  await expect(compressWithCandidates({format,lossy:false,width:1,height:1,originalFileBytes:bytes},encode)).rejects.toThrow(/Invalid image data/);
+  expect(decode).toHaveBeenCalledTimes(1);
+  expect(encode).not.toHaveBeenCalled();
+});
+
+it('releases validation bitmap while retaining exact high-bit-depth original bytes', async () => {
+  const bytes=png(2,1); bytes[24]=16;
+  const close=vi.fn();
+  vi.stubGlobal('createImageBitmap',vi.fn(async () => ({width:2,height:1,close})));
+  const canvas=vi.fn(); vi.stubGlobal('OffscreenCanvas',canvas);
+  const encode=vi.fn();
+  const result=await compressWithCandidates({...base,lossy:false,originalFileBytes:bytes},encode);
+  expect(result.compressedBytes).toBe(bytes);
+  expect(close).toHaveBeenCalledOnce();
+  expect(canvas).not.toHaveBeenCalled();
+  expect(encode).not.toHaveBeenCalled();
 });

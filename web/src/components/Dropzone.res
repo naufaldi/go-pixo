@@ -34,9 +34,9 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
   
   <div
     className={if dragActive {
-      "border-2 border-dashed border-neutral-400 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors bg-neutral-900"
+      "border-2 border-dashed border-neutral-400 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors motion-reduce:transition-none bg-neutral-900"
     } else {
-      "border-2 border-dashed border-neutral-700 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors hover:border-neutral-500 cursor-pointer"
+      "border-2 border-dashed border-neutral-700 rounded-lg px-4 py-12 sm:p-20 text-center transition-colors motion-reduce:transition-none hover:border-neutral-500 cursor-pointer"
     }}
     onDragEnter=onDragEnter
     onDragOver=onDragOver
@@ -69,7 +69,7 @@ let make = (~dragActive, ~onDragEnter, ~onDragOver, ~onDragLeave, ~onDrop, ~onFi
       </p>
       <button
         type_="button"
-        className="mt-4 px-6 py-2 bg-white text-neutral-900 rounded-md font-medium hover:bg-neutral-100 transition-colors">
+        className="min-h-11 min-w-11 mt-4 px-6 py-2 bg-white text-neutral-900 rounded-md font-medium hover:bg-neutral-100 transition-colors motion-reduce:transition-none">
         {React.string("Select Files")}
       </button>
       <p className="text-xs text-neutral-500 mt-2">

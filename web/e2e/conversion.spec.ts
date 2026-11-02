@@ -209,7 +209,7 @@ test.describe('go-pixo', () => {
     await uploadSamplePng(page)
     await waitForCompression(page)
 
-    const slider = page.locator('input[type="range"]')
+    const slider = page.getByRole('slider', { name: 'Compression preset' })
     await expect(slider).toHaveValue('2')
     await slider.fill('0')
     await expect(slider).toHaveValue('0')
@@ -261,7 +261,7 @@ test.describe('go-pixo', () => {
     const progress = page.getByTestId('compression-percent')
     const progressStarted = progress.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null)
     const start = Date.now()
-    await page.locator('input[type="range"]').fill('0')
+    await page.getByRole('slider', { name: 'Compression preset' }).fill('0')
     await progressStarted
     await page.waitForTimeout(1200)
     if (await progress.isVisible()) {

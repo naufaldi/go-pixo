@@ -77,8 +77,10 @@ test('rotated 3000x4000 JPEG keeps exact bytes at displayed width 4000 and resiz
     const original=document.querySelector<HTMLImageElement>('img[alt="Original"]')!;
     const output=document.querySelector<HTMLImageElement>('img[alt="Compressed"]')!;
     await Promise.all([original.decode(),output.decode()]);
-    const before=new Uint8Array(await fetch(original.src).then(r => r.arrayBuffer()));
-    const after=new Uint8Array(await fetch(output.src).then(r => r.arrayBuffer()));
+    const beforeResponse=await fetch(original.src);
+    const afterResponse=await fetch(output.src);
+    const before=new Uint8Array(await beforeResponse.arrayBuffer());
+    const after=new Uint8Array(await afterResponse.arrayBuffer());
     return {same:before.length===after.length && before.every((b,i) => b===after[i]),
       original:[original.naturalWidth,original.naturalHeight],output:[output.naturalWidth,output.naturalHeight]};
   });

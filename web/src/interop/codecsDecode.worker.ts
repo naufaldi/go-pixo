@@ -1,10 +1,26 @@
 import { decodeAvif, decodeTiff, decodeHeic } from './codecs';
 import { inspectImage } from './imageFormats';
+import { decodeNative } from './codecsNative';
 
-self.onmessage=async (event: MessageEvent<{bytes: ArrayBuffer}>)=>{
+self.onmessage=async (event: MessageEvent<{bytes: ArrayBuffer; validateOnly?: boolean}>)=>{
   try {
     const bytes=new Uint8Array(event.data.bytes);
     const {format}=inspectImage(bytes);
+    // Chromium's worker bitmap decoder does not accept SVG blobs. The caller's
+    // bounded Image fallback handles this capability gap without hiding raster failures.
+    if (format === 'svg') {
+      self.postMessage({unsupportedNative:true});
+      return;
+    }
+    if (!['tiff','avif','heic'].includes(format)) {
+      if (typeof createImageBitmap !== 'function' || (!event.data.validateOnly && typeof OffscreenCanvas !== 'function')) {
+        self.postMessage({unsupportedNative: true});
+        return;
+      }
+      const image = await decodeNative(bytes, event.data.validateOnly === true);
+      self.postMessage(image, {transfer: image.pixels ? [image.pixels.buffer] : []});
+      return;
+    }
     const image=format==='tiff' ? await decodeTiff(bytes) : format==='avif' ? await decodeAvif(bytes) : format==='heic' ? await decodeHeic(bytes) : undefined;
     if (!image) throw new Error('Unsupported bundled decoder format');
     const canvas=new OffscreenCanvas(image.width,image.height);

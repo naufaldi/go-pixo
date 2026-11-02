@@ -1,7 +1,13 @@
-import {afterEach, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {jpegWithExif} from './test/jpeg';
 const codecs = vi.hoisted(() => ({encodeWebp: vi.fn(), encodeAvif: vi.fn()}));
 vi.mock('./interop/codecs', () => codecs);
+const validation = vi.hoisted(() => vi.fn());
+vi.mock('./interop/codecsNative', () => ({decodeNative: validation}));
+beforeEach(() => {
+  validation.mockReset().mockResolvedValue(undefined);
+  vi.stubGlobal('createImageBitmap',vi.fn());
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() });
 const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,0,0,0,0]);
 const jpeg = new Uint8Array([255,216,255,192,0,7,8,0,1,0,1]);
@@ -10,7 +16,7 @@ async function worker() {
   vi.resetModules();
   const messages: any[] = [];
   const scope: any = {
-    postMessage: (message: unknown, transfer: Transferable[] = []) => messages.push(structuredClone(message, {transfer})),
+    postMessage: (message: unknown, options: StructuredSerializeOptions = {}) => messages.push(structuredClone(message, options)),
     Go: vi.fn(function(this: any) { this.importObject = {}; this.run = () => scope.goWasmInit() }),
     recompressPngLossless: vi.fn((bytes: Uint8Array) => new Uint8Array(bytes)),
   };
@@ -31,6 +37,16 @@ it('announces transport readiness without initializing Go or any codec', async (
   expect(messages).toEqual([{type: 'ready'}]);
   expect(fetch).not.toHaveBeenCalled();
   expect(scope.Go).not.toHaveBeenCalled();
+});
+it.each([['jpeg', jpeg], ['png', new Uint8Array([...png.slice(0,24),16,...png.slice(25)])]] as const)('does not report metadata-only %s as a successful original candidate', async (format, bytes) => {
+  validation.mockRejectedValueOnce(new Error('Invalid or corrupt image data'));
+  const {scope, fetch, messages, send} = await worker();
+  await send(format,bytes);
+  expect(messages.some(message => message.type === 'compressed')).toBe(false);
+  expect(messages.find(message => message.type === 'error')?.error).toMatch(/corrupt/);
+  expect(scope.Go).not.toHaveBeenCalled();
+  expect(scope.recompressPngLossless).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
 });
 it.each([['jpeg', jpeg], ['webp', webp]] as const)('returns exact original %s bytes without pixels, canvas, or Go', async (format, bytes) => {
   const canvas = vi.fn(() => { throw new Error('Unexpected rasterization') });

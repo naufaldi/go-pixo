@@ -14,7 +14,8 @@ import (
 // Returns the smaller of re-encoded output and original input.
 //
 // opts acts as a template; Width, Height, and ColorType are overridden to match
-// the decoded image.
+// the display-oriented image. Re-encoded output applies EXIF orientation to its
+// pixels and strips metadata; an original-byte fallback retains its metadata.
 func RecompressJPEGBytes(inputJPEG []byte, opts Options) ([]byte, error) {
 	if err := imagelimit.CheckEncodedSize(len(inputJPEG)); err != nil {
 		return nil, err
@@ -24,6 +25,10 @@ func RecompressJPEGBytes(inputJPEG []byte, opts Options) ([]byte, error) {
 		return nil, fmt.Errorf("jpeg: decode config: %w", err)
 	}
 	if err = imagelimit.CheckDimensions(config.Width, config.Height); err != nil {
+		return nil, err
+	}
+	orientation, err := jpegOrientation(inputJPEG)
+	if err != nil {
 		return nil, err
 	}
 
@@ -42,12 +47,26 @@ func RecompressJPEGBytes(inputJPEG []byte, opts Options) ([]byte, error) {
 	// Convert to raw RGB pixels by drawing into an NRGBA canvas and stripping alpha.
 	nrgba := image.NewNRGBA(b)
 	draw.Draw(nrgba, b, img, b.Min, draw.Src)
+	if orientation >= 5 {
+		w, h = h, w
+	}
 
 	pixels := make([]byte, w*h*3)
-	for i := 0; i < w*h; i++ {
-		pixels[i*3] = nrgba.Pix[i*4]
-		pixels[i*3+1] = nrgba.Pix[i*4+1]
-		pixels[i*3+2] = nrgba.Pix[i*4+2]
+	if orientation == 1 {
+		for i := 0; i < w*h; i++ {
+			pixels[i*3] = nrgba.Pix[i*4]
+			pixels[i*3+1] = nrgba.Pix[i*4+1]
+			pixels[i*3+2] = nrgba.Pix[i*4+2]
+		}
+	} else {
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				sx, sy := orientationSource(x, y, b.Dx(), b.Dy(), orientation)
+				source := sy*nrgba.Stride + sx*4
+				target := (y*w + x) * 3
+				copy(pixels[target:target+3], nrgba.Pix[source:source+3])
+			}
+		}
 	}
 
 	// Override dimensions and color type; caller's other options (quality,

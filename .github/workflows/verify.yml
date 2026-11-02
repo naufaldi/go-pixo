@@ -24,7 +24,7 @@ jobs:
           cache: true
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.22.1
+          node-version: 24.22.2
       - run: go test ./...
       - name: Test WASM argument boundaries in Node
         run: GOOS=js GOARCH=wasm go test -exec="$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./src/wasm -run 'Test(Handlers|RecompressHandlers)'
@@ -59,13 +59,16 @@ jobs:
           cache: true
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.22.1
+          node-version: 24.22.2
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun run build:wasm
       - run: bun run build
+      # ReScript output must exist so TypeScript can infer the .res.js imports in tests.
+      - name: Check TypeScript sources, workers, tooling, and tests without emitting
+        run: bun run typecheck
       - run: bun run test
       - run: bunx playwright install --with-deps chromium
       - run: bun run test:e2e
@@ -96,10 +99,10 @@ jobs:
           cache: true
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.22.1
+          node-version: 24.22.2
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       # Match a local checkout: compiled ReScript exists before the dev server starts.
       - run: bun run rescript:build
