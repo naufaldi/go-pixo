@@ -39,6 +39,11 @@ func TestHandlersRejectMalformedArguments(t *testing.T) {
 		{"validation spoofed DataView", HandleValidateImageBytes, []any{spoofedView}},
 		{"validation malformed bytes", HandleValidateImageBytes, []any{bytes}},
 		{"jpeg recompress spoofed DataView", HandleRecompressJpeg, []any{spoofedView, 1, 75, false, false, false}},
+		{"jpeg lossless spoofed DataView", HandleOptimizeJpegLossless, []any{spoofedView}},
+		{"jpeg lossless missing bytes", HandleOptimizeJpegLossless, nil},
+		{"jpeg lossless type", HandleOptimizeJpegLossless, []any{js.Null()}},
+		{"jpeg lossless words", HandleOptimizeJpegLossless, []any{spoofedWords}},
+		{"jpeg lossless malformed bytes", HandleOptimizeJpegLossless, []any{bytes}},
 		{"png truncated", HandleEncodePng, []any{bytes, 2, 1, 6, 2, false, 0}},
 		{"png zero", HandleEncodePng, []any{bytes, 0, 1, 6, 2, false, 0}},
 		{"png negative", HandleEncodePng, []any{bytes, -1, 1, 6, 2, false, 0}},
@@ -136,6 +141,7 @@ func TestRecompressHandlersRejectOversizedHeaders(t *testing.T) {
 	}{
 		{"png", p.Bytes(), HandleRecompressPngLossless, []any{2, 0}},
 		{"jpeg", header, HandleRecompressJpeg, []any{1, 75, false, false, false}},
+		{"jpeg lossless", header, HandleOptimizeJpegLossless, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			input := js.Global().Get("Uint8Array").New(len(tt.input))
@@ -237,4 +243,53 @@ func TestQuantizeInfoMatchesAcceptedPaletteBounds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRecompressHandlersOptimizeJpegLossless(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 37, 21))
+	for i := range img.Pix {
+		img.Pix[i] = byte(i*7 + i/97)
+	}
+	var encoded bytes.Buffer
+	if err := stdjpeg.Encode(&encoded, img, &stdjpeg.Options{Quality: 85}); err != nil {
+		t.Fatal(err)
+	}
+	arithmetic := bytes.Clone(encoded.Bytes())
+	arithmetic[bytes.Index(arithmetic, []byte{0xff, 0xc0})+1] = 0xc9
+	call := func(input []byte) js.Value {
+		view := js.Global().Get("Uint8Array").New(len(input))
+		js.CopyBytesToJS(view, input)
+		return HandleOptimizeJpegLossless(js.Undefined(), []js.Value{view}).(js.Value)
+	}
+
+	t.Run("optimizes without changing pixels", func(t *testing.T) {
+		result := call(encoded.Bytes())
+		if !result.InstanceOf(js.Global().Get("Uint8Array")) {
+			t.Fatalf("want bytes, got %v", result)
+		}
+		output := make([]byte, result.Get("length").Int())
+		js.CopyBytesToGo(output, result)
+		want, err := stdjpeg.Decode(bytes.NewReader(encoded.Bytes()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := stdjpeg.Decode(bytes.NewReader(output))
+		if err != nil {
+			t.Fatalf("output does not decode: %v", err)
+		}
+		w, g := want.(*image.YCbCr), got.(*image.YCbCr)
+		for y := 0; y < 21; y++ {
+			for x := 0; x < 37; x++ {
+				if w.Y[w.YOffset(x, y)] != g.Y[g.YOffset(x, y)] || w.Cb[w.COffset(x, y)] != g.Cb[g.COffset(x, y)] || w.Cr[w.COffset(x, y)] != g.Cr[g.COffset(x, y)] {
+					t.Fatalf("pixel (%d,%d) changed", x, y)
+				}
+			}
+		}
+	})
+	t.Run("reports unsupported input as an error string", func(t *testing.T) {
+		result := call(arithmetic)
+		if result.Type() != js.TypeString || !strings.Contains(result.String(), "error: ") || !strings.Contains(result.String(), "unsupported") {
+			t.Fatalf("want unsupported error string, got %v", result)
+		}
+	})
 }

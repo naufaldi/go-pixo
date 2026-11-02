@@ -32,6 +32,15 @@ func buildLengthLimitedHuffmanTable(freq []int, maxLen int) (bits [16]uint8, val
 		bits[0] = 1
 		return bits, []uint8{uint8(nodes[0].symbol)}
 	}
+	if len(nodes) == 2 {
+		// Two symbols get one-bit codes; the level search below needs three.
+		lo, hi := nodes[0].symbol, nodes[1].symbol
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		bits[0] = 2
+		return bits, []uint8{uint8(lo), uint8(hi)}
+	}
 
 	sort.Slice(nodes, func(i, j int) bool {
 		if nodes[i].freq != nodes[j].freq {

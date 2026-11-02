@@ -304,3 +304,31 @@ func HandleRecompressPngLossless(this js.Value, args []js.Value) any {
 	js.CopyBytesToJS(dst, output)
 	return dst
 }
+
+// HandleOptimizeJpegLossless losslessly re-encodes an input JPEG (provided as
+// file bytes) with optimized Huffman tables and progressive scans.
+// Expected arguments: (jpegBytes: Uint8Array)
+// Returns a Uint8Array holding the optimized JPEG, or a string starting with
+// "error: " for invalid arguments, malformed input or unsupported JPEG
+// features (CMYK, arithmetic coding, 12-bit, lossless/hierarchical).
+func HandleOptimizeJpegLossless(this js.Value, args []js.Value) any {
+	if err := checkArguments(args, nil); err != nil {
+		return argumentError(err)
+	}
+	if err := checkEncodedBytes(args[0]); err != nil {
+		return argumentError(err)
+	}
+	input, err := copyJSBytes(args[0])
+	if err != nil {
+		return argumentError(err)
+	}
+
+	output, err := OptimizeJpegLossless(input)
+	if err != nil {
+		return js.ValueOf(fmt.Sprintf("error: %v", err))
+	}
+
+	dst := js.Global().Get("Uint8Array").New(len(output))
+	js.CopyBytesToJS(dst, output)
+	return dst
+}

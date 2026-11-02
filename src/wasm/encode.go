@@ -317,3 +317,10 @@ func BytesPerPixel(colorType int) int {
 		return 4
 	}
 }
+
+// OptimizeJpegLossless re-encodes JPEG file bytes without changing decoded
+// pixels (see jpeg.OptimizeLossless). It always returns the optimized file,
+// even when it is not smaller; callers keep the original in that case.
+func OptimizeJpegLossless(inputJPEG []byte) ([]byte, error) {
+	return jpeg.OptimizeLossless(inputJPEG)
+}
