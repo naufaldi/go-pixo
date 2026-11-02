@@ -1,0 +1,31 @@
+name: Build libheif WASM
+
+# Rebuilds the vendored HEIC decoder (web/vendor/libheif/). It only runs when
+# the build inputs change or on demand, so it never gates pull-request CI.
+on:
+  push:
+    paths:
+      - scripts/libheif-wasm/**
+      - .github/workflows/libheif-wasm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: emscripten/emsdk:3.1.61
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build libheif + libde265
+        run: bash scripts/libheif-wasm/build.sh out/libheif
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libheif-wasm
+          path: |
+            out/libheif/libheif.js
+            out/libheif/libheif.wasm
+            out/libheif/SHA256SUMS
+            out/libheif/BUILDINFO
+          retention-days: 90
