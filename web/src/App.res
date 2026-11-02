@@ -390,6 +390,7 @@ let make = () => {
             </div>
           | Types.Pending | Types.Decoding | Types.Compressing | Types.Done =>
             <CompareView
+              key=item.id
               originalUrl={item.originalUrl}
               compressedUrl={item.compressedUrl}
               originalBytes={item.originalBytes}

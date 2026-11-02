@@ -5,6 +5,24 @@ import { make as FileQueue } from './FileQueue.res.js'
 
 afterEach(cleanup)
 
+it.each([
+  ['Pending', 'Pending'], ['Decoding', 'Decoding...'], ['Compressing', 'Compressing...'],
+  ['Done', '50 bytes (-50%)'], [{ TAG: 'Error', _0: 'Cannot decode image' }, 'Cannot decode image'],
+])('preserves meaningful status text alongside decorative glyphs (%j)', (status, text) => {
+  render(createElement(FileQueue, {
+    items: [{ id: 'one', file: { name: 'one.png' }, status, kind: 'Png', originalBytes: 100, compressedBytes: 50 }],
+    activeCompressions: [], onSelect() {}, onRemove() {}, onClearAll() {},
+  }))
+  expect(screen.getByRole('button', { name: /one.png/ })).toHaveTextContent(text)
+  const remove = screen.getByRole('button', { name: 'Remove image' })
+  expect(remove.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+  const decoration = remove.previousElementSibling!
+  expect(decoration).toHaveAttribute('aria-hidden', 'true')
+  if (typeof status === 'object') {
+    expect(decoration.querySelector('path')!.getAttribute('d')).not.toBe(remove.querySelector('path')!.getAttribute('d'))
+  }
+})
+
 it.each(['Enter', ' '])('leaves Remove %j activation uncancelled without selecting its row', key => {
   const onSelect = vi.fn()
   const onRemove = vi.fn()

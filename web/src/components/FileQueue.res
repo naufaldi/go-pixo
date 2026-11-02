@@ -149,56 +149,32 @@ let make = (
             </div>
           </button>
           <div className="shrink-0 flex items-center gap-2">
-            {switch item.status {
-            | Done =>
-              <div
-                className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center"
-              >
-                <svg
-                  className="w-4 h-4 text-green-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"
-                  />
+            <span ariaHidden=true className="pointer-events-none flex size-5 shrink-0 items-center justify-center">
+              {switch item.status {
+              | Done =>
+                <svg className="size-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                 </svg>
-              </div>
-            | Decoding | Compressing =>
-              <div
-                className="w-6 h-6 rounded-full border-2 border-blue-400 border-t-transparent animate-spin motion-reduce:animate-none"
-              >
-              </div>
-            | Error(_) =>
-              <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
-                <svg
-                  className="w-4 h-4 text-red-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
+              | Decoding | Compressing =>
+                <span className="size-5 rounded-full border-2 border-blue-400 border-t-transparent animate-spin motion-reduce:animate-none" />
+              | Error(_) =>
+                <svg className="size-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-              </div>
-            | Pending => React.null
-            }}
+              | Pending => React.null
+              }}
+            </span>
             <button
               type_="button"
               onClick={e => {
                 ReactEvent.Mouse.stopPropagation(e)
                 onRemove(item.id)
               }}
-              className="min-h-12 min-w-12 p-2 text-neutral-400 hover:text-red-400 transition-colors motion-reduce:transition-none rounded-full hover:bg-red-500/10 border border-neutral-800 hover:border-red-500/20"
+              className="inline-flex size-12 shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.96] transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-300"
               title="Remove image"
               ariaLabel="Remove image"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg ariaHidden=true className="pointer-events-none size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
