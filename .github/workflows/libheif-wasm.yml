@@ -1,7 +1,9 @@
 name: Build libheif WASM
 
-# Rebuilds the vendored HEIC decoder (web/vendor/libheif/). It only runs when
-# the build inputs change or on demand, so it never gates pull-request CI.
+# Rebuilds the vendored HEIC decoder (web/third_party/libheif/). It only runs
+# when the build inputs change or on demand, so it never gates pull-request CI.
+# The toolchain image and actions are pinned by digest/commit so a rebuild runs
+# the same tooling; source tarballs are pinned by SHA-256 in build.sh.
 on:
   push:
     paths:
@@ -15,12 +17,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: emscripten/emsdk:3.1.61
+    container: emscripten/emsdk:3.1.61@sha256:30aa9fed39cc7810cc4338c77828bd513a6ee6b60c6b141bc6d9760aea5791e3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build libheif + libde265
         run: bash scripts/libheif-wasm/build.sh out/libheif
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libheif-wasm
           path: |
