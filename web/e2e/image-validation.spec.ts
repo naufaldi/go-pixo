@@ -12,7 +12,7 @@ test('retains valid PNG bytes when worker bitmap decoding is unavailable', async
     })
   }
   await page.goto('/')
-  await page.getByRole('checkbox', {name:'Perfect Quality'}).check()
+  await page.getByRole('checkbox', {name:'Lossless'}).check()
   await page.locator('input[type=file]').setInputFiles(png)
   await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed, 0 remaining')
   await expect(page.getByTestId('download-primary')).toBeEnabled()
@@ -20,7 +20,7 @@ test('retains valid PNG bytes when worker bitmap decoding is unavailable', async
 
 test('rejects a corrupt passthrough input, then decodes HEIC and accepts a valid retry', async ({page}) => {
   await page.goto('/')
-  await page.getByRole('checkbox', {name:'Perfect Quality'}).check()
+  await page.getByRole('checkbox', {name:'Lossless'}).check()
   const input = page.locator('input[type=file]')
   await input.setInputFiles({name:'corrupt.jpg', mimeType:'image/jpeg', buffer:Buffer.from([255,216,255,192,0,7,8,0,1,0,1])})
   await expect(page.getByTestId('batch-summary')).toContainText('0 completed, 1 failed')

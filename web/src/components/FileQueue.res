@@ -109,11 +109,11 @@ let make = (
                 switch item.compressedBytes {
                 | Some(bytes) =>
                   let originalSize = item.originalBytes
-                  if Display.isAlreadyOptimized(originalSize, bytes) {
+                  if Display.hasSameSize(originalSize, bytes) {
                     <span
                       className="text-sm font-medium text-blue-400" dataTestId="file-item-optimized"
                     >
-                      {React.string("No smaller output with current settings")}
+                      {React.string("Same file size with these settings")}
                     </span>
                   } else {
                     let saved = originalSize - bytes
@@ -126,12 +126,11 @@ let make = (
                         "→ " ++
                         Display.formatSize(bytes) ++
                         " (" ++
-                        if saved >= 0 {
-                          "-"
+                        if Math.abs(percent) > 0.0 && Math.abs(percent) < 0.1 {
+                          Display.formatPercent(Math.abs(percent)) ++ "% " ++ if saved > 0 { "smaller" } else { "larger" }
                         } else {
-                          "+"
-                        } ++
-                        Float.toString(Math.round(Math.abs(percent) *. 10.0) /. 10.0) ++ "%)",
+                          (if saved >= 0 { "-" } else { "+" }) ++ Display.formatPercent(Math.abs(percent)) ++ "%"
+                        } ++ ")",
                       )}
                     </span>
                   }

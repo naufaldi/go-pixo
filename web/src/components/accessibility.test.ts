@@ -135,7 +135,21 @@ it('keeps settings usable without files and hides item-only actions', () => {
   fireEvent.change(screen.getByRole('spinbutton', { name: 'Target width' }), { target: { value: '200' } })
   expect(onTargetWidthChange).toHaveBeenCalledWith(200)
   expect(screen.getByText(/Each image keeps its own aspect ratio/)).toBeVisible()
-  expect(screen.getByText(/Lossless encoding/)).toBeVisible()
+  expect(screen.getByRole('checkbox', { name: /^Lossless$/ })).toHaveAccessibleDescription(/preserves every pixel unless resized.*File size may stay the same/)
+})
+
+it.each([
+  [1_000_000, 'Same file size with these settings'],
+  [999_999, 'Saved 1 byte (<0.1%)'],
+  [999_500, 'Saved 500 bytes (<0.1%)'],
+  [999_000, 'Saved 1 KB (0.1%)'],
+])('reports the actual size outcome in the comparison (%i bytes)', (compressedBytes, message) => {
+  render(createElement(CompareView, {
+    originalUrl: 'blob:original', compressedUrl: 'blob:compressed', originalBytes: 1_000_000,
+    compressedBytes, width: 200, height: 100, onRemove() {},
+  }))
+  expect(screen.getByText(message)).toBeVisible()
+  if (compressedBytes < 1_000_000) expect(screen.queryByText('Same file size with these settings')).not.toBeInTheDocument()
 })
 
 it('uses the same known aspect frame for loading and finished previews', () => {

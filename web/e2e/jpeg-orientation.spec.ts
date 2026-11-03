@@ -53,7 +53,7 @@ test('native JPEG orientations 1..8 match preflight and unchanged byte dimension
 
 test('rotated 3000x4000 JPEG keeps identical pixels at displayed width 4000 and resizes to 5000x3750', async ({page}) => {
   await page.goto('/');
-  await page.getByRole('checkbox',{name:'Perfect Quality'}).check();
+  await page.getByRole('checkbox',{name:'Lossless'}).check();
   await page.getByRole('spinbutton',{name:'Target width'}).fill('4000');
   await page.evaluate(async segment => {
     const canvas=document.createElement('canvas'); canvas.width=3000; canvas.height=4000;
@@ -69,7 +69,7 @@ test('rotated 3000x4000 JPEG keeps identical pixels at displayed width 4000 and 
     input.files=transfer.files; input.dispatchEvent(new Event('change',{bubbles:true}));
   },Array.from(jpegExifSegment(6)));
   await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed');
-  // Perfect Quality may rewrite JPEG entropy coding, never pixels or orientation.
+  // Lossless may rewrite JPEG entropy coding, never pixels or orientation.
   const unchanged=await page.evaluate(async () => {
     const original=document.querySelector<HTMLImageElement>('img[alt="Original"]')!;
     const output=document.querySelector<HTMLImageElement>('img[alt="Compressed"]')!;
@@ -94,7 +94,7 @@ test('rotated 3000x4000 JPEG keeps identical pixels at displayed width 4000 and 
   await expect(page.getByTestId('batch-summary')).toContainText('0 completed, 1 failed');
   await expect(page.getByText(/JPEG encoding is lossy/).first()).toBeVisible();
 
-  await page.getByRole('checkbox',{name:'Perfect Quality'}).uncheck();
+  await page.getByRole('checkbox',{name:'Lossless'}).uncheck();
   await page.getByRole('combobox',{name:'Output format'}).selectOption('webp');
   await page.getByRole('spinbutton',{name:'Target width'}).fill('5000');
   await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed',{timeout:60000});

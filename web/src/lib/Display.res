@@ -6,7 +6,7 @@ let formatSize = (bytes: int): string => {
     let kb = Math.round(Int.toFloat(bytes) /. 1000.0 *. 10.0) /. 10.0
     Float.toString(kb) ++ " KB"
   } else {
-    Int.toString(bytes) ++ " bytes"
+    Int.toString(bytes) ++ if bytes == 1 { " byte" } else { " bytes" }
   }
 }
 
@@ -20,13 +20,15 @@ let savingsColor = (percent: float): string => {
   }
 }
 
-let isAlreadyOptimized = (original: int, compressed: int): bool => {
-  if original <= 0 {
-    false
+let hasSameSize = (original: int, compressed: int): bool => {
+  original > 0 && compressed == original
+}
+
+let formatPercent = (percent: float): string => {
+  if percent > 0.0 && percent < 0.1 {
+    "<0.1"
   } else {
-    let saved = original - compressed
-    let percent = Int.toFloat(saved) /. Int.toFloat(original) *. 100.0
-    saved >= 0 && percent <= 0.1
+    Float.toString(Math.round(percent *. 10.0) /. 10.0)
   }
 }
 
