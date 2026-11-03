@@ -57,6 +57,11 @@ func optimizeLossless(input []byte, layout losslessLayout) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidJPEG, err)
 	}
+	return optimizeCoefficients(d, orientation, layout)
+}
+
+// optimizeCoefficients writes the smallest allowed layout of d's coefficients.
+func optimizeCoefficients(d *coeffDecoder, orientation uint16, layout losslessLayout) ([]byte, error) {
 	header, err := losslessHeader(d, orientation)
 	if err != nil {
 		return nil, err

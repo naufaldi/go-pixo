@@ -1,7 +1,10 @@
-import {expect, it} from 'vitest';
+import {beforeEach, expect, it, vi} from 'vitest';
 import {imageOperation} from './imageOperation';
+import {JPEG_BAND_BYTES_PER_PIXEL, JPEG_BAND_WORKER_BYTES} from './jpegParallel';
 import {inspectImage} from './imageFormats';
 import {jpegWithExif} from '../test/jpeg';
+// These estimates are for a serial encode; parallel JPEG is charged below.
+beforeEach(() => { vi.spyOn(navigator, 'hardwareConcurrency', 'get').mockReturnValue(2); });
 it('budgets the larger output before upscaling instead of only admitting source pixels', () => {
   expect(imageOperation({format: 'png',width: 1000,height: 1000}, {lossy: true,targetWidth: 4000}).workspaceBytes).toBe(512_000_000);
 });
@@ -58,4 +61,14 @@ it.each([
   expect(imageOperation(inspectImage(jpegWithExif(3000,4000,orientation)), {lossy:true})).toMatchObject({
     width,height,resized:false,workspaceBytes:384_000_000,
   });
+});
+
+it('charges parallel JPEG band workers only where the device would use them', () => {
+  const desktop = {hardwareConcurrency: 16, deviceMemory: 8, mobile: false, nestedWorkers: true};
+  const pixels = 4032 * 2688;
+  const photo = {format: 'png' as const, width: 4032, height: 2688};
+  expect(imageOperation(photo, {lossy: true, outputFormat: 'jpeg'}, desktop).workspaceBytes)
+    .toBe(32 * pixels + JPEG_BAND_BYTES_PER_PIXEL * pixels + 3 * JPEG_BAND_WORKER_BYTES);
+  expect(imageOperation(photo, {lossy: true, outputFormat: 'jpeg'}, {...desktop, mobile: true}).workspaceBytes).toBe(32 * pixels);
+  expect(imageOperation(photo, {lossy: true}, desktop).workspaceBytes).toBe(32 * pixels); // PNG output
 });

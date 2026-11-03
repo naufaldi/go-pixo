@@ -59,6 +59,12 @@ async function makeJpegFixtures(browser) {
   return Object.keys(files).map(name => join(workDir, name));
 }
 
+// Locator waitFor backs off to 500 ms polls, which quantizes timings; poll
+// every frame instead.
+const waitForBatchResult = page => page.waitForFunction(
+  () => /1 completed|1 failed/.test(document.querySelector('[data-testid="batch-summary"]')?.textContent ?? ''),
+  null, { polling: 'raf', timeout: 180_000 });
+
 // Cold start on a throttled connection (~20 Mbps down, 40 ms RTT, empty cache):
 // page load, then the first compression, which downloads the Go WASM and any
 // lazily loaded decoder. Bytes are what the page and its workers fetched.
@@ -78,7 +84,7 @@ async function measureColdStart(browser, url, file) {
   const pageReadyMs = Date.now() - started;
   const pageBytes = bytes;
   await page.locator('input[type=file]').setInputFiles(file);
-  await page.getByTestId('batch-summary').filter({ hasText: /1 completed|1 failed/ }).waitFor({ timeout: 180_000 });
+  await waitForBatchResult(page);
   const firstResultMs = Date.now() - started;
   const ok = /1 completed/.test(await page.getByTestId('batch-summary').innerText());
   await context.close();
@@ -94,7 +100,7 @@ async function runScenario(page, url, file, scenario) {
   const started = Date.now();
   await page.locator('input[type=file]').setInputFiles(file);
   const summary = page.getByTestId('batch-summary');
-  await summary.filter({ hasText: /1 completed|1 failed/ }).waitFor({ timeout: 180_000 });
+  await waitForBatchResult(page);
   const elapsedMs = Date.now() - started;
   const text = await summary.innerText();
   if (/1 failed/.test(text)) {

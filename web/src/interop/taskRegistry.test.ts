@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { TaskRegistry } from './taskRegistry'
+import { MAX_SINGLE_WORKSPACE } from './imageOperation'
 
 it.each(['settle-first', 'commit-first'])('keeps synchronous removal protection until both commit and settlement (%s)', order => {
   const tasks = new TaskRegistry()
@@ -96,15 +97,15 @@ it.each(['remove', 'reset'])('%s cancels waiting admission, holds admitted bytes
   await lastAdmission
 })
 
-it('allows one explicitly bounded 24 MP job alone and rejects an over-limit estimate', async () => {
+it('allows one explicitly bounded 24 MP parallel JPEG job alone and rejects an over-limit estimate', async () => {
   const tasks = new TaskRegistry()
   tasks.reserve('large', 'large'); tasks.reserve('small', 'small'); tasks.reserve('unsafe', 'unsafe')
-  await tasks.admit('large', 768_000_000)
+  await tasks.admit('large', MAX_SINGLE_WORKSPACE)
   let small = false
   const next = tasks.admit('small', 32).then(() => { small = true })
   await tick()
   expect(small).toBe(false)
-  await expect(tasks.admit('unsafe', 768_000_001)).rejects.toThrow(/budget|workspace/i)
+  await expect(tasks.admit('unsafe', MAX_SINGLE_WORKSPACE + 1)).rejects.toThrow(/budget|workspace/i)
   tasks.settle('large')
   await next
 })

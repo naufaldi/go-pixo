@@ -139,6 +139,9 @@ type coeffDecoder struct {
 	adobe          []byte   // APP14 Adobe payload, if any.
 	tmp            [2 * coeffBlockSize]byte
 	segmentScratch []byte
+	// headerOnly accepts a stream that ends after its frame header, for
+	// coefficients the encoder fills in itself (see readFrameHeader).
+	headerOnly bool
 }
 
 // fill fills up the d.bytes.buf buffer from the underlying io.Reader. It
@@ -500,6 +503,24 @@ func readCoefficients(input []byte) (*coeffDecoder, error) {
 	return d, nil
 }
 
+// readFrameHeader parses SOI..SOF segments (without scans), so that the
+// frame layout, quantization tables and JFIF header are exactly what
+// readCoefficients reports for a file starting with them, and allocates
+// zeroed coefficient storage for the frame.
+func readFrameHeader(header []byte) (*coeffDecoder, error) {
+	stream := make([]byte, 0, len(header)+2)
+	stream = append(append(stream, header...), 0xff, mkEOI)
+	d := &coeffDecoder{r: bytes.NewReader(stream), headerOnly: true}
+	if err := d.decode(); err != nil {
+		return nil, err
+	}
+	d.coeffs = make([]int16, d.totalBlocks*coeffBlockSize)
+	for i := 0; i < d.nComp; i++ {
+		d.comp[i].scanned = true
+	}
+	return d, nil
+}
+
 func (d *coeffDecoder) decode() error {
 	// Check for the Start Of Image marker.
 	if err := d.readFull(d.tmp[:2]); err != nil {
@@ -589,6 +610,12 @@ func (d *coeffDecoder) decode() error {
 
 	if d.nComp == 0 {
 		return coeffFormatError("missing SOF marker")
+	}
+	if d.headerOnly {
+		if d.scanSeen {
+			return coeffFormatError("internal: unexpected scan in frame header")
+		}
+		return nil
 	}
 	if !d.scanSeen {
 		return coeffFormatError("missing SOS marker")
