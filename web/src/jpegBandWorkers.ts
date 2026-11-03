@@ -74,7 +74,14 @@ export class JpegBandWorkers {
       fail(event.message || 'Band worker failed');
     };
     worker.onmessageerror = () => { clearTimeout(helper.startTimer); fail('Band worker message failed'); };
-    worker.postMessage({ type: 'init', ...this.source });
+    try {
+      worker.postMessage({ type: 'init', ...this.source });
+    } catch (error) {
+      // The helper is not registered yet, so terminate() would never reach it.
+      clearTimeout(helper.startTimer);
+      worker.terminate();
+      throw error;
+    }
     return helper;
   }
 }
