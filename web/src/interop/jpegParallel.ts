@@ -46,11 +46,13 @@ export function browserParallelEnvironment(nav: BrowserNavigator | undefined = g
 }
 
 // Number of bands to encode for an image, counting the compression worker's
-// own band; 1 means the serial encoder. Phones and low-memory devices stay
-// serial: every band worker holds a second Go heap (#126).
+// own band; 1 means the serial encoder. Every band worker holds another Go
+// heap (#126), so only devices that report more than 4 GB use them. Safari
+// (including iPadOS, which reports a desktop user agent) and Firefox do not
+// report deviceMemory and stay serial.
 export function jpegBandCount(pixels: number, env: ParallelEnvironment): number {
   if (env.nestedWorkers === false || pixels < PARALLEL_JPEG_MIN_PIXELS) return 1;
-  if (env.mobile || (env.deviceMemory != null && env.deviceMemory <= 4)) return 1;
+  if (env.mobile || env.deviceMemory == null || env.deviceMemory <= 4) return 1;
   const cores = env.hardwareConcurrency ?? 0;
   // Leave one core for the page. Two bands barely beat the serial entropy pass.
   const bands = Math.min(cores - 1, MAX_JPEG_BANDS);
@@ -122,9 +124,17 @@ export async function encodeJpegRgba(
   const rowBytes = width * 4;
   let failed = false;
   try {
-    // Post every remote band before this worker blocks on its own band.
-    const remote = Promise.all(plan.slice(1).map((band, i) =>
-      runtime.remote(i, rgba.slice(band.y * rowBytes, (band.y + band.height) * rowBytes), band)));
+    // Post every remote band synchronously, before this worker blocks on its
+    // own band. A synchronous throw (say, a worker that cannot start) becomes
+    // a rejection inside this aggregate, so promises already handed out for
+    // earlier bands are still observed when release() rejects them.
+    const remote = Promise.all(plan.slice(1).map((band, i) => {
+      try {
+        return runtime.remote(i, rgba.slice(band.y * rowBytes, (band.y + band.height) * rowBytes), band);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }));
     remote.catch(() => {}); // Observed below; avoid an unhandled rejection while this band runs.
     const first = plan[0];
     const local = runtime.band(compositeRgbaToRgbWhite(rgba.subarray(0, first.height * rowBytes), width, first.height), first);

@@ -3,6 +3,7 @@ package jpeg
 import (
 	"bytes"
 	"errors"
+	"runtime"
 	"testing"
 )
 
@@ -88,5 +89,28 @@ func TestEncodeBandsMatchesSerialEncode(t *testing.T) {
 				t.Fatalf("missing rows: got %v, want ErrInvalidBand", err)
 			}
 		})
+	}
+}
+
+// A band worker holds only its band's coefficients, not the whole image's
+// (#128 review): one MCU row of a 2048x2048 4:4:4 image allocates about
+// 2048*8*3 coefficients, while the whole frame would be 2048*2048*3.
+func TestEncodeBandAllocatesOnlyItsBand(t *testing.T) {
+	const width, height = 2048, 2048
+	enc, err := NewEncoder(Options{Width: width, Height: height, ColorType: ColorRGB, Quality: 85, Subsampling: Subsampling444})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rows := enc.BandPixelRows(0, 1)
+	pixels := make([]byte, width*rows*3)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if _, err := enc.EncodeBand(pixels, 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	runtime.ReadMemStats(&after)
+	frameBytes := uint64(width * height * 3 * 2) // int16 coefficients
+	if got := after.TotalAlloc - before.TotalAlloc; got > frameBytes/8 {
+		t.Fatalf("EncodeBand allocated %d bytes for one MCU row; whole frame is %d", got, frameBytes)
 	}
 }

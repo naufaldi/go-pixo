@@ -70,6 +70,21 @@ Below about 4 MP, parallel saves 50–80 ms, close to the noise. It also costs t
 
 Entropy coding stays serial and limits the speedup. In single-threaded Node runs of the 10.8 MP photo, encoding takes 1439 ms in total for Balanced. Each of the 4 bands takes 145–179 ms, but the final entropy pass (Huffman statistics, progressive scans) takes 776 ms.
 
+### Re-run after the review fixes
+
+The review fixes changed the band memory policy and the worker lifecycle: band workers stop after every encode, each band worker allocates only its own band, and devices that do not report `deviceMemory` stay serial. The same command, with all fixtures and 3 iterations, was re-run against a fresh master build on the same machine. Every output size matched master.
+
+| Image | Setting | master | branch | Change |
+|---|---|---:|---:|---:|
+| 4032 × 2688 | Balanced | 2182 ms | 1513 ms | −31% |
+| 4032 × 2688 | Smaller file | 1844 ms | 1222 ms | −34% |
+| 4032 × 2688 | Faster | 930 ms | 692 ms | −26% |
+| 4032 × 2688 | Lossless | 1476 ms | 1460 ms | noise |
+| 1536 × 1024 | Balanced | 439 ms | 370 ms | serial on both |
+| 1536 × 1024 | Faster | 229 ms | 215 ms | serial on both |
+
+PNG and HEIC scenarios, which do not use this path, stay within ±5% (noise), with identical sizes.
+
 ## Worker and memory policy
 
 - Bands = min(`hardwareConcurrency` − 1, 4). The compression worker encodes one band itself.
@@ -77,12 +92,13 @@ Entropy coding stays serial and limits the speedup. In single-threaded Node runs
   - fewer than 3 bands would result;
   - the image is under 4 MP;
   - the device is mobile (`userAgentData.mobile`, or a phone/tablet user agent);
-  - `deviceMemory` ≤ 4;
+  - `deviceMemory` is 4 or less, or not reported. Safari (including iPadOS, which reports a desktop user agent) and Firefox do not report it, so they stay serial;
   - nested workers are unavailable.
 - Any band failure re-runs the whole image serially, with the same bytes.
 - Band workers get the compiled `WebAssembly.Module` from the compression worker, so they never fetch or compile `main.wasm` again.
 - RGBA band slices are transferred, not cloned.
-- Band workers stop 3 s after the last encode, immediately on failure, and together with their compression worker on cancel.
+- Band workers stop as soon as each encode ends (success or failure), before the job's admission charge is released, and together with their compression worker on cancel. The next large image starts them again from the compiled module.
+- Each band worker allocates coefficient storage for its own band only; the whole-image frame exists only in the compression worker that assembles the file.
 - Admission (`imageOperation.ts`) charges JPEG-capable pixel jobs an extra 22 bytes per output pixel plus 16 MiB per band worker, only where band workers would run. The per-pixel figure covers the 4:4:4 worst case:
   - band RGBA copies: 4 bytes;
   - RGB composite and its Go copy: 3 + 3 bytes;

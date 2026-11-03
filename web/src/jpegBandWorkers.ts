@@ -1,7 +1,5 @@
 import type { JpegBand, JpegEncodeOptions } from './interop/jpegParallel';
 
-// Idle band workers keep their Go heaps, so stop them soon after an encode.
-const IDLE_TERMINATE_MS = 3_000;
 // A band worker that cannot start in time sends the encode to the serial path.
 const START_TIMEOUT_MS = 10_000;
 
@@ -16,7 +14,6 @@ const createBandWorker = () => new Worker(new URL('./jpegBand.worker.ts', import
 export class JpegBandWorkers {
   private helpers: Helper[] = [];
   private nextId = 0;
-  private idle?: ReturnType<typeof setTimeout>;
   private readonly source: GoModuleSource;
   private readonly create: () => Worker;
 
@@ -27,7 +24,6 @@ export class JpegBandWorkers {
 
   // Transfers rgba (an owned band of RGBA rows) to band worker index.
   encode(index: number, rgba: Uint8Array, width: number, height: number, band: JpegBand, options: JpegEncodeOptions): Promise<Uint8Array> {
-    clearTimeout(this.idle);
     const helper = this.helpers[index] ??= this.start();
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
@@ -36,16 +32,14 @@ export class JpegBandWorkers {
     });
   }
 
-  // A failed encode never reuses band workers; a successful one keeps them
-  // briefly for the next image.
-  release(failed: boolean): void {
-    clearTimeout(this.idle);
-    if (failed) this.terminate();
-    else this.idle = setTimeout(() => this.terminate(), IDLE_TERMINATE_MS);
+  // Band workers stop as soon as an encode ends, before the job's admission
+  // charge is released, so their Go heaps never outlive the budget that
+  // admitted them. The next image starts them again from the compiled module.
+  release(): void {
+    this.terminate();
   }
 
   terminate(error = new Error('Band workers stopped')): void {
-    clearTimeout(this.idle);
     const helpers = this.helpers;
     this.helpers = [];
     for (const helper of helpers) {

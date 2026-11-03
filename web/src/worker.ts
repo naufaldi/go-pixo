@@ -301,7 +301,7 @@ function encodeJpeg(pixels: Uint8Array, width: number, height: number, options: 
     band: (rgb, band) => unwrapWasmResult(go.encodeJpegBand!(rgb, ...args, band.firstRow, band.rows)),
     remote: (index, rgba, band) => workers!.encode(index, rgba, width, height, band, options),
     assemble: coefficients => unwrapWasmResult(go.encodeJpegBands!(coefficients, ...args)),
-    release: failed => workers?.release(failed),
+    release: () => workers?.release(),
     onFallback: error => console.warn('[worker] Parallel JPEG encode failed; encoding serially', error),
   };
   return encodeJpegRgba(pixels, width, height, options.subsampling, runtime);

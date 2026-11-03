@@ -505,8 +505,8 @@ func readCoefficients(input []byte) (*coeffDecoder, error) {
 
 // readFrameHeader parses SOI..SOF segments (without scans), so that the
 // frame layout, quantization tables and JFIF header are exactly what
-// readCoefficients reports for a file starting with them, and allocates
-// zeroed coefficient storage for the frame.
+// readCoefficients reports for a file starting with them. It allocates no
+// coefficient storage: band encoders need only the layout (#128).
 func readFrameHeader(header []byte) (*coeffDecoder, error) {
 	stream := make([]byte, 0, len(header)+2)
 	stream = append(append(stream, header...), 0xff, mkEOI)
@@ -514,7 +514,6 @@ func readFrameHeader(header []byte) (*coeffDecoder, error) {
 	if err := d.decode(); err != nil {
 		return nil, err
 	}
-	d.coeffs = make([]int16, d.totalBlocks*coeffBlockSize)
 	for i := 0; i < d.nComp; i++ {
 		d.comp[i].scanned = true
 	}

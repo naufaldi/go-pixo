@@ -48,7 +48,8 @@ func (e *Encoder) EncodeBand(pixels []byte, firstRow, rows int) ([]int16, error)
 	if err := validateOptions(e.Options); err != nil {
 		return nil, err
 	}
-	frame, err := e.NewCoefficientFrame()
+	// Layout only: a band never holds the whole image's coefficients.
+	frame, err := e.frameLayout()
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +129,17 @@ type CoefficientFrame struct {
 // NewCoefficientFrame allocates zeroed coefficient storage for the
 // encoder's image.
 func (e *Encoder) NewCoefficientFrame() (*CoefficientFrame, error) {
+	frame, err := e.frameLayout()
+	if err != nil {
+		return nil, err
+	}
+	frame.d.coeffs = make([]int16, frame.d.totalBlocks*coeffBlockSize)
+	return frame, nil
+}
+
+// frameLayout returns a frame with the encoder's layout and no coefficient
+// storage.
+func (e *Encoder) frameLayout() (*CoefficientFrame, error) {
 	if err := validateOptions(e.Options); err != nil {
 		return nil, err
 	}
