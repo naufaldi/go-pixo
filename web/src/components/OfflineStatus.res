@@ -18,7 +18,7 @@ let make = () => {
     </span>
     {status.updateAvailable
       ? <span className="text-neutral-400">
-          {React.string("Update ready. Finish your work, then close all Go-Pixo tabs and reopen.")}
+          {React.string("Update ready. Reloading keeps this version. Download your results, then close every Go-Pixo tab and reopen.")}
         </span>
       : React.null}
   </div>

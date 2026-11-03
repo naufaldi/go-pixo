@@ -293,6 +293,92 @@ test('Cloudflare-style redirected HTML recovers an existing worker and supports 
   }
 })
 
+test('a redeploy never takes over open tabs and applies once every tab has closed', async ({ page, context }) => {
+  const directory = fileURLToPath(new URL('../dist/', import.meta.url))
+  const files = new Set(await distFiles(directory))
+  const worker = await readFile(join(directory, 'sw.js'), 'utf8')
+  const version = JSON.parse(worker.match(/const manifest = (.*);/)![1]).version as string
+  const next = `${version}-next`
+  // A redeploy changes the worker's build version; the assets can stay identical.
+  let deployed = false
+  const types: Record<string, string> = {
+    js: 'text/javascript', css: 'text/css', html: 'text/html', wasm: 'application/wasm',
+    webmanifest: 'application/manifest+json', png: 'image/png', svg: 'image/svg+xml',
+  }
+  const server = createServer((request, response) => {
+    void (async () => {
+      const pathname = new URL(request.url!, 'http://localhost').pathname
+      if (pathname === '/sw.js') {
+        response.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-cache' })
+        response.end(deployed ? worker.replaceAll(version, next) : worker)
+        return
+      }
+      const requested = decodeURIComponent(pathname.slice(1)) || 'index.html'
+      const file = files.has(requested) ? requested : 'index.html'
+      response.setHeader('Content-Type', types[file.split('.').at(-1)!] ?? 'application/octet-stream')
+      response.end(await readFile(join(directory, file)))
+    })().catch(() => { response.statusCode = 500; response.end() })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Redeploy server did not start')
+  const url = `http://127.0.0.1:${address.port}`
+  const builds = (target: Page) => target.evaluate(async () =>
+    (await caches.keys()).filter((name) => name.startsWith('go-pixo-offline-')).map((name) => name.split('-').pop()).sort())
+  // The build that actually controls the page, as reported by its worker.
+  const controllerVersion = (target: Page) => target.evaluate(() => new Promise<string>((resolve) => {
+    const channel = new MessageChannel()
+    channel.port1.onmessage = (event) => resolve(event.data.version)
+    navigator.serviceWorker.controller!.postMessage({ type: 'GO_PIXO_VERIFY_OFFLINE', pageAssets: [] }, [channel.port2])
+  }))
+  try {
+    await page.goto(url)
+    await expect(page.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 60000 })
+    await uploadFreshImage(page)
+    await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed, 0 remaining.', { timeout: 60000 })
+    const result = await outputMetadata(page)
+
+    deployed = true
+    await page.evaluate(async () => {
+      const registration = (await navigator.serviceWorker.getRegistration())!
+      await registration.update()
+      while (!registration.waiting) await new Promise((resolve) => setTimeout(resolve, 100))
+    })
+    // The open page keeps its build, result and JS/WASM; it only offers the update.
+    await expect(page.getByTestId('offline-status')).toContainText('Update ready. Reloading keeps this version.')
+    expect(await controllerVersion(page)).toBe(version)
+
+    // A tab opened or reloaded while another tab is open also stays on the old build.
+    const second = await context.newPage()
+    await second.goto(url)
+    await second.reload()
+    await expect(second.getByTestId('offline-status')).toContainText('Update ready', { timeout: 60000 })
+    expect(await controllerVersion(second)).toBe(version)
+    expect(await builds(second)).toEqual(['next', version].sort())
+
+    // The first tab was never switched or reloaded: same result, same build, still usable.
+    await expect(page.getByTestId('batch-summary')).toContainText('1 completed, 0 failed, 0 remaining.')
+    expect(await outputMetadata(page)).toEqual(result)
+    expect(await controllerVersion(page)).toBe(version)
+    await uploadFreshImage(page, 1)
+    await expect(page.getByTestId('batch-summary')).toContainText('2 completed, 0 failed, 0 remaining.', { timeout: 60000 })
+
+    // Closing every tab lets the browser activate the new build on the next visit.
+    await second.close()
+    await page.close()
+    const reopened = await context.newPage()
+    await expect.poll(async () => {
+      await reopened.goto(url)
+      return controllerVersion(reopened)
+    }, { timeout: 30000 }).toBe(next)
+    await expect(reopened.getByTestId('offline-status')).toContainText('Ready offline', { timeout: 60000 })
+    await expect(reopened.getByTestId('offline-status')).not.toContainText('Update ready')
+    expect(await builds(reopened)).toEqual(['next'])
+  } finally {
+    await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+  }
+})
+
 test('a missing Go asset served as a successful SPA fallback fails offline installation', async ({ page }) => {
   const directory = fileURLToPath(new URL('../dist/', import.meta.url))
   const files = new Set(await distFiles(directory))
