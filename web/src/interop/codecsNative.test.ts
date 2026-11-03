@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {readFile} from 'node:fs/promises';
 import {afterEach, expect, it, vi} from 'vitest';
-import {decodeNative} from './codecsNative';
+import {assertSameDecodedPixels, decodeNative} from './codecsNative';
 import {jpegWithExif} from '../test/jpeg';
 
 const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,16,6,0,0,0,0,0,0,0]);
@@ -83,4 +83,40 @@ it('rejects oversized input dimensions before starting browser decoding', async 
   vi.stubGlobal('createImageBitmap',decode);
   await expect(decodeNative(jpegWithExif(6000,4001,1),false)).rejects.toThrow(/limit/);
   expect(decode).not.toHaveBeenCalled();
+});
+
+// Fake decoder: each bitmap paints one value. Tracks how many are alive at once.
+function stubPixelDecoder(width: number, height: number, values: number[]) {
+  let open = 0, maxOpen = 0, call = 0;
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => {
+    open++; maxOpen = Math.max(maxOpen, open);
+    return {width, height, value: values[call++], close: () => { open--; }};
+  }));
+  vi.stubGlobal('OffscreenCanvas', class {
+    width: number; height: number;
+    constructor(w: number, h: number) { this.width = w; this.height = h; }
+    getContext() {
+      let source: {value: number} | undefined;
+      return {
+        clearRect: vi.fn(),
+        drawImage: (bitmap: {value: number}) => { source = bitmap; },
+        getImageData: (_x: number, _y: number, w: number, h: number) => ({data: new Uint8ClampedArray(w * h * 4).fill(source!.value)}),
+      };
+    }
+  });
+  return {maxOpen: () => maxOpen, open: () => open};
+}
+
+it('proves identical pixels while holding only one decoded bitmap at a time', async () => {
+  // 3000×3000 spans several 16 MB comparison bands.
+  const decoder = stubPixelDecoder(3000, 3000, [7, 7]);
+  await expect(assertSameDecodedPixels(png, png)).resolves.toBeUndefined();
+  expect(decoder.maxOpen()).toBe(1);
+  expect(decoder.open()).toBe(0);
+});
+
+it('rejects decodes whose pixels differ and releases every bitmap', async () => {
+  const decoder = stubPixelDecoder(3000, 3000, [7, 8]);
+  await expect(assertSameDecodedPixels(png, png)).rejects.toThrow('Decoded pixels differ');
+  expect(decoder.open()).toBe(0);
 });
