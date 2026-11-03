@@ -2,15 +2,24 @@
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { afterEach, expect, it, vi } from 'vitest';
-import { decodeHeic, isPatchedLibheif } from './codecs';
+import { decodeHeic, decoderVersions, isPatchedLibde265, isPatchedLibheif } from './codecs';
 
-const libheifUrl = vi.hoisted(() => new URL('../../node_modules/heic-to/src/lib/libheif-without-unsafe-eval.js', import.meta.url).href);
-// Node imports the module from disk; Vite serves the same file as a URL asset.
-vi.mock('../../node_modules/heic-to/src/lib/libheif-without-unsafe-eval.js?url', () => ({ default: libheifUrl }));
+const libheifUrl = vi.hoisted(() => new URL('../../third_party/libheif/libheif.js', import.meta.url).href);
+const libheifWasmUrl = vi.hoisted(() => new URL('../../third_party/libheif/libheif.wasm', import.meta.url).href);
+// Node imports the module from disk; Vite serves the same files as URL assets.
+vi.mock('../../third_party/libheif/libheif.js?url', () => ({ default: libheifUrl }));
+vi.mock('../../third_party/libheif/libheif.wasm?url', () => ({ default: libheifWasmUrl }));
 
 // The Emscripten build takes its Node branch under Vitest and expects CommonJS
-// globals; browsers and workers never reach that branch.
-Object.assign(globalThis, { require: createRequire(import.meta.url), __dirname: process.cwd() });
+// globals; browsers and workers never reach that branch. Node's fetch has no
+// file: support, so serve the local WebAssembly file the way Vite would.
+const networkFetch = globalThis.fetch;
+Object.assign(globalThis, {
+  require: createRequire(import.meta.url), __dirname: process.cwd(),
+  fetch: async (input: RequestInfo | URL, init?: RequestInit) => String(input).startsWith('file:')
+    ? new Response(await readFile(new URL(String(input))))
+    : networkFetch(input, init),
+});
 afterEach(() => vi.unstubAllGlobals());
 
 const fixture = (name: string) => readFile(new URL(`./codecs-fixtures/${name}`, import.meta.url));
@@ -23,10 +32,19 @@ it.each([
   expect(isPatchedLibheif(version)).toBe(patched);
 });
 
-it('bundles a patched libheif build', async () => {
+it.each([
+  ['1.1.3', true], ['1.1.4', true], ['1.2.0', true], ['2.0.0', true],
+  ['1.1.2', false], ['1.0.16', false], ['0.9.9', false], ['', false],
+])('treats libde265 %s as patched=%s', (version, patched) => {
+  expect(isPatchedLibde265(version)).toBe(patched);
+});
+
+it('bundles patched libheif and libde265 builds', async () => {
   const module = await import(/* @vite-ignore */ libheifUrl);
-  const lib = await module.default();
-  expect(isPatchedLibheif(lib.heif_get_version())).toBe(true);
+  const lib = await module.default({ wasmBinary: await readFile(new URL(libheifWasmUrl)) });
+  const versions = decoderVersions(lib);
+  expect(isPatchedLibheif(versions.libheif)).toBe(true);
+  expect(isPatchedLibde265(versions.libde265)).toBe(true);
 }, 30000);
 
 it('decodes real HEIC locally when the browser has no native HEIC decoder', async () => {

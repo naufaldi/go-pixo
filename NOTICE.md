@@ -11,7 +11,7 @@ License: MIT (see `LICENSE`).
 
 ## Browser codecs
 
-The web app additionally uses `@jsquash/avif` 2.1.1 (Apache-2.0), `utif` 3.1.0 (MIT), and libheif 1.23.7 with libde265 1.0.16 (LGPL-3.0, via the unmodified `heic-to` 1.6.7 build). Their license texts and source/build references are distributed in `web/public/licenses/`, including instructions for rebuilding with a modified HEIC library. See `web/public/licenses/third-party.txt`.
+The web app additionally uses `@jsquash/avif` 2.1.1 (Apache-2.0), `utif` 3.1.0 (MIT), and libheif 1.23.7 with libde265 1.1.3 (LGPL-3.0, an unmodified WebAssembly build made by `scripts/libheif-wasm`). Their license texts and source/build references are distributed in `web/public/licenses/`, including instructions for rebuilding with a modified HEIC library. See `web/public/licenses/third-party.txt`.
 
 ## Go standard library (lossless JPEG optimizer)
 
