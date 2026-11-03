@@ -110,7 +110,7 @@ let make = (
   | (Some(orig), Some(comp)) =>
     let compressedSize = compressedBytes->Option.getOr(0)
     let savings = Display.calculateSavings(originalBytes, compressedSize)
-    let optimized = Display.isAlreadyOptimized(originalBytes, compressedSize)
+    let sameSize = Display.hasSameSize(originalBytes, compressedSize)
 
     <div className="flex flex-col gap-4">
       <div
@@ -121,7 +121,7 @@ let make = (
             Display.formatSize(originalBytes) ++ " → " ++ Display.formatSize(compressedSize),
           )}
         </p>
-        {if optimized {
+        {if sameSize {
           <div className="flex items-center">
             <div className="flex items-center gap-2 text-blue-400">
               <svg
@@ -138,7 +138,7 @@ let make = (
                 />
               </svg>
               <span className="text-sm font-medium">
-                {"No smaller output with current settings"->React.string}
+                {"Same file size with these settings"->React.string}
               </span>
             </div>
           </div>
@@ -151,7 +151,7 @@ let make = (
                   "Saved " ++
                   saved ++
                   " (" ++
-                  to1dp(percent) ++
+                  Display.formatPercent(percent) ++
                   "%)" ++
                   switch compressionTime {
                   | Some(time) => " in " ++ Display.formatTime(time)

@@ -379,15 +379,25 @@ test.describe('go-pixo', () => {
     expect(download?.suggestedFilename()).toMatch(/\.webp$/)
   })
 
-  test('perfect quality checkbox toggles', async ({ page }) => {
+  test('lossless checkbox explains size limits and toggles', async ({ page }) => {
     await uploadSamplePng(page)
     await waitForCompression(page)
 
-    const checkbox = page.getByRole('checkbox', { name: 'Perfect Quality' })
+    const checkbox = page.getByRole('checkbox', { name: 'Lossless' })
+    await expect(checkbox).toHaveAccessibleDescription(/preserves every pixel unless resized.*File size may stay the same/)
     await expect(checkbox).not.toBeChecked()
     await checkbox.click()
     await expect(checkbox).toBeChecked()
     await waitForCompression(page)
+    await waitForIdle(page)
+    const result = await readCompressedImageMetadata(page)
+    const originalSize = (await readFile(samplePng)).length
+    if (result.size === originalSize) {
+      await expect(page.getByText('Same file size with these settings', { exact: true })).toHaveCount(2)
+    } else {
+      await expect(page.getByText(/^Saved /)).toBeVisible()
+    }
+    await page.screenshot({ path: test.info().outputPath('lossless-result.png'), fullPage: true })
   })
 
   test('resize inputs accept dimensions', async ({ page }) => {

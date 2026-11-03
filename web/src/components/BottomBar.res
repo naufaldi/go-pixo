@@ -283,21 +283,22 @@ let make = (
         </div>
         <label
           className="min-h-12 flex items-center gap-2 cursor-pointer"
-          title="Lossless encoding; resize changes image dimensions"
+          title="Preserves every pixel unless resized; file size may stay the same"
         >
           <input
             type_="checkbox"
             checked=lossless
+            ariaDescribedby="lossless-help"
             onChange={e => {
               let checked = ReactEvent.Form.target(e)["checked"]
               onLosslessChange(checked == Some(true))
             }}
             className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-white focus:ring-2 focus:ring-neutral-500"
           />
-          <span className="text-base text-neutral-300"> {React.string("Perfect Quality")} </span>
+          <span className="text-base text-neutral-300"> {React.string("Lossless")} </span>
         </label>
-        <p className="text-sm text-neutral-400">
-          {React.string("Lossless encoding. Resizing still changes image dimensions.")}
+        <p id="lossless-help" className="text-sm text-neutral-400">
+          {React.string("When enabled, preserves every pixel unless resized. File size may stay the same. Resizing changes image dimensions and pixels.")}
         </p>
       </div>
       <div className="grid grid-cols-2 items-center gap-x-4 gap-y-2">

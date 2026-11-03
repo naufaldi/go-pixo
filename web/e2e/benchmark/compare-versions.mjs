@@ -24,7 +24,7 @@ const scenarios = [
   { id: 'balanced', label: 'Balanced (default)', slider: '2', lossless: false, output: 'same' },
   { id: 'smaller', label: 'Smaller file', slider: '1', lossless: false, output: 'same' },
   { id: 'faster', label: 'Faster', slider: '3', lossless: false, output: 'same' },
-  { id: 'perfect', label: 'Perfect Quality', slider: '2', lossless: true, output: 'same' },
+  { id: 'perfect', label: 'Lossless', slider: '2', lossless: true, output: 'same' },
   { id: 'auto', label: 'Auto (smallest)', slider: '2', lossless: false, output: 'auto' },
 ];
 
@@ -88,7 +88,7 @@ async function measureColdStart(browser, url, file) {
 async function runScenario(page, url, file, scenario) {
   await page.goto(url, { waitUntil: 'load' });
   await page.getByRole('slider', { name: 'Compression preset' }).fill(scenario.slider);
-  const perfect = page.getByRole('checkbox', { name: 'Perfect Quality' });
+  const perfect = page.getByRole('checkbox', { name: 'Lossless' });
   if (scenario.lossless) await perfect.check(); else await perfect.uncheck();
   await page.getByRole('combobox', { name: 'Output format' }).selectOption(scenario.output);
   const started = Date.now();

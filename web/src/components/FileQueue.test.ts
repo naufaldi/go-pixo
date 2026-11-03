@@ -6,6 +6,21 @@ import { make as FileQueue } from './FileQueue.res.js'
 afterEach(cleanup)
 
 it.each([
+  [1_000_000, 'Same file size with these settings'],
+  [999_999, '<0.1% smaller'],
+  [999_500, '<0.1% smaller'],
+  [999_000, '-0.1%'],
+  [1_000_001, '<0.1% larger'],
+])('reports the actual size outcome in the file queue (%i bytes)', (compressedBytes, message) => {
+  render(createElement(FileQueue, {
+    items: [{ id: 'one', file: { name: 'one.png' }, status: 'Done', kind: 'Png', originalBytes: 1_000_000, compressedBytes }],
+    activeCompressions: [], onSelect() {}, onRemove() {}, onClearAll() {},
+  }))
+  expect(screen.getByRole('button', { name: /one.png/ })).toHaveTextContent(message)
+  if (compressedBytes < 1_000_000) expect(screen.queryByTestId('file-item-optimized')).not.toBeInTheDocument()
+})
+
+it.each([
   ['Pending', 'Pending'], ['Decoding', 'Decoding...'], ['Compressing', 'Compressing...'],
   ['Done', '50 bytes (-50%)'], [{ TAG: 'Error', _0: 'Cannot decode image' }, 'Cannot decode image'],
 ])('preserves meaningful status text alongside decorative glyphs (%j)', (status, text) => {
