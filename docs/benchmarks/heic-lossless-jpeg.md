@@ -106,7 +106,7 @@ Static assets:
 | Initial JS (`index-*.js`) | 302 KB (gzip 93.8 KB) | 302 KB (gzip 93.9 KB) |
 | Offline precache, first visit | 9.57 MB | 13.14 MB |
 
-The page loads as before. The extra bytes are the libheif decoder (3.4 MB raw, 803 KB gzip), which the offline service worker precaches so HEIC also works offline. The app imports it only when a HEIC file arrives and the browser cannot decode HEIC natively. Safari, including iOS, decodes HEIC itself and never loads it.
+The page loads as before. The extra bytes are the libheif decoder (3.4 MB raw, 803 KB gzip at the time; see the follow-up below), which the offline service worker precaches so HEIC also works offline. The app imports it only when a HEIC file arrives and the browser cannot decode HEIC natively. Safari, including iOS, decodes HEIC itself and never loads it.
 
 ## Go microbenchmarks
 
@@ -123,11 +123,24 @@ The page loads as before. The extra bytes are the libheif decoder (3.4 MB raw, 8
 - **Balanced / Smaller, JPEG:** quantization and trellis are unchanged. Progressive and optimized-Huffman output is now correct and about 7% smaller. The lossless re-code of the original is also tried when the lossy result stays above 80% of the original's non-metadata bytes (APPn and COM segments are excluded, since the re-code drops most of them). This is a speed heuristic, not a guarantee.
 - **Faster:** unchanged, and it skips the lossless re-code in lossy mode.
 - **Go API and CLI:** `Progressive` now always yields a progressive file and `OptimizeHuffman` alone a sequential one, both with optimized tables.
-- **HEIC:** the browser's native decoder is tried first; otherwise libheif 1.23.7 is used. Builds older than 1.23.7 are refused at runtime. Rotation (`irot`) and crop (`clap`) are supported.
+- **HEIC:** the browser's native decoder is tried first; otherwise libheif 1.23.7 with libde265 1.1.3 is used. Builds older than libheif 1.23.7 or libde265 1.1.3 are refused at runtime. Rotation (`irot`) and crop (`clap`) are supported.
 
 ## Known limits
 
-- Balanced and Smaller still spend most of their time in trellis quantization (~9 s for 10.8 MP in WASM). Further speedups would need a different trellis search or worker parallelism.
-- The bundled libheif is a wasm2js build: about 2× slower than the previous WASM build (≈124–260 ms vs ≈56–85 ms per 1.1 MP decode in Node). Building libheif 1.23.7 to WASM in-house would close that gap.
 - The lossless optimizer rejects CMYK/YCCK, 12-bit, arithmetic-coded and lossless/hierarchical JPEGs, and progressive files whose scans re-code coefficients. In each case the original is kept.
 - On the dev server only, the first two HEIC files decoded at the same moment can fail to load the decoder module; a retry works, and production builds are unaffected.
+- Encoding still runs on one worker thread per image; see issue #128.
+
+## Follow-up: in-house HEIC decoder build
+
+The `heic-to` 1.6.7 package bundled libde265 1.0.16, which has known memory-safety bugs fixed in 1.1.2 and 1.1.3, as a wasm2js build. Go Pixo now builds libheif 1.23.7 with libde265 1.1.3 to real WebAssembly itself (`scripts/libheif-wasm`, workflow "Build libheif WASM") and ships the unmodified output from `web/third_party/libheif/`. Measured in Node 24 on this machine, median of 7 decodes after warm-up:
+
+| | heic-to 1.6.7 (wasm2js) | Own build (WebAssembly) |
+|---|---|---|
+| libde265 | 1.0.16 | 1.1.3 |
+| Decoder download | 3.40 MB raw, 803 KB gzip | 1.63 MB raw, 529 KB gzip |
+| Module start | 32 ms | 9 ms |
+| `example.heic` 1280×854 | 124 ms | 61 ms (2.0×) |
+| `rainbow-451x461.heic` | 9.6 ms | 2.9 ms (3.3×) |
+
+Trellis quantization was also rewritten after this benchmark (PR #130): Balanced/Smaller JPEG encodes are 4–6× faster in native Go with the same PSNR and sizes within ±0.05%.

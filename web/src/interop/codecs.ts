@@ -2,11 +2,11 @@ import avifEncodeWasm from '@jsquash/avif/codec/enc/avif_enc.wasm?url';
 import avifDecodeWasm from '@jsquash/avif/codec/dec/avif_dec.wasm?url';
 import type { AVIFModule as AvifEncoder } from '@jsquash/avif/codec/enc/avif_enc.js';
 import type { AVIFModule as AvifDecoder } from '@jsquash/avif/codec/dec/avif_dec.js';
-// heic-to's package exports hide its standalone libheif build, so import the
-// file by path. It ships as its own unmodified LGPL asset (replaceable by users)
-// rather than heic-to's wrapper, which spawns a blob: worker and decodes without
-// our dimension preflight. This variant contains no eval/new Function.
-import heifModuleUrl from '../../node_modules/heic-to/src/lib/libheif-without-unsafe-eval.js?url';
+// Our own libheif + libde265 WebAssembly build (scripts/libheif-wasm, built in
+// CI). Both files ship as separate, unmodified LGPL assets that users can
+// replace. The glue contains no eval/new Function.
+import heifModuleUrl from '../../third_party/libheif/libheif.js?url';
+import heifWasmUrl from '../../third_party/libheif/libheif.wasm?url';
 import { assertSafeDimensions, inspectImage, sniffInputFormat, TIFF_TAG_VALUE_LIMITS } from './imageFormats';
 import { assertDecodedDimensions, decodeNative } from './codecsNative';
 import { assertRgbaPixelBuffer } from './pixels';
@@ -46,28 +46,44 @@ type HeifModule = {
   HeifDecoder: new () => HeifContext;
   heif_colorspace_RGB: number; heif_chroma_interleaved_RGBA: number; heif_channel_interleaved: number;
   heif_get_version(): string;
+  _de265_get_version(): number;
+  UTF8ToString(pointer: number): string;
   heif_js_decode_image2(handle: number, colorspace: number, chroma: number): Promise<HeifDecoded>;
   heif_image_release(image: number): void;
   heif_context_free(context: number): void;
 };
 let heifModule: Promise<HeifModule> | undefined;
 
-// libheif < 1.23.7 has known heap overflow / use-after-free bugs reachable from
-// crafted files. Refuse to decode with anything older, even if a lockfile drifts.
+// libheif < 1.23.7 and libde265 < 1.1.3 have known heap overflow /
+// use-after-free bugs reachable from crafted files. Refuse to decode with an
+// older build, even if someone swaps the replaceable decoder files.
 export const MIN_LIBHEIF_VERSION = [1, 23, 7] as const;
-export function isPatchedLibheif(version: string): boolean {
+export const MIN_LIBDE265_VERSION = [1, 1, 3] as const;
+export function isAtLeastVersion(version: string, minimum: readonly [number, number, number]): boolean {
   const parts=version.split('.').map(Number);
   if (parts.length<3 || parts.some(part=>!Number.isInteger(part))) return false;
-  for (let i=0;i<3;i++) if (parts[i]!==MIN_LIBHEIF_VERSION[i]) return parts[i]>MIN_LIBHEIF_VERSION[i];
+  for (let i=0;i<3;i++) if (parts[i]!==minimum[i]) return parts[i]>minimum[i];
   return true;
+}
+export const isPatchedLibheif=(version: string)=>isAtLeastVersion(version,MIN_LIBHEIF_VERSION);
+export const isPatchedLibde265=(version: string)=>isAtLeastVersion(version,MIN_LIBDE265_VERSION);
+
+export function decoderVersions(lib: HeifModule): {libheif: string; libde265: string} {
+  return {
+    libheif: lib.heif_get_version(),
+    libde265: typeof lib._de265_get_version==='function' ? lib.UTF8ToString(lib._de265_get_version()) : '',
+  };
 }
 
 async function loadLibheif(): Promise<HeifModule> {
-  // The unmodified LGPL module is emitted as its own asset and imported from
-  // that URL: no CDN or network dependency, and users can replace the file.
-  heifModule??=import(/* @vite-ignore */ heifModuleUrl).then(async module=>{
-    const lib: HeifModule=await module.default();
-    if (!isPatchedLibheif(lib.heif_get_version())) throw new Error('HEIC decoder is outdated. Export this image as JPEG or PNG and retry.');
+  // The LGPL module and its WebAssembly are emitted as their own assets and
+  // loaded from those URLs: no CDN or network dependency, and users can
+  // replace the files.
+  heifModule??=Promise.all([import(/* @vite-ignore */ heifModuleUrl),wasmBinary(heifWasmUrl)]).then(async ([module,wasm])=>{
+    const lib: HeifModule=await module.default({wasmBinary:wasm});
+    const versions=decoderVersions(lib);
+    if (!isPatchedLibheif(versions.libheif) || !isPatchedLibde265(versions.libde265))
+      throw new Error('HEIC decoder is outdated. Export this image as JPEG or PNG and retry.');
     return lib;
   });
   // A failed load must not poison every later HEIC attempt in this worker.
