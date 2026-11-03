@@ -2,6 +2,13 @@
 //
 //   node e2e/benchmark/compare-versions.mjs --before=http://127.0.0.1:4101 \
 //     --after=http://127.0.0.1:4102 [--iterations=2] [--heic=/path/extra.heic] [--out=results.json]
+//     [--scenarios=ultra,balanced] [--fixtures=/private/dir [--manifest=fixtures.json]] [--batch] [--cold=false]
+//
+// --fixtures replaces the built-in images with every PNG/JPEG in a local folder,
+// such as private user screenshots that must not be committed. --manifest lists
+// {"files":[{"label":"shot-01","file":"name.png","sha256":"…"}]}: each file must
+// match its hash, and only labels appear in the report. --batch also uploads all
+// fixtures at once per scenario and records the batch result.
 //
 // Serve each build with `vite preview` first. Each scenario reloads the page,
 // applies settings, uploads one image and waits for the batch result. Before and
@@ -9,7 +16,8 @@
 // Quality is measured in the page against the app's own "Original" preview:
 // PSNR over RGB and SSIM over luma (8x8 windows).
 import { chromium } from '@playwright/test';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,13 +28,32 @@ const iterations = Number.parseInt(arg('iterations', '2'), 10);
 const outPath = resolve(arg('out', join(webRoot, 'test-results', 'compare-versions.json')));
 const workDir = join(webRoot, 'test-results', 'compare-fixtures');
 
-const scenarios = [
+const allScenarios = [
+  { id: 'ultra', label: 'Ultra (smallest)', slider: '0', lossless: false, output: 'same' },
   { id: 'balanced', label: 'Balanced (default)', slider: '2', lossless: false, output: 'same' },
   { id: 'smaller', label: 'Smaller file', slider: '1', lossless: false, output: 'same' },
   { id: 'faster', label: 'Faster', slider: '3', lossless: false, output: 'same' },
   { id: 'perfect', label: 'Lossless', slider: '2', lossless: true, output: 'same' },
   { id: 'auto', label: 'Auto (smallest)', slider: '2', lossless: false, output: 'auto' },
 ];
+// Without --scenarios, keep the established default set; Ultra is opt-in.
+const scenarios = arg('scenarios') ? allScenarios.filter(scenario => arg('scenarios').split(',').includes(scenario.id))
+  : allScenarios.filter(scenario => scenario.id !== 'ultra');
+
+// Local fixtures, verified against the manifest's SHA-256 when one is given.
+async function localFixtures(dir, manifestPath) {
+  if (!manifestPath) {
+    const names = (await readdir(dir)).filter(name => /\.(png|jpe?g)$/i.test(name)).sort();
+    return names.map(name => ({ file: join(dir, name), label: name }));
+  }
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  return Promise.all(manifest.files.map(async entry => {
+    const file = join(dir, entry.file);
+    const actual = createHash('sha256').update(await readFile(file)).digest('hex');
+    if (actual !== entry.sha256) throw new Error(`${entry.label}: SHA-256 ${actual} does not match the manifest`);
+    return { file, label: entry.label };
+  }));
+}
 
 // JPEG fixtures come from Chromium's canvas encoder (standard Huffman tables,
 // like most camera and phone encoders), derived from the committed Codex photo.
@@ -61,9 +88,10 @@ async function makeJpegFixtures(browser) {
 
 // Locator waitFor backs off to 500 ms polls, which quantizes timings; poll
 // every frame instead.
-const waitForBatchResult = page => page.waitForFunction(
-  () => /1 completed|1 failed/.test(document.querySelector('[data-testid="batch-summary"]')?.textContent ?? ''),
-  null, { polling: 'raf', timeout: 180_000 });
+const waitForBatchResult = (page, count = 1) => page.waitForFunction(count => {
+  const match = /(\d+) completed, (\d+) failed, 0 remaining/.exec(document.querySelector('[data-testid="batch-summary"]')?.textContent ?? '');
+  return match !== null && Number(match[1]) + Number(match[2]) === count;
+}, count, { polling: 'raf', timeout: 180_000 * count });
 
 // Cold start on a throttled connection (~20 Mbps down, 40 ms RTT, empty cache):
 // page load, then the first compression, which downloads the Go WASM and any
@@ -91,12 +119,29 @@ async function measureColdStart(browser, url, file) {
   return { pageReadyMs, pageBytes, firstResultMs, firstResultBytes: bytes, ok };
 }
 
-async function runScenario(page, url, file, scenario) {
+async function applyScenario(page, url, scenario) {
   await page.goto(url, { waitUntil: 'load' });
   await page.getByRole('slider', { name: 'Compression preset' }).fill(scenario.slider);
   const perfect = page.getByRole('checkbox', { name: 'Lossless' });
   if (scenario.lossless) await perfect.check(); else await perfect.uncheck();
   await page.getByRole('combobox', { name: 'Output format' }).selectOption(scenario.output);
+}
+
+// All fixtures in one upload, as a user drops a folder of screenshots.
+async function runBatch(page, url, files, scenario) {
+  await applyScenario(page, url, scenario);
+  const started = Date.now();
+  await page.locator('input[type=file]').setInputFiles(files);
+  await waitForBatchResult(page, files.length);
+  const elapsedMs = Date.now() - started;
+  const summary = (await page.getByTestId('batch-summary').innerText()).replace(/\s+/g, ' ');
+  const [, completed, failed] = /(\d+) completed, (\d+) failed/.exec(summary);
+  const errors = [...new Set((await page.locator('body').innerText()).match(/failed to [^\n]*/g) ?? [])];
+  return { elapsedMs, completed: Number(completed), failed: Number(failed), errors };
+}
+
+async function runScenario(page, url, file, scenario) {
+  await applyScenario(page, url, scenario);
   const started = Date.now();
   await page.locator('input[type=file]').setInputFiles(file);
   const summary = page.getByTestId('batch-summary');
@@ -112,16 +157,24 @@ async function runScenario(page, url, file, scenario) {
     const output = document.querySelector('img[alt="Compressed"]');
     const load = async src => {
       const blob = await fetch(src).then(response => response.blob());
-      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image', premultiplyAlpha: 'none' });
       const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
       const context = canvas.getContext('2d');
+      context.drawImage(bitmap, 0, 0);
+      const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data;
       // Match the app: transparent pixels are compared over white, as JPEG output is.
-      context.fillStyle = '#fff'; context.fillRect(0, 0, bitmap.width, bitmap.height);
-      context.drawImage(bitmap, 0, 0); bitmap.close();
-      return { blob, width: canvas.width, height: canvas.height, data: context.getImageData(0, 0, canvas.width, canvas.height).data };
+      context.globalCompositeOperation = 'destination-over';
+      context.fillStyle = '#fff'; context.fillRect(0, 0, bitmap.width, bitmap.height); bitmap.close();
+      return { blob, width: canvas.width, height: canvas.height, alpha, data: context.getImageData(0, 0, canvas.width, canvas.height).data };
     };
     const a = await load(original.src), b = await load(output.src);
     if (a.width !== b.width || a.height !== b.height) return { outputBytes: b.blob.size, mime: b.blob.type, width: b.width, height: b.height };
+    // Alpha is compared exactly, before the white background is applied.
+    let transparentPixels = 0, alphaMismatches = 0;
+    for (let i = 3; i < a.alpha.length; i += 4) {
+      if (a.alpha[i] !== 255) transparentPixels++;
+      if (a.alpha[i] !== b.alpha[i]) alphaMismatches++;
+    }
     let squared = 0, identical = true;
     const lumaA = new Float32Array(a.width * a.height), lumaB = new Float32Array(a.width * a.height);
     for (let i = 0, p = 0; i < a.data.length; i += 4, p++) {
@@ -144,7 +197,7 @@ async function runScenario(page, url, file, scenario) {
       va /= 63; vb /= 63; cov /= 63;
       ssim += ((2 * ma * mb + c1) * (2 * cov + c2)) / ((ma * ma + mb * mb + c1) * (va + vb + c2)); windows++;
     }
-    return { outputBytes: b.blob.size, mime: b.blob.type, width: b.width, height: b.height,
+    return { outputBytes: b.blob.size, mime: b.blob.type, width: b.width, height: b.height, transparentPixels, alphaMismatches,
       psnr: identical ? Infinity : 10 * Math.log10(255 * 255 / mse), ssim: ssim / windows, identicalPixels: identical };
   });
   return { ok: true, elapsedMs, ...metrics };
@@ -154,19 +207,20 @@ const median = values => { const sorted = [...values].sort((x, y) => x - y); ret
 
 const browser = await chromium.launch();
 try {
-  const fixtures = [
+  const fixtures = arg('fixtures') ? await localFixtures(resolve(arg('fixtures')), arg('manifest') && resolve(arg('manifest'))) : [
     ...await makeJpegFixtures(browser),
     join(webRoot, 'e2e', 'fixtures', 'benchmark', 'codex-still-life.png'),
     join(webRoot, 'e2e', 'fixtures', 'browser-verify', 'indomaret-screenshot.png'),
     join(webRoot, 'src', 'interop', 'codecs-fixtures', 'rainbow-451x461.heic'),
     ...(arg('heic') ? [resolve(arg('heic'))] : []),
-  ].filter(file => !arg('only') || basename(file).includes(arg('only')));
-  const report = { date: new Date().toISOString(), targets, iterations, load: {}, runs: [] };
+  ].map(file => ({ file, label: basename(file) }));
+  const selected = fixtures.filter(({ label }) => !arg('only') || label.includes(arg('only')));
+  const report = { date: new Date().toISOString(), targets, iterations, load: {}, runs: [], batches: [] };
   const coldInputs = {
     png: join(webRoot, 'e2e', 'fixtures', 'sample-32x32.png'),
     heic: join(webRoot, 'src', 'interop', 'codecs-fixtures', 'rainbow-451x461.heic'),
   };
-  for (const [kind, file] of Object.entries(coldInputs)) for (const version of ['before', 'after']) {
+  if (arg('cold') !== 'false') for (const [kind, file] of Object.entries(coldInputs)) for (const version of ['before', 'after']) {
     const loads = [];
     for (let i = 0; i < 3; i++) loads.push(await measureColdStart(browser, targets[version], file));
     const summary = Object.fromEntries(Object.keys(loads[0]).map(key => [key, key === 'ok' ? loads.every(load => load.ok) : median(loads.map(load => load[key]))]));
@@ -175,7 +229,7 @@ try {
   }
   const context = await browser.newContext();
   const page = await context.newPage();
-  for (const file of fixtures) {
+  for (const { file, label } of selected) {
     const originalBytes = (await readFile(file)).length;
     for (const scenario of scenarios) {
       const samples = { before: [], after: [] };
@@ -185,15 +239,24 @@ try {
       for (const version of ['before', 'after']) {
         const ok = samples[version].filter(sample => sample.ok);
         const last = ok.at(-1) ?? samples[version].at(-1);
-        const row = { image: basename(file), originalBytes, scenario: scenario.id, scenarioLabel: scenario.label, version,
-          ok: ok.length === samples[version].length, error: last.error,
+        const row = { image: label, originalBytes, scenario: scenario.id, scenarioLabel: scenario.label, version,
+          ok: ok.length === samples[version].length, error: last.error?.replaceAll(basename(file), label),
           medianMs: median(samples[version].map(sample => sample.elapsedMs)),
-          outputBytes: last.outputBytes, mime: last.mime, psnr: last.psnr, ssim: last.ssim, identicalPixels: last.identicalPixels };
+          outputBytes: last.outputBytes, mime: last.mime, width: last.width, height: last.height,
+          transparentPixels: last.transparentPixels, alphaMismatches: last.alphaMismatches,
+          psnr: last.psnr, ssim: last.ssim, identicalPixels: last.identicalPixels };
         report.runs.push(row);
         console.log([row.image, row.scenario, version, row.ok ? `${row.medianMs}ms` : `FAIL ${row.error}`,
-          row.outputBytes ?? '', row.mime ?? '', row.psnr?.toFixed?.(2) ?? '', row.ssim?.toFixed?.(4) ?? ''].join('\t'));
+          row.outputBytes ?? '', row.mime ?? '', row.psnr?.toFixed?.(2) ?? '', row.ssim?.toFixed?.(4) ?? '',
+          row.alphaMismatches === undefined ? '' : `alpha mismatches ${row.alphaMismatches}/${row.transparentPixels}`].join('\t'));
       }
     }
+  }
+  if (process.argv.includes('--batch')) for (const scenario of scenarios) for (const version of ['before', 'after']) {
+    const files = selected.map(({ file }) => file);
+    const batch = { scenario: scenario.id, version, files: files.length, ...await runBatch(page, targets[version], files, scenario) };
+    report.batches.push(batch);
+    console.log('batch', scenario.id, version, `${batch.completed} completed, ${batch.failed} failed, ${batch.elapsedMs}ms`, batch.errors.join(' | '));
   }
   await context.close();
   await mkdir(dirname(outPath), { recursive: true });
