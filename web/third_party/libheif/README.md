@@ -6,7 +6,7 @@ HEIC/HEIF fallback decoder used by `web/src/interop/codecs.ts` when the browser 
 |---|---|
 | libheif | 1.23.7 (LGPL-3.0), https://github.com/strukturag/libheif/tree/v1.23.7 |
 | libde265 | 1.1.3 (LGPL-3.0), https://github.com/strukturag/libde265/tree/v1.1.3 |
-| Toolchain | Emscripten 3.1.61 (`emscripten/emsdk:3.1.61`) |
+| Toolchain | Emscripten 3.1.61 (`emscripten/emsdk:3.1.61@sha256:30aa9fed39cc7810cc4338c77828bd513a6ee6b60c6b141bc6d9760aea5791e3`) |
 | Build | `scripts/libheif-wasm/build.sh`, run by `.github/workflows/libheif-wasm.yml` |
 | CI run | https://github.com/naufaldi/go-pixo/actions/runs/41563381308 |
 
@@ -21,7 +21,7 @@ Both files are copied from the CI artifact unmodified. The app emits them as sep
 
 ## Rebuild or replace
 
-1. Run `scripts/libheif-wasm/build.sh out/libheif` inside an Emscripten 3.1.61 toolchain (for example `docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:3.1.61 scripts/libheif-wasm/build.sh out/libheif`), or trigger the "Build libheif WASM" workflow and download its `libheif-wasm` artifact.
+1. Run `scripts/libheif-wasm/build.sh out/libheif` inside an Emscripten 3.1.61 toolchain (for example `docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:3.1.61@sha256:30aa9fed39cc7810cc4338c77828bd513a6ee6b60c6b141bc6d9760aea5791e3 scripts/libheif-wasm/build.sh out/libheif`), or trigger the "Build libheif WASM" workflow and download its `libheif-wasm` artifact.
 2. Copy `libheif.js`, `libheif.wasm`, `SHA256SUMS` and `BUILDINFO` into this directory.
 3. Build the Go WASM, then run `bun run build` in `web/`. This regenerates the bundled assets and offline integrity hashes.
 

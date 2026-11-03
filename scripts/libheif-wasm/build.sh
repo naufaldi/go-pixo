@@ -4,7 +4,7 @@
 # toolchain, e.g. the pinned emscripten/emsdk image used by
 # .github/workflows/libheif-wasm.yml:
 #
-#   docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:3.1.61 \
+#   docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:3.1.61@sha256:30aa9fed39cc7810cc4338c77828bd513a6ee6b60c6b141bc6d9760aea5791e3 \
 #     scripts/libheif-wasm/build.sh out/libheif
 #
 # Outputs libheif.js, libheif.wasm and SHA256SUMS into the given directory.
