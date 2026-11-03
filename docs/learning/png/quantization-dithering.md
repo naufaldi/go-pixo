@@ -56,7 +56,8 @@ template settings.
 as opportunistic. For non-opaque RGBA it compresses the original RGBA samples,
 including hidden RGB, instead of requiring an unsupported RGB palette. Filters,
 compression level, and DEFLATE effort still apply. Opaque input still uses the
-selected quantizer; a reduced budget (1..255) always requires a palette.
+selected quantizer. Without an explicit `allowRGBAFallback` argument, a reduced
+budget (1..255) requires a palette; passing `true` permits the fallback at any budget.
 
 Explicit low-level `Options.MaxColors` requests remain strict even at 256 colors.
 Basic Go/JS callers can also require a full palette by passing `false` as the new
@@ -68,9 +69,9 @@ argument 17. Existing calls do not need new arguments.
 
 The app marks its preset-derived worker requests with `pngAllowRGBAFallback=true`.
 This records compression intent without identifying a preset by its numeric values.
-For transparent full-budget input, palette-only settings are inapplicable and RGBA
-samples are preserved. Reduced budgets, including the Ultra preset's 128 colors,
-continue to reject transparency. Custom worker requests omit the flag to require
+For transparent input at any palette budget, including the Ultra preset's 128
+colors, palette-only settings are inapplicable and RGBA samples are preserved.
+Opaque input still uses the preset's palette. Custom worker requests omit the flag to require
 quantization. No alpha-aware palette or dithering implementation is implied.
 
 This raw-pixel fallback does not guarantee smaller files. The worker still compares

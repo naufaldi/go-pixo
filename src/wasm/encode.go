@@ -11,7 +11,8 @@ import (
 // EncodePng encodes pixels with preset compression. A full 256-color budget is
 // opportunistic: transparent RGBA falls back to sample-preserving compression.
 // Pass false as allowRGBAFallback to require a palette even at that budget.
-// Reduced budgets always require an opaque palette-compatible input.
+// Without the argument, reduced budgets require opaque palette-compatible input;
+// app presets pass true to permit the RGBA fallback at any budget.
 func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, allowRGBAFallback ...bool) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
@@ -47,7 +48,10 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 		opts.OptimizeAlpha = false
 	}
 
-	allowFallback := len(allowRGBAFallback) == 0 || allowRGBAFallback[0]
+	allowFallback := opts.MaxColors == 256
+	if len(allowRGBAFallback) > 0 {
+		allowFallback = allowRGBAFallback[0]
+	}
 	applyPngRGBAFallback(&opts, pixels, allowFallback)
 
 	encoder, err := png.NewEncoderWithOptions(opts)
@@ -65,9 +69,9 @@ func EncodePng(pixels []byte, width, height int, colorType, preset int, lossy bo
 
 // EncodePngAdvanced encodes pixels with explicit quantizer and compression controls.
 // Palette requests are strict by default. App presets may pass true as the optional
-// allowRGBAFallback argument to permit sample-preserving RGBA at a 256-color budget.
-// On that fallback only palette controls are inapplicable; filter/DEFLATE controls
-// remain active. Reduced palette budgets remain strict even with this opt-in.
+// allowRGBAFallback argument to permit sample-preserving RGBA at any palette budget,
+// including Ultra's reduced one. On that fallback only palette controls are
+// inapplicable; filter/DEFLATE controls remain active.
 func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, lossy bool, maxColors int, dithering bool, ditherStrength float64, qualityTarget int, zopfliIterations int, filterStrategy int, usePerceptual bool, distanceMetric int, optimalDeflate bool, filterEarlyTerm bool, progressFunc func(string, int), allowRGBAFallback ...bool) ([]byte, error) {
 	var pngColorType png.ColorType
 	switch colorType {
@@ -159,8 +163,10 @@ func EncodePngAdvanced(pixels []byte, width, height int, colorType, preset int, 
 
 // Keep this policy at the public compression boundary. The low-level encoder's
 // MaxColors contract always means a required RGB palette and stays strict.
+// Callers choose which budgets may fall back. The palette has no alpha, so
+// non-opaque RGBA keeps its exact samples instead of being flattened.
 func applyPngRGBAFallback(opts *png.Options, pixels []byte, allow bool) {
-	if !allow || opts.MaxColors != 256 || opts.ColorType != png.ColorRGBA {
+	if !allow || opts.MaxColors <= 0 || opts.ColorType != png.ColorRGBA {
 		return
 	}
 	for i := 3; i < len(pixels); i += 4 {

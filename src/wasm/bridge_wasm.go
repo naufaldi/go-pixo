@@ -27,14 +27,14 @@ func HandleEncodePng(this js.Value, args []js.Value) any {
 		return argumentError(err)
 	}
 
-	// Basic full-budget compression is opportunistic unless explicitly disabled.
-	allowRGBAFallback := true
+	// Without the flag, only the full default budget is opportunistic.
+	var allowRGBAFallback []bool
 	if len(args) > 7 && args[7].Type() == js.TypeBoolean {
-		allowRGBAFallback = args[7].Bool()
+		allowRGBAFallback = append(allowRGBAFallback, args[7].Bool())
 	}
 
 	// Call the actual implementation
-	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors, allowRGBAFallback)
+	output, err := EncodePng(pixels, width, height, colorType, preset, lossy, maxColors, allowRGBAFallback...)
 	if err != nil {
 		return js.ValueOf(fmt.Sprintf("error: %v", err))
 	}

@@ -282,6 +282,72 @@ test.describe('go-pixo', () => {
     expect(metadata.height).toBe(480)
   })
 
+  // Regression: Ultra's reduced palette rejected transparent screenshots.
+  test('Ultra keeps transparent PNG alpha next to an opaque PNG', async ({ page }) => {
+    await openApp(page)
+    const preset = page.getByRole('slider', { name: 'Compression preset' })
+    await preset.fill('0')
+    await expect(preset).toHaveAttribute('aria-valuetext', /Ultra/)
+    await page.evaluate(async () => {
+      const draw = async (name: string, transparent: boolean) => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 96
+        canvas.height = 64
+        const ctx = canvas.getContext('2d')!
+        // Window-capture shape: clear corners, soft shadow, opaque content.
+        if (transparent) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'
+          ctx.fillRect(4, 4, 88, 56)
+        } else {
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, 96, 64)
+        }
+        for (let x = 8; x < 88; x += 1) {
+          ctx.fillStyle = `rgb(${x * 3}, ${120 + (x % 7) * 10}, ${200 - x})`
+          ctx.fillRect(x, 8, 1, 48)
+        }
+        const blob = await new Promise<Blob>((resolve) => canvas.toBlob((value) => resolve(value!), 'image/png'))
+        return new File([blob], name, { type: 'image/png' })
+      }
+      const transparent = await draw('transparent-window.png', true)
+      Object.assign(window, { transparentFixture: transparent })
+      const transfer = new DataTransfer()
+      transfer.items.add(transparent)
+      transfer.items.add(await draw('opaque-window.png', false))
+      const input = document.querySelector<HTMLInputElement>('input[type="file"]')!
+      input.files = transfer.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await expect(page.getByTestId('batch-summary')).toContainText('2 completed, 0 failed, 0 remaining', { timeout: 90000 })
+
+    await page.getByRole('button', { name: /transparent-window\.png/ }).click()
+    const compared = await page.locator('img[alt="Compressed"]').evaluate(async (img: HTMLImageElement) => {
+      const pixels = async (blob: Blob) => {
+        const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(bitmap, 0, 0)
+        return ctx.getImageData(0, 0, bitmap.width, bitmap.height).data
+      }
+      const output = await fetch(img.src).then((response) => response.blob())
+      const got = await pixels(output)
+      const want = await pixels((window as unknown as { transparentFixture: Blob }).transparentFixture)
+      const at = (x: number, y: number) => Array.from(got.slice((y * 96 + x) * 4, (y * 96 + x) * 4 + 4))
+      let mismatches = 0
+      for (let i = 0; i < want.length; i += 1) if (got[i] !== want[i]) mismatches += 1
+      return { type: output.type, length: got.length, mismatches, corner: at(1, 1), shadow: at(5, 5), content: at(40, 30) }
+    })
+    expect(compared.type).toBe('image/png')
+    expect(compared.length).toBe(96 * 64 * 4)
+    expect(compared.mismatches).toBe(0)
+    expect(compared.corner[3]).toBe(0)
+    expect(compared.shadow[3]).toBeGreaterThan(0)
+    expect(compared.shadow[3]).toBeLessThan(255)
+    expect(compared.content[3]).toBe(255)
+  })
+
   test('transparent PNG to JPEG composites transparent pixels on white', async ({ page }) => {
     await openApp(page)
     await uploadGeneratedPng(page, { name: 'transparent.png', width: 48, height: 48, transparent: true })

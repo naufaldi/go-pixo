@@ -160,24 +160,27 @@ func assertPngRGBA(t *testing.T, out []byte, width, height int, pixels []byte) {
 	}
 }
 
-// Uses the exact raw UI state and the actual derived Balanced worker settings.
+// Uses the exact raw UI state and the actual derived Balanced and Ultra worker settings.
 // Automatic fallback must preserve samples while leaving opaque quantization active.
 func TestEncodePngAdvancedPresetFallbackPreservesRGBA(t *testing.T) {
 	for _, alpha := range []byte{128, 0, 255} {
 		for _, tc := range []struct {
 			name                string
+			preset, maxColors   int
 			dithering           bool
 			strength            float64
 			quality, iterations int
 		}{
-			{"initial state", false, 0.5, 75, 0},
-			{"derived Balanced worker", true, 0.4, 85, 5},
+			{"initial state", 1, 256, false, 0.5, 75, 0},
+			{"derived Balanced worker", 1, 256, true, 0.4, 85, 5},
+			// Regression: Ultra's reduced budget rejected transparent screenshots.
+			{"derived Ultra worker", 4, 128, true, 0.45, 72, 15},
 		} {
 			t.Run(tc.name+"/"+strconv.Itoa(int(alpha)), func(t *testing.T) {
 				pixels := []byte{12, 34, 56, alpha, 90, 100, 110, 255, 12, 34, 56, alpha, 90, 100, 110, 255}
 				original := bytes.Clone(pixels)
 				progress := 0
-				out, err := EncodePngAdvanced(pixels, 2, 2, 6, 1, true, 256, tc.dithering, tc.strength, tc.quality, tc.iterations, 0, false, 0, false, false, func(string, int) { progress++ }, true)
+				out, err := EncodePngAdvanced(pixels, 2, 2, 6, tc.preset, true, tc.maxColors, tc.dithering, tc.strength, tc.quality, tc.iterations, 0, false, 0, false, false, func(string, int) { progress++ }, true)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -222,8 +225,8 @@ func TestPngPublicExplicitPaletteRejectsTransparency(t *testing.T) {
 		{"advanced explicit quantizer", func() ([]byte, error) {
 			return EncodePngAdvanced(pixels, 2, 1, 6, 1, true, 256, true, 1, 0, 0, 0, true, 1, false, false, nil)
 		}},
-		{"advanced automatic reduced palette", func() ([]byte, error) {
-			return EncodePngAdvanced(pixels, 2, 1, 6, 1, true, 128, false, 0, 100, 0, 0, false, 0, false, false, nil, true)
+		{"advanced reduced palette without preset opt-in", func() ([]byte, error) {
+			return EncodePngAdvanced(pixels, 2, 1, 6, 4, true, 128, true, 0.45, 72, 0, 0, false, 0, false, false, nil)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
