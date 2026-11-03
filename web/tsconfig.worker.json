@@ -7,6 +7,7 @@
   "include": [
     "src/worker.ts",
     "src/interop/codecsDecode.worker.ts",
+    "src/jpegBand.worker.ts",
     "src/interop/codecsTiff.d.ts"
   ]
 }

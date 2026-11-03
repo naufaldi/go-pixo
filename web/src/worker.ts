@@ -11,6 +11,8 @@ import { assertRgbaPixelBuffer, ownedImageDataPixels } from './interop/pixels';
 import { imageDisplayDimensions, inspectImage } from './interop/imageFormats';
 import { imageOperation } from './interop/imageOperation';
 import { resolveJpegEncodeOptions } from './interop/jpegOptions';
+import { browserParallelEnvironment, encodeJpegRgba, jpegBandCount, type JpegEncodeOptions, type JpegEncodeRuntime } from './interop/jpegParallel';
+import { JpegBandWorkers, type GoModuleSource } from './jpegBandWorkers';
 
 interface CompressionRequest {
   id: string;
@@ -71,6 +73,12 @@ function initWasm(): Promise<void> {
   });
 }
 
+// The compiled module and wasm_exec.js let JPEG band workers start their own
+// Go instances without fetching or compiling main.wasm again.
+let goModuleSource: GoModuleSource | undefined;
+let wasmExecSource: string | undefined;
+let jpegBandWorkers: JpegBandWorkers | undefined;
+
 // Initialize WASM in worker
 async function initializeGo(): Promise<void> {
 
@@ -86,6 +94,7 @@ async function initializeGo(): Promise<void> {
     const wasmExecJs = await fetch("/wasm_exec.js").then((r) => r.text());
     // eslint-disable-next-line no-eval
     (0, eval)(wasmExecJs);
+    wasmExecSource = wasmExecJs;
   }
 
   // @ts-ignore
@@ -107,6 +116,7 @@ async function initializeGo(): Promise<void> {
       .then((buffer) => WebAssembly.instantiate(buffer, go.importObject))
       .then((result) => {
         console.debug("[worker] Running WASM instance");
+        if (result.module && wasmExecSource) goModuleSource = {module: result.module, wasmExec: wasmExecSource};
         go.run(result.instance);
       })
       .catch((err) => {
@@ -270,39 +280,37 @@ function recompressPngLossless(
   return unwrapWasmResult(result);
 }
 
+type JpegBandExports = {
+  encodeJpegBand?: (...args: unknown[]) => Uint8Array | string;
+  encodeJpegBands?: (...args: unknown[]) => Uint8Array | string;
+};
+
+// Encodes RGBA pixels as JPEG, across band workers for large images on
+// capable devices (#128). Any band failure falls back to the serial encoder.
+function encodeJpeg(pixels: Uint8Array, width: number, height: number, options: JpegEncodeOptions): Promise<Uint8Array> {
+  const go = self as unknown as JpegBandExports;
+  const source = goModuleSource;
+  const bands = source && go.encodeJpegBand && go.encodeJpegBands
+    ? jpegBandCount(width * height, browserParallelEnvironment()) : 1;
+  const workers = bands > 1 && source ? (jpegBandWorkers ??= new JpegBandWorkers(source)) : undefined;
+  const args = [width, height, 3, options.quality, options.subsampling, options.progressive, options.trellis,
+    options.optimizeHuffman, options.preset] as const;
+  const runtime: JpegEncodeRuntime = {
+    bands,
+    serial: rgb => encodeJpegAdvanced(rgb, ...args),
+    band: (rgb, band) => unwrapWasmResult(go.encodeJpegBand!(rgb, ...args, band.firstRow, band.rows)),
+    remote: (index, rgba, band) => workers!.encode(index, rgba, width, height, band, options),
+    assemble: coefficients => unwrapWasmResult(go.encodeJpegBands!(coefficients, ...args)),
+    release: () => workers?.release(),
+    onFallback: error => console.warn('[worker] Parallel JPEG encode failed; encoding serially', error),
+  };
+  return encodeJpegRgba(pixels, width, height, options.subsampling, runtime);
+}
+
 function optimizeJpegLossless(jpegBytes: Uint8Array): Uint8Array {
   const optimize = (self as unknown as {optimizeJpegLossless?: (bytes: Uint8Array) => Uint8Array | string}).optimizeJpegLossless;
   if (!optimize) throw new Error("optimizeJpegLossless not available");
   return unwrapWasmResult(optimize(jpegBytes));
-}
-
-function compositeRgbaToRgbWhite(
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-): Uint8Array {
-  const rgb = new Uint8Array(width * height * 3);
-  for (let i = 0; i < width * height; i++) {
-    const src = i * 4;
-    const dst = i * 3;
-    const alpha = pixels[src + 3];
-
-    if (alpha === 255) {
-      rgb[dst] = pixels[src];
-      rgb[dst + 1] = pixels[src + 1];
-      rgb[dst + 2] = pixels[src + 2];
-    } else if (alpha === 0) {
-      rgb[dst] = 255;
-      rgb[dst + 1] = 255;
-      rgb[dst + 2] = 255;
-    } else {
-      const opacity = alpha / 255;
-      rgb[dst] = Math.round(pixels[src] * opacity + 255 * (1 - opacity));
-      rgb[dst + 1] = Math.round(pixels[src + 1] * opacity + 255 * (1 - opacity));
-      rgb[dst + 2] = Math.round(pixels[src + 2] * opacity + 255 * (1 - opacity));
-    }
-  }
-  return rgb;
 }
 
 function resizePixels(
@@ -403,8 +411,8 @@ self.onmessage = async (event: MessageEvent) => {
           inputFormat:req.format,outputFormat:format,width:work.width,height:work.height,preset:req.preset,
           progressive:req.progressive ?? false,trellis:req.trellis ?? false,optimizeHuffman:req.optimizeHuffman ?? false,
         });
-        return encodeJpegAdvanced(compositeRgbaToRgbWhite(requirePixels(),work.width,work.height),work.width,work.height,3,
-          quality,req.subsampling==='444'?1:0,options.progressive,options.trellis,options.optimizeHuffman,options.preset);
+        return encodeJpeg(requirePixels(),work.width,work.height,{quality,subsampling:req.subsampling==='444'?1:0,
+          progressive:options.progressive,trellis:options.trellis,optimizeHuffman:options.optimizeHuffman,preset:options.preset});
       }
       if (!req.lossy && !size.resized && req.format==='png' && req.originalFileBytes?.length) {
         return recompressPngLossless(req.originalFileBytes,req.preset,req.zopfliIterations ?? 0,pngProgress);

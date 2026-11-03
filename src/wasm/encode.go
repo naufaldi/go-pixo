@@ -1,3 +1,4 @@
+// Package wasm exposes the Go encoders to the web app through syscall/js.
 package wasm
 
 import (
@@ -199,6 +200,37 @@ func EncodeJpeg(pixels []byte, width, height int, colorType int, quality uint8) 
 
 // EncodeJpegAdvanced encodes raw pixels as JPEG with an explicit preset, subsampling (1 = 4:4:4, otherwise 4:2:0), progressive, trellis, and Huffman options.
 func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int) ([]byte, error) {
+	encoder, err := newJpegAdvancedEncoder(width, height, colorType, quality, subsampling, progressive, trellis, optimizeHuffman, preset)
+	if err != nil {
+		return nil, err
+	}
+	return encoder.Encode(pixels)
+}
+
+// EncodeJpegBand quantizes MCU rows [firstRow, firstRow+rows) for a parallel
+// encode. Arguments other than the band match EncodeJpegAdvanced; pixels
+// holds only the band's image rows (jpeg.Encoder.BandPixelRows).
+func EncodeJpegBand(pixels []byte, width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int, firstRow, rows int) ([]int16, error) {
+	encoder, err := newJpegAdvancedEncoder(width, height, colorType, quality, subsampling, progressive, trellis, optimizeHuffman, preset)
+	if err != nil {
+		return nil, err
+	}
+	return encoder.EncodeBand(pixels, firstRow, rows)
+}
+
+// NewJpegCoefficientFrame returns the frame that assembles EncodeJpegBand
+// results; its Encode output equals EncodeJpegAdvanced for the same image.
+func NewJpegCoefficientFrame(width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int) (*jpeg.CoefficientFrame, error) {
+	encoder, err := newJpegAdvancedEncoder(width, height, colorType, quality, subsampling, progressive, trellis, optimizeHuffman, preset)
+	if err != nil {
+		return nil, err
+	}
+	return encoder.NewCoefficientFrame()
+}
+
+// newJpegAdvancedEncoder maps the app's JPEG arguments to an encoder. Serial
+// and banded encodes share it, so both use identical options.
+func newJpegAdvancedEncoder(width, height int, colorType int, quality uint8, subsampling int, progressive bool, trellis bool, optimizeHuffman bool, preset int) (*jpeg.Encoder, error) {
 	var jpegColorType jpeg.ColorType
 	switch colorType {
 	case 1:
@@ -237,12 +269,7 @@ func EncodeJpegAdvanced(pixels []byte, width, height int, colorType int, quality
 		opts.Subsampling = jpeg.Subsampling444
 	}
 
-	encoder, err := jpeg.NewEncoder(opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return encoder.Encode(pixels)
+	return jpeg.NewEncoder(opts)
 }
 
 // RecompressPngLossless losslessly re-encodes PNG file bytes with the numbered preset and optional Zopfli iteration override.

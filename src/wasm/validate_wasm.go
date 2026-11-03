@@ -139,19 +139,40 @@ func copyJSBytes(value js.Value) (data []byte, err error) {
 	if n <= 0 || n > imagelimit.MaxPixels*4 {
 		return nil, fmt.Errorf("input buffer exceeds limit")
 	}
-	// Go's copy helper invokes src.subarray. Give it an owned, canonical view
-	// rather than invoking methods or shadowed properties on the caller's view.
-	// This shares the existing bytes and preserves the original view offset.
-	object := js.Global().Get("Object")
-	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
-	buffer := object.Call("getOwnPropertyDescriptor", prototype, "buffer").Get("get").Call("call", value)
-	offset := object.Call("getOwnPropertyDescriptor", prototype, "byteOffset").Get("get").Call("call", value)
-	view := js.Global().Get("Uint8Array").New(buffer, offset, n)
 	data = make([]byte, n)
-	if js.CopyBytesToGo(data, view) != n {
+	if js.CopyBytesToGo(data, canonicalByteView(value, 0, n)) != n {
 		return nil, fmt.Errorf("could not copy complete input buffer")
 	}
 	return data, nil
+}
+
+// canonicalByteView returns an owned Uint8Array over n bytes of value's
+// buffer, starting start bytes into the view. Go's copy helper invokes
+// src.subarray, so give it this view rather than invoking methods or
+// shadowed properties on the caller's view. It shares the existing bytes.
+func canonicalByteView(value js.Value, start, n int) js.Value {
+	object := js.Global().Get("Object")
+	prototype := object.Call("getPrototypeOf", js.Global().Get("Uint8Array").Get("prototype"))
+	buffer := object.Call("getOwnPropertyDescriptor", prototype, "buffer").Get("get").Call("call", value)
+	offset := object.Call("getOwnPropertyDescriptor", prototype, "byteOffset").Get("get").Call("call", value).Int()
+	return js.Global().Get("Uint8Array").New(buffer, offset+start, n)
+}
+
+// copyJSBytesInto fills dst from value's bytes starting at offset. Callers
+// check value with byteArrayLength and bound offset+len(dst) by it first.
+func copyJSBytesInto(dst []byte, value js.Value, offset int) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = fmt.Errorf("could not copy input byte array")
+		}
+	}()
+	if len(dst) == 0 {
+		return nil
+	}
+	if js.CopyBytesToGo(dst, canonicalByteView(value, offset, len(dst))) != len(dst) {
+		return fmt.Errorf("could not copy complete input buffer")
+	}
+	return nil
 }
 
 func checkCallback(args []js.Value, index int) error {

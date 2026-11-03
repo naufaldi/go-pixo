@@ -17,6 +17,8 @@ func main() {
 	js.Global().Set("encodePngAdvanced", js.FuncOf(wasm.HandleEncodePngAdvanced))
 	js.Global().Set("encodeJpeg", js.FuncOf(wasm.HandleEncodeJpeg))
 	js.Global().Set("encodeJpegAdvanced", js.FuncOf(wasm.HandleEncodeJpegAdvanced))
+	js.Global().Set("encodeJpegBand", js.FuncOf(wasm.HandleEncodeJpegBand))
+	js.Global().Set("encodeJpegBands", js.FuncOf(wasm.HandleEncodeJpegBands))
 	js.Global().Set("recompressPngLossless", js.FuncOf(wasm.HandleRecompressPngLossless))
 	js.Global().Set("recompressJpeg", js.FuncOf(wasm.HandleRecompressJpeg))
 	js.Global().Set("optimizeJpegLossless", js.FuncOf(wasm.HandleOptimizeJpegLossless))

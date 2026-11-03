@@ -79,46 +79,53 @@ func (e *Encoder) Encode(pixels []byte) ([]byte, error) {
 	if !e.Options.Progressive && !e.Options.OptimizeHuffman {
 		return e.encodeSequential(pixels)
 	}
-	// The pixel-domain progressive and optimized-table writers emitted
-	// entropy-coded data that decoders reconstruct wrongly (PSNR ~10-20 dB).
-	// Encode with standard tables, then re-code the same quantized
-	// coefficients without changing pixels: Progressive yields a progressive
+	// Quantize every block first, then entropy-code the stored coefficients
+	// with the lossless optimizer's writer: Progressive yields a progressive
 	// file and OptimizeHuffman alone a sequential one, each with optimized
-	// tables and the smallest layout of that kind.
-	baseline, err := e.encodeSequential(pixels)
+	// tables and the smallest layout of that kind. The output is the same as
+	// encoding a baseline file and re-coding it with OptimizeLossless.
+	frame, err := e.NewCoefficientFrame()
 	if err != nil {
 		return nil, err
 	}
-	layout := sequentialLayouts
-	if e.Options.Progressive {
-		layout = progressiveLayouts
+	segments, err := frame.BandSegments(0, frame.MCURows())
+	if err != nil {
+		return nil, err
 	}
-	return optimizeLossless(baseline, layout)
+	if err := e.encodeBandInto(pixels, 0, frame.MCURows(), frame.d, segments); err != nil {
+		return nil, err
+	}
+	return frame.Encode()
 }
 
 // encodeSequential writes a baseline JPEG with standard Huffman tables.
 func (e *Encoder) encodeSequential(pixels []byte) ([]byte, error) {
 	buf := new(bytes.Buffer)
+	qt, err := e.writeFrameHeader(buf)
+	if err != nil {
+		return nil, err
+	}
+	ht, err := e.writeStandardTables(buf)
+	if err != nil {
+		return nil, err
+	}
+	return e.encodeBaseline(buf, pixels, ht, qt)
+}
 
-	// Write SOI
+// writeFrameHeader writes SOI, APP0, the DQT segments and SOF0.
+func (e *Encoder) writeFrameHeader(buf *bytes.Buffer) (*QuantizationTables, error) {
 	if err := WriteSOI(buf); err != nil {
 		return nil, err
 	}
-
-	// Write APP0
 	if err := WriteAPP0(buf); err != nil {
 		return nil, err
 	}
 
-	// Create quantization tables
 	qt := NewQuantizationTables(e.Options.Quality)
-
-	// Write DQT for Luminance
 	if err := WriteDQT(buf, 0, qt.LuminanceTable); err != nil {
 		return nil, err
 	}
-
-	// Write DQT for Chrominance (only for RGB)
+	// Chrominance only exists for RGB input.
 	if e.Options.ColorType == ColorRGB {
 		if err := WriteDQT(buf, 1, qt.ChrominanceTable); err != nil {
 			return nil, err
@@ -128,7 +135,12 @@ func (e *Encoder) encodeSequential(pixels []byte) ([]byte, error) {
 	if err := WriteSOF0(buf, uint16(e.Options.Width), uint16(e.Options.Height), e.Options.ColorType, e.Options.Subsampling); err != nil {
 		return nil, err
 	}
+	return qt, nil
+}
 
+// writeStandardTables writes the DHT segments of the standard Huffman tables
+// and returns them.
+func (e *Encoder) writeStandardTables(buf *bytes.Buffer) (*HuffmanTables, error) {
 	ht := GetStandardHuffmanTables(e.Options.Quality, e.Options.Subsampling)
 
 	// Update cache stats
@@ -138,12 +150,10 @@ func (e *Encoder) encodeSequential(pixels []byte) ([]byte, error) {
 		e.cacheStats.Misses = misses
 	}
 
-	// Write DHT segments
 	if err := e.writeDHTSegments(buf, ht); err != nil {
 		return nil, err
 	}
-
-	return e.encodeBaseline(buf, pixels, ht, qt)
+	return ht, nil
 }
 
 func (e *Encoder) writeDHTSegments(buf *bytes.Buffer, ht *HuffmanTables) error {
@@ -280,10 +290,13 @@ func (e *Encoder) quantizeBlock(block [64]float32, isLuminance bool, qt *Quantiz
 // encodeComponentBlock processes a single 8x8 float block (DCT, Quantize, Zigzag, Huffman).
 // It returns the new DC value and any error encountered.
 func (e *Encoder) encodeComponentBlock(bw *BitWriter, block [64]float32, prevDC int16, isLuminance bool, ht *HuffmanTables, qt *QuantizationTables) (int16, error) {
-	// 1. Quantize and Zigzag
 	zigzag := e.quantizeBlock(block, isLuminance, qt)
+	return writeBlock(bw, &zigzag, prevDC, isLuminance, ht)
+}
 
-	// 2. Huffman Encode DC
+// writeBlock Huffman-codes one zig-zag ordered block with the standard tables
+// and returns its DC value for the next block's prediction.
+func writeBlock(bw *BitWriter, zigzag *[64]int16, prevDC int16, isLuminance bool, ht *HuffmanTables) (int16, error) {
 	dc := zigzag[0]
 	cat, bits, bitLen := EncodeDC(dc, prevDC)
 	hCode, hLen := ht.EncodeDC(cat, isLuminance)
@@ -296,8 +309,7 @@ func (e *Encoder) encodeComponentBlock(bw *BitWriter, block [64]float32, prevDC 
 		}
 	}
 
-	// 3. Huffman Encode AC
-	acRuns := RunLengthEncode(zigzag)
+	acRuns := RunLengthEncode(*zigzag)
 	for _, run := range acRuns {
 		hCode, hLen := ht.EncodeAC(run.RunLength, run.Size, isLuminance)
 		if err := bw.Write(uint32(hCode), hLen); err != nil {
