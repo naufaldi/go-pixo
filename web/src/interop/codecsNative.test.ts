@@ -85,22 +85,30 @@ it('rejects oversized input dimensions before starting browser decoding', async 
   expect(decode).not.toHaveBeenCalled();
 });
 
-// Fake decoder: each bitmap paints one value. Tracks how many are alive at once.
-function stubPixelDecoder(width: number, height: number, values: number[]) {
+// Fake decoder: each bitmap paints one value per source row, so a band read
+// from the wrong rows changes its digest. Tracks how many bitmaps are alive.
+type RowValue = number | ((row: number) => number);
+function stubPixelDecoder(width: number, height: number, values: RowValue[], failReadback = false) {
   let open = 0, maxOpen = 0, call = 0;
   vi.stubGlobal('createImageBitmap', vi.fn(async () => {
     open++; maxOpen = Math.max(maxOpen, open);
-    return {width, height, value: values[call++], close: () => { open--; }};
+    const value = values[call++];
+    return {width, height, row: typeof value === 'function' ? value : () => value, close: () => { open--; }};
   }));
   vi.stubGlobal('OffscreenCanvas', class {
     width: number; height: number;
     constructor(w: number, h: number) { this.width = w; this.height = h; }
     getContext() {
-      let source: {value: number} | undefined;
+      let source: {row: (row: number) => number} | undefined, sy = 0;
       return {
         clearRect: vi.fn(),
-        drawImage: (bitmap: {value: number}) => { source = bitmap; },
-        getImageData: (_x: number, _y: number, w: number, h: number) => ({data: new Uint8ClampedArray(w * h * 4).fill(source!.value)}),
+        drawImage: (bitmap: {row: (row: number) => number}, _sx: number, y: number) => { source = bitmap; sy = y; },
+        getImageData: (_x: number, _y: number, w: number, h: number) => {
+          if (failReadback) throw new Error('Readback failed');
+          const data = new Uint8ClampedArray(w * h * 4);
+          for (let r = 0; r < h; r++) data.fill(source!.row(sy + r), r * w * 4, (r + 1) * w * 4);
+          return {data};
+        },
       };
     }
   });
@@ -119,4 +127,20 @@ it('rejects decodes whose pixels differ and releases every bitmap', async () => 
   const decoder = stubPixelDecoder(3000, 3000, [7, 8]);
   await expect(assertSameDecodedPixels(png, png)).rejects.toThrow('Decoded pixels differ');
   expect(decoder.open()).toBe(0);
+});
+
+it('rejects decodes that differ only in the last row of the final partial band', async () => {
+  // 3000 rows split into 16 MB bands of 1398 rows leave a final band of 204 rows.
+  const decoder = stubPixelDecoder(3000, 3000, [7, row => (row === 2999 ? 8 : 7)]);
+  await expect(assertSameDecodedPixels(png, png)).rejects.toThrow('Decoded pixels differ');
+  expect(decoder.open()).toBe(0);
+});
+
+it.each(['readback', 'digest'])('releases every bitmap when %s fails', async step => {
+  const decoder = stubPixelDecoder(3000, 3000, [7, 7], step === 'readback');
+  const digest = step === 'digest' ? vi.spyOn(crypto.subtle, 'digest').mockRejectedValueOnce(new Error('Digest failed')) : undefined;
+  try {
+    await expect(assertSameDecodedPixels(png, png)).rejects.toThrow(step === 'digest' ? 'Digest failed' : 'Readback failed');
+    expect(decoder.open()).toBe(0);
+  } finally { digest?.mockRestore(); }
 });

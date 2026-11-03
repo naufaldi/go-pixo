@@ -46,7 +46,9 @@ const COMPARE_BAND_BYTES = 16 * 1024 * 1024;
 // The images are decoded one after the other and compared through SHA-256
 // digests of row bands, so only one decoded bitmap and one band of readback
 // are alive at a time. A 24 MP photo is ~96 MB decoded; holding two at once
-// can exhaust a phone's worker memory and kill the job.
+// can exhaust a phone's worker memory and kill the job. crypto.subtle.digest
+// copies its input, so while a band is hashed its readback and that copy
+// (about 2 × 16 MB) coexist with the decoded bitmap and the band canvas.
 export async function assertSameDecodedPixels(expected: Uint8Array, actual: Uint8Array): Promise<void> {
   if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') {
     throw new Error('Pixel comparison needs worker image decoding support');
